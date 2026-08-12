@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PilotFlightDetail } from "@/components/pilot-flight-detail";
 import type { Flight } from "@/lib/api/schemas";
+import { ApiError } from "@/lib/api/http";
 import { TestQueryProvider } from "@/test/test-query-provider";
 
 const apiMock = vi.fn();
@@ -19,6 +20,7 @@ vi.mock("@/lib/api/use-api", () => ({
 const offeredFlight: Flight = {
   id: "flight-1",
   scheduleRequestId: "request-1",
+  replacesFlightId: null,
   pilotMembershipId: "member-1",
   flightNumber: "SK101",
   depIcao: "EKCH",
@@ -26,6 +28,7 @@ const offeredFlight: Flight = {
   etd: "2026-09-10T08:00:00.000Z",
   eta: "2026-09-10T09:20:00.000Z",
   aircraftType: "A320",
+  version: 1,
   status: "offered",
   cancelReason: null,
   declinedReason: null,
@@ -97,10 +100,60 @@ describe("PilotFlightDetail decisions", () => {
       ([path]) => path === "/flights/flight-1/decline",
     );
     expect(JSON.parse(declineCall![1].body)).toEqual({
+      expectedVersion: 1,
       reason: "Schedule conflict",
     });
     expect(
       await screen.findByText("This flight is read-only in its current state."),
     ).toBeInTheDocument();
+  });
+
+  it("reloads the latest flight after a stale pilot response", async () => {
+    apiMock.mockReset();
+    let reads = 0;
+    apiMock.mockImplementation((path: string, options: { method?: string }) => {
+      if (path === "/flights/flight-1" && !options.method) {
+        reads += 1;
+        return Promise.resolve({
+          flight:
+            reads === 1
+              ? offeredFlight
+              : { ...offeredFlight, status: "cancelled", version: 2 },
+          release: null,
+          releaseRevisions: [],
+          events: [],
+        });
+      }
+      if (path === "/flights/flight-1/decline") {
+        return Promise.reject(
+          new ApiError({
+            status: 409,
+            code: "CONFLICT",
+            message: "Flight changed since it was loaded",
+          }),
+        );
+      }
+      throw new Error(`Unexpected API call: ${path}`);
+    });
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <PilotFlightDetail slug="vsas" flightId="flight-1" />
+      </TestQueryProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Decline flight" }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Decline flight",
+      }),
+    );
+
+    expect(
+      await screen.findByText(/current state has been reloaded/i),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2));
   });
 });

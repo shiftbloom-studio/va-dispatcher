@@ -1,6 +1,13 @@
+import { randomUUID } from "node:crypto";
+
 import { and, desc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { getDb } from "../client.js";
-import { flights, type Flight, type FlightStatus } from "../schema.js";
+import {
+  auditEvents,
+  flights,
+  type Flight,
+  type FlightStatus,
+} from "../schema.js";
 import {
   decodeCursor,
   encodeCursor,
@@ -10,6 +17,7 @@ import {
 export type CreateFlightInput = {
   tenantId: string;
   scheduleRequestId?: string | null;
+  replacesFlightId?: string | null;
   pilotMembershipId?: string | null;
   flightNumber: string;
   depIcao: string;
@@ -28,6 +36,7 @@ export async function createFlight(input: CreateFlightInput): Promise<Flight> {
     .values({
       tenantId: input.tenantId,
       scheduleRequestId: input.scheduleRequestId ?? null,
+      replacesFlightId: input.replacesFlightId ?? null,
       pilotMembershipId: input.pilotMembershipId ?? null,
       flightNumber: input.flightNumber,
       depIcao: input.depIcao.toUpperCase(),
@@ -53,6 +62,7 @@ export async function createFlights(
       items.map((input) => ({
         tenantId: input.tenantId,
         scheduleRequestId: input.scheduleRequestId ?? null,
+        replacesFlightId: input.replacesFlightId ?? null,
         pilotMembershipId: input.pilotMembershipId ?? null,
         flightNumber: input.flightNumber,
         depIcao: input.depIcao.toUpperCase(),
@@ -153,9 +163,13 @@ export async function listFlights(input: {
   return { items, nextCursor };
 }
 
-export async function updateFlight(
-  tenantId: string,
-  id: string,
+export async function updateFlight(input: {
+  tenantId: string;
+  id: string;
+  expectedVersion: number;
+  actorMembershipId: string | null;
+  action: string;
+  auditMeta: Record<string, unknown>;
   patch: Partial<{
     pilotMembershipId: string | null;
     flightNumber: string;
@@ -175,30 +189,191 @@ export async function updateFlight(
     offAt: Date | null;
     onAt: Date | null;
     inAt: Date | null;
-  }>,
-  options?: { expectedUpdatedAt?: Date },
-): Promise<Flight | null> {
+  }>;
+}): Promise<Flight | null> {
   const db = getDb();
-  const normalized = { ...patch };
+  const normalized = { ...input.patch };
   if (normalized.depIcao) normalized.depIcao = normalized.depIcao.toUpperCase();
   if (normalized.arrIcao) normalized.arrIcao = normalized.arrIcao.toUpperCase();
-
-  const [row] = await db
-    .update(flights)
-    .set({ ...normalized, updatedAt: new Date() })
-    .where(
-      and(
-        eq(flights.tenantId, tenantId),
-        eq(flights.id, id),
-        ...(options?.expectedUpdatedAt
-          ? [
-              sql`date_trunc('milliseconds', ${flights.updatedAt}) = ${options.expectedUpdatedAt}`,
-            ]
-          : []),
-      ),
+  const setClauses = Object.entries(normalized).map(([field, value]) => {
+    const column =
+      updatableFlightColumns[field as keyof typeof updatableFlightColumns];
+    if (!column) throw new Error(`Unsupported flight update field: ${field}`);
+    return sql`${column} = ${value}`;
+  });
+  const auditMeta = JSON.stringify(input.auditMeta);
+  const result = await db.execute<{ id: string }>(sql`
+    WITH updated AS (
+      UPDATE ${flights}
+      SET
+        ${sql.join(setClauses, sql`, `)}${setClauses.length ? sql`, ` : sql``}
+        ${flights.version} = ${flights.version} + 1,
+        ${flights.updatedAt} = NOW()
+      WHERE
+        ${flights.tenantId} = ${input.tenantId}
+        AND ${flights.id} = ${input.id}
+        AND ${flights.version} = ${input.expectedVersion}
+      RETURNING *
+    ), audited AS (
+      INSERT INTO ${auditEvents} (
+        tenant_id,
+        actor_membership_id,
+        action,
+        entity_type,
+        entity_id,
+        meta
+      )
+      SELECT
+        ${input.tenantId},
+        ${input.actorMembershipId},
+        ${input.action},
+        'flight',
+        ${input.id},
+        ${auditMeta}::jsonb
+      FROM updated
+      RETURNING id
     )
-    .returning();
-  return row ?? null;
+    SELECT updated.id FROM updated INNER JOIN audited ON TRUE
+  `);
+  if (!result.rows[0]) return null;
+  return findFlight(input.tenantId, input.id);
+}
+
+const updatableFlightColumns = {
+  pilotMembershipId: flights.pilotMembershipId,
+  flightNumber: flights.flightNumber,
+  depIcao: flights.depIcao,
+  arrIcao: flights.arrIcao,
+  etd: flights.etd,
+  eta: flights.eta,
+  aircraftType: flights.aircraftType,
+  status: flights.status,
+  cancelReason: flights.cancelReason,
+  declinedReason: flights.declinedReason,
+  dispatcherNotes: flights.dispatcherNotes,
+  assignmentRevision: flights.assignmentRevision,
+  assignmentConfirmedRevision: flights.assignmentConfirmedRevision,
+  assignmentConfirmedAt: flights.assignmentConfirmedAt,
+  outAt: flights.outAt,
+  offAt: flights.offAt,
+  onAt: flights.onAt,
+  inAt: flights.inAt,
+} as const;
+
+export type UpdateFlightPatch = Parameters<typeof updateFlight>[0]["patch"];
+
+/**
+ * Reserves the immutable declined source with compare-and-set, creates one
+ * history-linked replacement, and records the audit event in one SQL command.
+ * A zero-row result means the source was stale, non-declined, or unavailable.
+ */
+export async function createReplacementFlight(input: {
+  tenantId: string;
+  sourceFlightId: string;
+  expectedVersion: number;
+  actorMembershipId: string;
+  scheduleRequestId: string | null;
+  oldPilotMembershipId: string | null;
+  pilotMembershipId: string;
+  flightNumber: string;
+  depIcao: string;
+  arrIcao: string;
+  etd: Date;
+  eta: Date;
+  aircraftType: string | null;
+  dispatcherNotes: string | null;
+  reason: string;
+}): Promise<Flight | null> {
+  const db = getDb();
+  const replacementId = randomUUID();
+  const auditMeta = JSON.stringify({
+    oldAssignment: input.oldPilotMembershipId,
+    newAssignment: input.pilotMembershipId,
+    scheduleRequestId: input.scheduleRequestId,
+    schedule: {
+      flightNumber: input.flightNumber,
+      depIcao: input.depIcao,
+      arrIcao: input.arrIcao,
+      etd: input.etd.toISOString(),
+      eta: input.eta.toISOString(),
+      aircraftType: input.aircraftType,
+    },
+    oldStatus: "declined",
+    newStatus: "offered",
+    replacementFlightId: replacementId,
+    reason: input.reason,
+  });
+
+  const rows = await db.execute<{ id: string }>(sql`
+    WITH reserved AS (
+      UPDATE ${flights}
+      SET
+        ${flights.version} = ${flights.version} + 1,
+        ${flights.updatedAt} = NOW()
+      WHERE
+        ${flights.tenantId} = ${input.tenantId}
+        AND ${flights.id} = ${input.sourceFlightId}
+        AND ${flights.status} = 'declined'
+        AND ${flights.version} = ${input.expectedVersion}
+      RETURNING ${flights.id}
+    ), inserted AS (
+      INSERT INTO ${flights} (
+        id,
+        tenant_id,
+        schedule_request_id,
+        replaces_flight_id,
+        pilot_membership_id,
+        flight_number,
+        dep_icao,
+        arr_icao,
+        etd,
+        eta,
+        aircraft_type,
+        status,
+        dispatcher_notes,
+        version
+      )
+      SELECT
+        ${replacementId},
+        ${input.tenantId},
+        ${input.scheduleRequestId},
+        ${input.sourceFlightId},
+        ${input.pilotMembershipId},
+        ${input.flightNumber.toUpperCase()},
+        ${input.depIcao.toUpperCase()},
+        ${input.arrIcao.toUpperCase()},
+        ${input.etd},
+        ${input.eta},
+        ${input.aircraftType},
+        'offered',
+        ${input.dispatcherNotes},
+        1
+      FROM reserved
+      RETURNING id
+    ), audited AS (
+      INSERT INTO ${auditEvents} (
+        tenant_id,
+        actor_membership_id,
+        action,
+        entity_type,
+        entity_id,
+        meta
+      )
+      SELECT
+        ${input.tenantId},
+        ${input.actorMembershipId},
+        'flight.reoffer',
+        'flight',
+        ${input.sourceFlightId},
+        ${auditMeta}::jsonb
+      FROM inserted
+      RETURNING id
+    )
+    SELECT inserted.id FROM inserted INNER JOIN audited ON TRUE
+  `);
+
+  if (rows.rows.length === 0) return null;
+  return findFlight(input.tenantId, replacementId);
 }
 
 export async function listBoardFlights(

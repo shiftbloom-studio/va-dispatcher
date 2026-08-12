@@ -75,6 +75,7 @@ export const flightEditFormSchema = z
     eta: z.string().min(1, "ETA is required."),
     aircraftType: z.string().trim().max(20).optional(),
     dispatcherNotes: z.string().trim().max(2_000).optional(),
+    changeReason: z.string().trim().max(500).optional(),
   })
   .superRefine((value, context) => {
     try {

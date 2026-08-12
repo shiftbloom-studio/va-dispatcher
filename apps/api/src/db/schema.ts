@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -214,6 +215,7 @@ export const flights = pgTable(
       () => scheduleRequests.id,
       { onDelete: "set null" },
     ),
+    replacesFlightId: uuid("replaces_flight_id"),
     pilotMembershipId: uuid("pilot_membership_id").references(
       () => memberships.id,
       { onDelete: "set null" },
@@ -224,6 +226,7 @@ export const flights = pgTable(
     etd: timestamp("etd", { withTimezone: true }).notNull(),
     eta: timestamp("eta", { withTimezone: true }).notNull(),
     aircraftType: text("aircraft_type"),
+    version: integer("version").notNull().default(1),
     status: flightStatusEnum("status").notNull().default("draft"),
     cancelReason: text("cancel_reason"),
     declinedReason: text("declined_reason"),
@@ -240,6 +243,16 @@ export const flights = pgTable(
     ...timestamps,
   },
   (t) => [
+    uniqueIndex("flights_tenant_id_uidx").on(t.tenantId, t.id),
+    uniqueIndex("flights_tenant_replaces_uidx").on(
+      t.tenantId,
+      t.replacesFlightId,
+    ),
+    foreignKey({
+      columns: [t.tenantId, t.replacesFlightId],
+      foreignColumns: [t.tenantId, t.id],
+      name: "flights_tenant_replaces_fkey",
+    }).onDelete("restrict"),
     index("flights_tenant_status_idx").on(t.tenantId, t.status),
     index("flights_tenant_etd_idx").on(t.tenantId, t.etd),
     index("flights_tenant_pilot_idx").on(t.tenantId, t.pilotMembershipId),

@@ -232,6 +232,7 @@ describe("ACARS compose", () => {
             {
               id: "flight-1",
               scheduleRequestId: null,
+              replacesFlightId: null,
               pilotMembershipId: "pilot-1",
               flightNumber: "SK123",
               depIcao: "EKCH",
@@ -239,6 +240,7 @@ describe("ACARS compose", () => {
               etd: "2026-08-12T12:00:00.000Z",
               eta: "2026-08-12T13:00:00.000Z",
               aircraftType: "A320",
+              version: 1,
               status: "offered",
               cancelReason: null,
               declinedReason: null,

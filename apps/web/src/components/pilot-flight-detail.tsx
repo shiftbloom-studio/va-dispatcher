@@ -67,9 +67,10 @@ export function PilotFlightDetail({
       api(`/flights/${flightId}/${action}`, {
         method: "POST",
         schema: flightResponseSchema,
-        ...(action === "accept"
-          ? {}
-          : jsonBody({ reason: reason || undefined })),
+        ...jsonBody({
+          expectedVersion: detail.data?.flight.version,
+          reason: action === "accept" ? undefined : reason || undefined,
+        }),
       }),
     onSuccess: (_data, input) =>
       refresh(
@@ -83,6 +84,7 @@ export function PilotFlightDetail({
       api(`/flights/${flightId}/confirm-assignment`, {
         method: "POST",
         schema: flightResponseSchema,
+        ...jsonBody({ expectedVersion: detail.data?.flight.version }),
       }),
     onSuccess: () => refresh("Current assignment revision confirmed."),
   });
@@ -91,6 +93,7 @@ export function PilotFlightDetail({
       api(`/flights/${flightId}/${action}`, {
         method: "POST",
         schema: flightResponseSchema,
+        ...jsonBody({ expectedVersion: detail.data?.flight.version }),
       }),
     onSuccess: (_data, action) =>
       refresh(
