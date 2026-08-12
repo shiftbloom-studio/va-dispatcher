@@ -317,6 +317,39 @@ test("dispatcher sends Hoppie ACARS", async ({ page, context }) => {
   ).toBeVisible();
 });
 
+test("dispatcher simulates inbound ACARS with the development adapter", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    { name: "e2e-role", value: "dispatcher", domain: "127.0.0.1", path: "/" },
+  ]);
+  await baseFixtures(page);
+  await page.route("**/api/v1/flights?*", (route) =>
+    json(route, { items: [], nextCursor: null }),
+  );
+  await page.route("**/api/v1/dispatch/inbox", (route) =>
+    json(route, { items: [], nextCursor: null }),
+  );
+  await page.route("**/api/v1/acars/simulate", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      from: "SAS404",
+      body: "REQUESTING GATE",
+      msgType: "telex",
+    });
+    return json(route, { queued: true, to: "VSAS" }, 201);
+  });
+
+  await page.goto("/vsas/dispatch/acars");
+  await page.getByLabel("Simulated sender").fill("sas404");
+  await page.getByLabel("Simulated message").fill("REQUESTING GATE");
+  await page.getByRole("button", { name: "Simulate inbound" }).click();
+
+  await expect(
+    page.getByText(/simulated inbound message to VSAS is stored/i),
+  ).toBeVisible();
+});
+
 test("admin configures the tenant Hoppie ground station", async ({
   page,
   context,
@@ -358,14 +391,14 @@ test("admin configures the tenant Hoppie ground station", async ({
     });
   });
 
-  await page.goto("/vsas/settings");
+  await page.goto("/vsas/settings/organization");
   await continueWithoutAnalytics(page);
   await page.getByLabel("Ground-station callsign").fill("sas");
   await page.getByLabel("Ground-station Hoppie logon").fill("private-logon");
   await page.getByRole("button", { name: "Test and save" }).click();
 
   await expect(
-    page.getByText(/Hoppie accepted the connection test/),
+    page.getByText(/Hoppie accepted the credential test/),
   ).toBeVisible();
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
 });
