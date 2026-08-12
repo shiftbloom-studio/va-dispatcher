@@ -12,9 +12,10 @@ operating procedures for the actual deployment with qualified counsel.
    serviceable postal address. Production legal pages intentionally fail when
    required values are absent.
 2. Determine whether representative, register, VAT ID, phone, or editorial
-   responsibility details apply and configure them. Register name/number and
-   editorially responsible name/address must be configured as complete pairs.
-   Do not publish empty or fabricated entries.
+   responsibility details apply and configure them. The optional operator
+   description can state the operator's capacity without replacing the legal
+   name. Register name/number and editorially responsible name/address must be
+   configured as complete pairs. Do not publish empty or fabricated entries.
 3. Review `/impressum` and `/privacy` against the controller's legal form,
    audience, membership terms, and processing records.
 4. Name the controller's competent data-protection supervisory authority and
@@ -24,16 +25,16 @@ operating procedures for the actual deployment with qualified counsel.
 
 ## Data inventory in this application
 
-| System              | Personal or linkable data                                                                                      |
-| ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Clerk               | User and organization identifiers, login identifier/email, name, authentication/session events, IP/device data |
-| `memberships`       | Clerk user ID, role, display name, pilot callsign, status, timestamps                                          |
-| `schedule_requests` | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                          |
-| `flights`           | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                         |
-| `acars_messages`    | Station identifiers, free-text messages, provider metadata, actor, timestamps                                  |
-| `audit_events`      | Actor, action, entity identifiers, metadata, timestamp                                                         |
-| Infrastructure      | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                    |
-| Vercel telemetry    | Aggregated routes, referrers, coarse location/device categories, Web Vitals, and BotID security signals        |
+| System              | Personal or linkable data                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clerk               | User and organization identifiers, login identifier/email, name, authentication/session events, IP/device data                               |
+| `memberships`       | Clerk user ID, role, display name, pilot callsign, status, timestamps                                                                        |
+| `schedule_requests` | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                        |
+| `flights`           | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                       |
+| `acars_messages`    | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                |
+| `audit_events`      | Actor, action, entity identifiers, metadata, timestamp                                                                                       |
+| Infrastructure      | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                  |
+| Vercel telemetry    | Consent-gated aggregated routes, referrers, coarse location/device categories and Web Vitals; essential BotID challenge and security signals |
 
 Free-text fields can contain personal data even when the schema does not ask
 for it. Train dispatchers and members not to enter sensitive or unrelated data.
@@ -74,13 +75,16 @@ Document and test a request workflow that can:
 
 ## Cookies and browser storage
 
-The current build loads Vercel Web Analytics, Speed Insights, and BotID, but no
-advertising, marketing, social-media plugin, remote font, map, or embedded-media
-service. Web Analytics is cookie-free; BotID may use provider-controlled
-security keys for protected requests. The banner is therefore an informational
-notice about the configured telemetry, essential authentication/security
-storage, and the local acknowledgement record. It deliberately has no deceptive
-“Accept all” choice.
+The current build keeps Vercel Web Analytics and Speed Insights disabled until
+the user affirmatively allows anonymous analytics. Web Analytics is
+cookie-free, but consent also covers access to browser performance and device
+information. The optional clients load only after the first affirmative choice.
+They then remain initialized for stable route attribution, while a per-event
+consent check blocks every event whenever consent is withdrawn. Preference
+changes are also synchronized across open tabs. BotID remains active as a
+security control on protected mutations and sends browser challenge proof and
+security signals with those requests. The build has no advertising, marketing,
+social-media plugin, remote font, map, or embedded-media service.
 
 Before adding any optional client-side service:
 
@@ -93,6 +97,19 @@ Before adding any optional client-side service:
 5. version the notice so existing users see the changed choice; and
 6. verify behavior in a fresh browser profile and after rejection, acceptance,
    withdrawal, and expiry.
+
+## Legal-notice maintenance
+
+- Do not restore the former European Commission ODR-platform link. Regulation
+  (EU) 2024/3228 discontinued the platform and repealed its legal basis with
+  effect from 20 July 2025.
+- Do not add generic “all rights reserved” or “written consent required” copy
+  for the application source. The repository is distributed under AGPL-3.0-or-
+  later, and the corresponding-source link must remain accurate for deployed
+  forks.
+- Treat generic liability exclusions as legal advice, not harmless boilerplate.
+  Keep the factual flight-simulation limitation and have any broader exclusion
+  reviewed for the actual operator and service.
 
 ## Organizational safeguards
 

@@ -98,7 +98,16 @@ async function baseFixtures(page: Page) {
   );
 }
 
-test("public legal pages expose necessary-storage controls", async ({
+async function continueWithoutAnalytics(page: Page) {
+  const notice = page.getByRole("complementary", { name: "Cookie notice" });
+  if (await notice.isVisible()) {
+    await page
+      .getByRole("button", { name: "Continue without analytics" })
+      .click();
+  }
+}
+
+test("public legal pages expose privacy and telemetry controls", async ({
   page,
 }) => {
   await page.goto("/privacy");
@@ -115,7 +124,8 @@ test("public legal pages expose necessary-storage controls", async ({
   await page.getByRole("button", { name: "Details" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByText("Always active", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Acknowledge notice" }).click();
+  await page.getByRole("button", { name: "Use without analytics" }).click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(notice).toBeHidden();
 
@@ -185,6 +195,7 @@ test("pilot requests a UTC schedule and accepts an offer", async ({
   );
 
   await page.goto("/vsas/portal/schedule-requests/new");
+  await continueWithoutAnalytics(page);
   await page.getByLabel("Number of flights").fill("1");
   await page.getByLabel("Start (UTC)").fill("2026-09-10T08:00");
   await page.getByLabel("End (UTC)").fill("2026-09-10T12:00");
@@ -231,6 +242,7 @@ test("dispatcher builds the exact offer and advances a flight", async ({
   );
 
   await page.goto(`/vsas/dispatch/requests/${currentRequest.id}`);
+  await continueWithoutAnalytics(page);
   await page.getByLabel("Flight number").fill("SK201");
   await page.getByLabel("Departure ICAO").fill("EKCH");
   await page.getByLabel("Arrival ICAO").fill("ESSA");
@@ -296,6 +308,7 @@ test("dispatcher sends Hoppie ACARS", async ({ page, context }) => {
     return json(route, { message }, 201);
   });
   await page.goto("/vsas/dispatch/acars");
+  await continueWithoutAnalytics(page);
   await page.getByLabel("Recipient station").fill("SAS101");
   await page.getByLabel("Message", { exact: true }).fill("CONTACT DISPATCH");
   await page.getByRole("button", { name: "Send telex" }).click();
@@ -328,6 +341,7 @@ test("dispatcher simulates inbound ACARS with the development adapter", async ({
   });
 
   await page.goto("/vsas/dispatch/acars");
+  await continueWithoutAnalytics(page);
   await page.getByLabel("Simulated sender").fill("sas404");
   await page.getByLabel("Simulated message").fill("REQUESTING GATE");
   await page.getByRole("button", { name: "Simulate inbound" }).click();
@@ -379,6 +393,7 @@ test("admin configures the tenant Hoppie ground station", async ({
   });
 
   await page.goto("/vsas/settings/organization");
+  await continueWithoutAnalytics(page);
   await page.getByLabel("Ground-station callsign").fill("sas");
   await page.getByLabel("Ground-station Hoppie logon").fill("private-logon");
   await page.getByRole("button", { name: "Test and save" }).click();

@@ -11,10 +11,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
-  clearCookieNotice,
+  clearPrivacyPreferences,
   OPEN_COOKIE_SETTINGS_EVENT,
-  readCookieNotice,
-  saveCookieNotice,
+  PRIVACY_PREFERENCES_CHANGED_EVENT,
+  readPrivacyPreferences,
+  savePrivacyPreferences,
+  type PrivacyPreferencesRecord,
 } from "@/lib/privacy-storage";
 
 export function CookieSettingsButton({
@@ -39,8 +41,9 @@ export function CookieSettingsButton({
 
 export function PrivacyControls() {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [noticeVisible, setNoticeVisible] = useState(false);
-  const [acknowledged, setAcknowledged] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const [preferences, setPreferences] =
+    useState<PrivacyPreferencesRecord | null>(null);
 
   const openSettings = useCallback(() => {
     const dialog = dialogRef.current;
@@ -49,9 +52,8 @@ export function PrivacyControls() {
 
   useEffect(() => {
     const initialize = window.setTimeout(() => {
-      const stored = readCookieNotice(window.localStorage);
-      setAcknowledged(Boolean(stored));
-      setNoticeVisible(!stored);
+      setPreferences(readPrivacyPreferences(window.localStorage));
+      setInitialized(true);
     }, 0);
 
     window.addEventListener(OPEN_COOKIE_SETTINGS_EVENT, openSettings);
@@ -61,18 +63,23 @@ export function PrivacyControls() {
     };
   }, [openSettings]);
 
-  function acknowledge(): void {
-    saveCookieNotice(window.localStorage);
-    setAcknowledged(true);
-    setNoticeVisible(false);
+  function chooseAnalytics(analyticsAllowed: boolean): void {
+    const nextPreferences = savePrivacyPreferences(
+      window.localStorage,
+      analyticsAllowed,
+    );
+    setPreferences(nextPreferences);
+    window.dispatchEvent(new Event(PRIVACY_PREFERENCES_CHANGED_EVENT));
   }
 
   function showNoticeAgain(): void {
-    clearCookieNotice(window.localStorage);
-    setAcknowledged(false);
-    setNoticeVisible(true);
+    clearPrivacyPreferences(window.localStorage);
+    setPreferences(null);
+    window.dispatchEvent(new Event(PRIVACY_PREFERENCES_CHANGED_EVENT));
     dialogRef.current?.close();
   }
+
+  const noticeVisible = initialized && !preferences;
 
   return (
     <>
@@ -85,9 +92,9 @@ export function PrivacyControls() {
             <div>
               <h2 className="font-display text-lg font-bold">Your privacy</h2>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-300">
-                We use only technically necessary storage for secure sign-in and
-                to remember this notice. We do not use analytics, advertising,
-                or marketing cookies.
+                Secure sign-in and abuse protection are always active. Optional,
+                cookie-free Vercel Analytics and Speed Insights stay off unless
+                you allow them. We never use advertising or marketing trackers.
               </p>
               <Link
                 href="/privacy#cookies-and-local-storage"
@@ -96,7 +103,7 @@ export function PrivacyControls() {
                 Read cookie details
               </Link>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <Button
                 variant="secondary"
                 className="border-slate-500"
@@ -104,7 +111,20 @@ export function PrivacyControls() {
               >
                 Details
               </Button>
-              <Button onClick={acknowledge}>Understood</Button>
+              <Button
+                variant="secondary"
+                className="border-slate-500"
+                onClick={() => chooseAnalytics(false)}
+              >
+                Continue without analytics
+              </Button>
+              <Button
+                variant="secondary"
+                className="border-slate-500"
+                onClick={() => chooseAnalytics(true)}
+              >
+                Allow anonymous analytics
+              </Button>
             </div>
           </div>
         </aside>
@@ -126,11 +146,10 @@ export function PrivacyControls() {
             Cookies and local storage
           </h2>
           <p className="mt-3 leading-7 text-slate-600">
-            This deployment has no optional advertising or marketing category to
-            accept or reject. Vercel&apos;s cookie-free Web Analytics,
-            performance reporting, and BotID protection are described in the
-            Privacy Notice. Authentication and security storage is essential to
-            provide and protect the signed-in service.
+            Authentication and BotID security are necessary to provide and
+            protect the signed-in service. Optional Vercel Web Analytics and
+            Speed Insights load only with your permission. This deployment has
+            no advertising or marketing category.
           </p>
 
           <div className="mt-5 space-y-3">
@@ -142,24 +161,58 @@ export function PrivacyControls() {
                 </span>
               </div>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Clerk uses cookies such as <code>__session</code>,{" "}
-                <code>__client</code>, and <code>__client_uat</code> to sign you
-                in, protect sessions, and prevent abuse. Vercel BotID may use
-                <code> KP_*</code> security keys to validate protected requests.
-                Their lifetimes are controlled by the respective provider.
+                Clerk uses cookies such as <code>__session</code> and{" "}
+                <code>__client_uat</code> to sign you in and protect sessions.
+                Vercel BotID runs a browser challenge and sends proof with
+                protected requests to prevent automated abuse.
               </p>
             </section>
             <section className="rounded-xl border border-slate-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">Cookie-notice acknowledgement</h3>
+                <h3 className="font-semibold">
+                  Anonymous usage and performance
+                </h3>
+                <span
+                  aria-live="polite"
+                  className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700"
+                >
+                  {preferences?.analyticsAllowed ? "Allowed" : "Off"}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Vercel Web Analytics records anonymized page-use statistics
+                without analytics cookies. Speed Insights reports browser
+                performance metrics. Neither service loads before you allow it.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  aria-pressed={preferences?.analyticsAllowed === false}
+                  onClick={() => chooseAnalytics(false)}
+                >
+                  Use without analytics
+                </Button>
+                <Button
+                  variant="secondary"
+                  aria-pressed={preferences?.analyticsAllowed === true}
+                  onClick={() => chooseAnalytics(true)}
+                >
+                  Allow analytics
+                </Button>
+              </div>
+            </section>
+            <section className="rounded-xl border border-slate-200 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-semibold">Privacy preference</h3>
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
                   Local only
                 </span>
               </div>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                The browser stores only the notice version and acknowledgement
-                time in local storage. It is not sent with web requests and is
-                replaced when the notice changes.
+                The browser stores the notice version, your analytics choice,
+                and the decision time in local storage. It is not sent
+                automatically with web requests and is replaced when the notice
+                changes.
               </p>
             </section>
           </div>
@@ -177,21 +230,11 @@ export function PrivacyControls() {
           </p>
 
           <div className="mt-6 flex flex-wrap justify-end gap-2">
-            {acknowledged ? (
+            {preferences ? (
               <Button variant="ghost" onClick={showNoticeAgain}>
                 Show notice again
               </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  acknowledge();
-                  dialogRef.current?.close();
-                }}
-              >
-                Acknowledge notice
-              </Button>
-            )}
+            ) : null}
             <Button onClick={() => dialogRef.current?.close()}>Close</Button>
           </div>
         </div>

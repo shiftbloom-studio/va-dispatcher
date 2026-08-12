@@ -7,8 +7,8 @@ import {
   PrivacyControls,
 } from "@/components/privacy-controls";
 import {
-  COOKIE_NOTICE_STORAGE_KEY,
-  saveCookieNotice,
+  PRIVACY_PREFERENCES_STORAGE_KEY,
+  savePrivacyPreferences,
 } from "@/lib/privacy-storage";
 
 const storageValues = new Map<string, string>();
@@ -35,41 +35,50 @@ Object.defineProperty(window, "localStorage", {
 describe("PrivacyControls", () => {
   beforeEach(() => window.localStorage.clear());
 
-  it("shows an accurate necessary-storage notice and remembers dismissal", async () => {
+  it("keeps optional analytics off when the user continues without it", async () => {
     const user = userEvent.setup();
     render(<PrivacyControls />);
 
     expect(await screen.findByLabelText("Cookie notice")).toBeVisible();
-    expect(
-      screen.getByText(/do not use analytics, advertising, or marketing/i),
-    ).toBeVisible();
+    expect(screen.getByText(/stay off unless you allow them/i)).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Understood" }));
+    await user.click(
+      screen.getByRole("button", { name: "Continue without analytics" }),
+    );
     await waitFor(() =>
       expect(screen.queryByLabelText("Cookie notice")).not.toBeInTheDocument(),
     );
     expect(
-      window.localStorage.getItem(COOKIE_NOTICE_STORAGE_KEY),
-    ).not.toBeNull();
+      JSON.parse(
+        window.localStorage.getItem(PRIVACY_PREFERENCES_STORAGE_KEY) ?? "{}",
+      ),
+    ).toMatchObject({ analyticsAllowed: false });
   });
 
-  it("acknowledges from settings and closes the dialog", async () => {
+  it("allows anonymous analytics only after an explicit choice", async () => {
     const user = userEvent.setup();
     render(<PrivacyControls />);
 
     await user.click(await screen.findByRole("button", { name: "Details" }));
     expect(screen.getByRole("dialog")).toHaveAttribute("open");
 
-    await user.click(
-      screen.getByRole("button", { name: "Acknowledge notice" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Allow analytics" }));
 
-    expect(document.querySelector("dialog")).not.toHaveAttribute("open");
     expect(screen.queryByLabelText("Cookie notice")).not.toBeInTheDocument();
+    expect(screen.getByText("Allowed")).toBeVisible();
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(PRIVACY_PREFERENCES_STORAGE_KEY) ?? "{}",
+      ),
+    ).toMatchObject({ analyticsAllowed: true });
   });
 
-  it("does not show the notice again for the current acknowledged version", async () => {
-    saveCookieNotice(window.localStorage, new Date("2026-08-12T12:00:00.000Z"));
+  it("does not show the notice again for current preferences", async () => {
+    savePrivacyPreferences(
+      window.localStorage,
+      false,
+      new Date("2026-08-12T12:00:00.000Z"),
+    );
 
     render(<PrivacyControls />);
 
@@ -80,7 +89,7 @@ describe("PrivacyControls", () => {
 
   it("keeps details accessible and lets the user show the notice again", async () => {
     const user = userEvent.setup();
-    saveCookieNotice(window.localStorage);
+    savePrivacyPreferences(window.localStorage, false);
     render(
       <>
         <PrivacyControls />
@@ -95,6 +104,8 @@ describe("PrivacyControls", () => {
 
     await user.click(screen.getByRole("button", { name: "Show notice again" }));
     expect(await screen.findByLabelText("Cookie notice")).toBeVisible();
-    expect(window.localStorage.getItem(COOKIE_NOTICE_STORAGE_KEY)).toBeNull();
+    expect(
+      window.localStorage.getItem(PRIVACY_PREFERENCES_STORAGE_KEY),
+    ).toBeNull();
   });
 });
