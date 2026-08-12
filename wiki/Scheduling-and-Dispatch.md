@@ -11,7 +11,8 @@ A schedule request contains:
 - overall `windowStart` and `windowEnd`;
 - `desiredFlightCount`, from 1 to 50;
 - flexible JSON `preferences`;
-- status and optional rejection reason; and
+- numeric `version`, status, rejection/cancellation reason, and linked-flight
+  counts; and
 - creation/update timestamps.
 
 The current web form stores detailed availability as:
@@ -33,9 +34,9 @@ The current web form stores detailed availability as:
 
 The intervals are sorted before submission. The earliest start becomes `windowStart`; the latest end becomes `windowEnd`. This preserves a simple query window while keeping the precise intervals available to dispatch.
 
-## Client-side availability rules
+## Availability rules
 
-The schedule form enforces:
+The schedule form and API enforce:
 
 - at least one interval;
 - a valid start and end for every interval;
@@ -45,7 +46,10 @@ The schedule form enforces:
 - title up to 120 characters; and
 - notes up to 2,000 characters.
 
-All `datetime-local` values are converted as UTC / Zulu. The API independently checks the overall window ordering and flight-count range, but detailed `preferences.availability` remains a flexible JSON contract. Any caller outside the web UI must preserve the same interval rules itself.
+All `datetime-local` values are converted as UTC / Zulu. The API normalizes and
+sorts detailed intervals, rejects overlaps or invalid ranges, and verifies the
+overall window matches the detailed availability. Request-linked flights must
+fit a detailed interval.
 
 ## Request state machine
 
@@ -66,7 +70,9 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-`fulfilled`, `rejected`, and `cancelled` are terminal. The current UI treats `partially_fulfilled` as historical and does not expose an append-offer workflow.
+`fulfilled`, `rejected`, and `cancelled` are terminal. A
+`partially_fulfilled` request remains active and can receive another atomic
+batch until its requested capacity is reached.
 
 ## Pilot experience
 
@@ -77,9 +83,14 @@ The pilot dashboard refreshes requests and flights every 30 seconds. It separate
 - upcoming accepted or briefed flights; and
 - recent terminal history.
 
-A pilot can cancel an owned request in `pending`, `in_review`, or `partially_fulfilled` state. Cancellation changes only the request status. It does not cancel, delete, or alter any linked flights.
+A pilot can version-edit an owned `pending` request until dispatch starts review.
+If another actor changes it first, the editor reloads the current version and
+requires review before retrying.
 
-There is no schedule-request edit endpoint today. To change availability or flight count, the pilot must cancel an eligible request and submit another one.
+A pilot can cancel an owned request in `pending`, `in_review`, or
+`partially_fulfilled` state. The cancellation dialog requires one of two linked-
+flight policies: keep every linked flight, or cancel eligible pre-departure
+flights atomically. Active and terminal history is never silently rewritten.
 
 ## Dispatcher request queue
 
@@ -96,7 +107,9 @@ Dispatchers can start review from the queue or open the full request workspace. 
 
 ## Building a complete offer
 
-For a pending or in-review request, the offer builder renders exactly `desiredFlightCount` rows. Each row requires:
+For an in-review or partially fulfilled request, the offer builder shows the
+remaining capacity and lets dispatch choose a batch size from one through that
+remainder. Each row requires:
 
 - flight number;
 - four-letter departure ICAO;
@@ -105,19 +118,23 @@ For a pending or in-review request, the offer builder renders exactly `desiredFl
 - ETA in UTC and after ETD; and
 - optional aircraft type.
 
-One submission calls `POST /flights/bulk`. The backend assigns each created flight to the request's pilot unless a pilot override is supplied by an API caller, links it to the request, and creates it as `offered`.
+One submission calls `POST /flights/bulk` with the current request version and
+a stable `Idempotency-Key`. The backend locks the request before linked flights,
+rechecks cumulative capacity and normalized availability, assigns the owning
+active pilot, links each flight, and creates it as `offered`.
 
-The backend then updates the request status based on the created batch count. The normal web flow submits the exact requested count and ends at `fulfilled`.
+The request becomes `partially_fulfilled` while capacity remains and `fulfilled`
+when complete. An exact same-key retry returns the original ordered result;
+reusing a key for a different payload is a conflict.
 
-### Important current boundaries
+### Concurrency and safety
 
-- The web form checks ETA after ETD; the API's basic route schema currently accepts any two dates.
-- The web form shows availability to the dispatcher but does not server-enforce that each flight lies inside a detailed interval.
-- Bulk creation has no caller-provided idempotency key. Do not automatically retry an ambiguous request without checking whether flights were already created.
-- A cancelled request does not cascade to linked flights.
-- The current partial-request UI does not append a later batch.
-
-These are current contract boundaries, not behavior to silently work around in a client. Changes require backend validation, state-machine, audit, OpenAPI, and test updates.
+- Every edit, transition, fulfillment, and cancellation compares the stored
+  request version.
+- Request fulfillment and its flights/audits commit atomically.
+- The required cross-domain lock order is schedule request before flights.
+- Single-flight creation is ad-hoc only; clients cannot bypass cumulative
+  request fulfillment by attaching a request ID there.
 
 ## Rejecting and cancelling
 
@@ -135,8 +152,8 @@ Neither action deletes history.
 The flight-management view can create a flight without a schedule request. A dispatcher enters route, schedule, aircraft, notes, pilot, and initial status.
 
 - A draft may be unassigned.
-- The web UI requires an active pilot before creating an offered flight.
-- The backend record allows a nullable pilot field, so non-web API clients must not create an unassigned offer.
+- An offered flight requires an active pilot membership from the same tenant.
+- Request-linked creation is rejected here and must use the bulk workflow.
 
 See [Flights and State Machines](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Flights-and-State-Machines) for the operational lifecycle after creation.
 
@@ -151,16 +168,17 @@ The API writes audit events for:
 - flight edits; and
 - flight transitions.
 
-Audit records are persisted but there is no audit-log read API or web screen in the current application.
+Administrators can search the audit viewer and request a bounded, access-audited
+export. Audit metadata records version changes without copying secrets.
 
 ## Safe extension checklist
 
-When adding request edits, partial appends, recurring availability, or generation automation:
+When extending request or generation behavior:
 
 1. Preserve tenant and pilot ownership checks.
 2. Define allowed states and concurrent-update behavior first.
 3. Validate detailed interval semantics on the server.
-4. Add idempotency for create/generate operations.
+4. Preserve idempotency for create/generate operations.
 5. State explicitly whether cancellation cascades, and make it transactional.
 6. Keep canonical flights separate from transient generator output.
 7. Update API serializers, OpenAPI, web Zod schemas, UI action matrices, audit metadata, and tests together.

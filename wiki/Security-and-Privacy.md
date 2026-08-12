@@ -83,11 +83,14 @@ Actions are pinned to full commit SHAs. Repository administrators must still ena
 | System                    | Data                                                                              |
 | ------------------------- | --------------------------------------------------------------------------------- |
 | Clerk                     | User/org IDs, login identifier/email, name, sessions, IP/device/security events   |
-| Memberships               | Clerk ID, role, display name, aircraft callsign, status, timestamps               |
+| Memberships               | Clerk ID, role, display name, callsign, SimBrief/Navigraph identity, status       |
 | Schedule requests         | Availability, preferences, notes, status, reasons, timestamps                     |
 | Flights                   | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields           |
+| Dispatch planning         | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP            |
+| Simulator telemetry       | Device identity, position/phase samples, recent track, OOOI provenance            |
 | ACARS                     | Station identifiers, message text, provider metadata, actor, timestamps           |
 | Audit events              | Actor, action, entity IDs, metadata, time                                         |
+| Privacy operations        | Policy, request/hold/task state, approvals, reports, export cursor                |
 | Infrastructure            | Request IDs, IP and HTTP/security logs at providers                               |
 | Optional Vercel telemetry | Consent-gated aggregated page/referrer/device/coarse location and Web Vitals data |
 
@@ -132,17 +135,28 @@ Do not restore the discontinued EU ODR-platform link or add generic liability/co
 
 Hoppie is an external store-and-forward operational network. Messages can be visible to others and may remain queued outside VA Dispatch. Never send credentials, private contact data, confidential material, special-category data, or real-world safety-critical instructions.
 
-The application stores accepted outbound and polled inbound traffic. Flight linking does not make a message private.
+The application stores outbound logical messages including uncertain outcomes
+and polled inbound traffic. Flight linking does not make a message private.
 
-## Operator obligations not implemented by code
+## Privacy operations and operator obligations
+
+The admin privacy control plane supports approved/versioned retention policy,
+dry-run and resumable execution, verified export, correction, restriction,
+objection, anonymization/erasure, legal holds, and external-provider tasks.
+Sensitive free-text and provider payloads are included in inventory and export
+rules. Execution is bounded, tenant-scoped, audited, and uses dual control for
+material destructive actions.
+
+That tooling does not select a lawful basis, approve a retention schedule,
+certify compliance, delete a provider's independent data, or verify every
+backup. Before production, the controller must still establish:
 
 Before production, the controller must establish:
 
 - processor agreements for Clerk, Vercel, and Neon;
 - subprocessor and international-transfer assessment;
 - an approved retention schedule for every data store and backup;
-- recurring deletion/anonymization procedures;
-- data-subject access, correction, restriction, objection, export, and erasure workflows;
+- approved retention and data-subject operating procedures around the software;
 - least-privilege access reviews and offboarding;
 - credential and encryption-key rotation;
 - backup restore tests;
@@ -150,7 +164,9 @@ Before production, the controller must establish:
 - records of processing and legitimate-interest assessments where required; and
 - decisions on DPO, representative, DPIA, and minor-user safeguards.
 
-The application currently has no automated retention job, user data export, erasure endpoint, or backup deletion workflow.
+Provider and backup actions remain explicit tracked tasks until an operator
+verifies completion. The audit table is operational evidence, not a tamper-
+evident external ledger.
 
 ## Security reporting
 

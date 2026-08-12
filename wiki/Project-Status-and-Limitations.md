@@ -1,121 +1,97 @@
 # Project Status and Limitations
 
-This page records the implemented boundary reviewed against the default-branch application on 12 August 2026. It prevents planned or branch-only work from being described as shipped behavior. Re-verify it whenever a feature merges.
+This page records the implemented boundary reviewed against the integrated
+application on 12 August 2026. Re-verify it whenever behavior changes.
 
 ## Implemented
 
-| Area                  | Current implementation                                                 |
-| --------------------- | ---------------------------------------------------------------------- |
-| Tenant shell          | Path tenant, vSAS branding, unknown-slug rejection                     |
-| Authentication        | Clerk sign-in/sign-up/session tasks inside tenant shell                |
-| Tenant agreement      | URL, Clerk org, `/me`, and `/tenant` checks before business data       |
-| Roles                 | Pilot, dispatcher, admin hierarchy and API authorization               |
-| Profiles              | Self-service display name and unique aircraft callsign                 |
-| Schedule demand       | Multiple UTC intervals, count, title, notes, pilot visibility          |
-| Dispatcher requests   | Queue, review, reject, cancel, exact-count complete offer              |
-| Flights               | Ad-hoc/request-linked creation, assignment, edit, lifecycle, reasons   |
-| Operations board      | Seven-day status board, counts, 10-second refresh                      |
-| ACARS                 | Production Hoppie telex send/poll, station conversations, flight links |
-| Hoppie administration | Test-before-save encrypted tenant credential and removal               |
-| Local ACARS           | DB mock provider and inbound simulator, production disabled            |
-| API documentation     | OpenAPI JSON, Swagger UI, ReDoc, completeness tests                    |
-| Security              | Clerk, tenant isolation, roles, BotID, headers, safe provider errors   |
-| Privacy/legal         | Public legal pages, strict configuration, consent-gated telemetry      |
-| Open source           | AGPL, contribution, conduct, support, security, issue/PR templates     |
-| Automation            | CI, coverage, browser smoke tests, audits, dependency review, CodeQL   |
+| Area                | Current implementation                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Tenant shell        | Path-based tenant routing, vSAS branding, unknown-slug rejection                                                   |
+| Authentication      | Clerk sign-in/sign-up/session tasks, organization agreement, production-hard-off test fixtures                     |
+| Roles               | Pilot, dispatcher, and admin authorization at API and UI boundaries                                                |
+| Schedule demand     | Normalized UTC availability, server validation, pending-request edit with version checks                           |
+| Request fulfillment | Review, rejection, partial/final fulfillment, idempotent batches, explicit linked-flight cancellation policy       |
+| Flights             | Tenant-safe assignment, time/availability checks, optimistic concurrency, immutable declined re-offers             |
+| Dispatch planning   | Revisioned releases with route, weather, fuel, payload, remarks, and dispatcher attribution                        |
+| SimBrief/Navigraph  | Dispatcher preparation, pilot-owned generation, callback recovery, OFP visibility, account linking                 |
+| Operations          | Trusted board window, overdue/active handling, live pilot presence, active pilot dashboard group                   |
+| MSFS telemetry      | Revocable pilot devices, current/track data, live phase, automatic and manual OOOI provenance                      |
+| ACARS               | Dispatcher-only Hoppie send/poll, stored conversations, bounded inbound deduplication, explicit uncertain outcomes |
+| Administration      | Member role/status controls, Clerk sync, safe work reassignment, audit viewer and bounded export                   |
+| Privacy lifecycle   | Approved retention policies, dry runs, resumable execution, subject workflows, holds, provider tasks               |
+| Data evolution      | Immutable PR29 baseline, guarded legacy adoption, additive migration, drift and rollback checks                    |
+| Verification        | Unit/component contracts, real PostgreSQL contracts, fast browser workflows, two integrated app journeys           |
 
-## Not implemented on the current default branch
+## Operational boundaries
 
-### SimBrief and Navigraph
+### External providers
 
-There is no current default-branch:
+- Production Hoppie requires a tenant-owned ground-station callsign and logon,
+  stable encryption key, and a working one-minute scheduler. Hoppie acceptance
+  is not a delivery or read receipt.
+- SimBrief requires the application's API key and the pilot's own verified
+  SimBrief account. Navigraph requires registered OAuth credentials and exact
+  callback URLs.
+- Automated tests use deterministic local adapters. They do not prove live
+  provider availability, network affiliation, delivery, or OAuth registration.
 
-- SimBrief/Navigraph account link;
-- OAuth flow;
-- dispatch redirect or prefilled flight-plan generation;
-- OFP fetch/import;
-- stable SimBrief flight ID;
-- dispatcher identity snapshot for OFP remarks; or
-- flight-plan revision model.
+### Simulator and monitoring
 
-Do not promise SimBrief generation in user or deployment documentation until its code, schema, API, UI, security, and tests are merged together.
+- Pilots use a separately deployed MSFS client with a revocable device token.
+  The web application does not impersonate the simulator.
+- Dispatcher telemetry cards and presence are operational awareness tools, not
+  certified navigation or a real-world flight-following system.
+- ACARS progress text and simulator telemetry remain distinct provenance
+  sources. Receiving a message does not silently rewrite telemetry.
 
-### Live pilot/aircraft monitoring
+### ACARS scope
 
-There is no simulator/MSFS telemetry ingestion, websocket/live feed, aircraft position table, track history, map, online-presence heartbeat, or automatic flight-phase detection.
+- Web ACARS is dispatcher/admin only; pilots communicate from their simulator
+  client.
+- There is no automatic resend after an uncertain provider outcome. The UI
+  tells the dispatcher to check the conversation before composing a new send.
+- The application suppresses repeat inbound payloads within a bounded window,
+  but intentionally allows the same legitimate text again later.
+- Poll-health dashboards, delivery/read receipts, and automatic flight
+  correlation are not promised by the current product.
 
-The operations board is a status board. `active` is a manual dispatcher status, and **Active pilots** counts active pilot memberships rather than currently connected or flying people.
+### Privacy and governance
 
-### Automated OOOI
+- Software supports retention and data-subject operations; it does not certify
+  GDPR compliance or choose a lawful retention schedule for an operator.
+- Legal review, policy approval, backups, and external-provider completion
+  tasks remain operator responsibilities.
+- Audit events are access-controlled operational evidence, not a tamper-evident
+  external ledger.
 
-The flight schema has nullable `outAt`, `offAt`, `onAt`, and `inAt`, but no current UI or ingestion path populates them. ACARS progress/position bodies remain message text.
+### Deployment and product shape
 
-### Complete member administration UI
+- The backend is multi-tenant, while the checked-in web presentation registry
+  currently contains only vSAS.
+- Production schema changes use reviewed migrations. `db:push` is limited to
+  disposable development databases.
+- The integrated E2E authority is deliberately non-production-only and requires
+  an explicitly confirmed disposable database.
+- A successful local or CI run is not a substitute for a post-deployment Clerk,
+  BotID, service-rewrite, static-asset, and live-provider acceptance check.
 
-Member list, update, and Clerk sync APIs exist. The web uses member lists for assignment and ACARS suggestions, but there is no full member-role/status management console.
+## Release-readiness checklist
 
-### Audit viewer
+Before calling a deployment fully ready:
 
-Key mutations write `audit_events`. There is no read endpoint, export, tamper-evident ledger, or admin screen.
-
-### Automated privacy lifecycle
-
-There is no recurring retention/deletion job, data-subject export, account erasure workflow, provider deletion orchestration, or backup purge automation. Those remain operator procedures and future product work.
-
-## Current workflow boundaries
-
-### Schedule requests
-
-- No edit endpoint after creation.
-- Detailed intervals are web-validated but stored in flexible JSON.
-- Cancellation does not alter linked flights.
-- Historical partial requests cannot be appended in the current UI.
-- Bulk offer creation has no explicit idempotency key.
-
-### Flights
-
-- API-level ETA-after-ETD enforcement is not complete; web forms enforce it.
-- API callers can create an offered flight with a nullable or unchecked membership reference; the web restricts selection to active tenant pilots.
-- Material edits do not automatically reset pilot acceptance.
-- Updates are last-write-wins, with no optimistic version or compare-and-set contract.
-- Declined flights are terminal; there is no re-offer/reassign recovery transition.
-- Operations-board query has no lower ETD bound for non-terminal flights.
-- Active flights have no dedicated pilot-dashboard group.
-
-### ACARS
-
-- Free-text telex is the primary outbound web operation.
-- Hoppie acceptance is not delivery/read status.
-- Failed sends are manual-retry only and intentionally not stored.
-- Inbound messages are not automatically correlated to a flight.
-- Position/progress messages are not parsed into telemetry.
-- Polling errors are logged, but there is no operator alert dashboard.
-
-### Data evolution
-
-- Drizzle scripts exist, but no migration history is checked in.
-- There is no transaction/idempotency architecture for multi-record dispatch generation.
-- The backend is tenant-scoped, while the web's static registry currently contains only vSAS.
-
-## Recommended roadmap order
-
-The safest dependency order for closing the gaps is:
-
-1. **Correctness foundation:** server-side flight/member/time/availability validation, idempotent bulk creation, optimistic concurrency, and reviewed migrations.
-2. **Lifecycle completion:** request edits/partial append policy, cancellation cascade choices, declined recovery, assignment acceptance reset, active pilot UX.
-3. **SimBrief:** pilot-owned identity/linking, dispatcher-prepared canonical data, stable IDs, OFP import/revisions, correct dispatcher name/remarks.
-4. **Telemetry and OOOI:** authenticated simulator ingestion, current and historical position models, phase rules, pilot consent/privacy, dispatcher monitoring.
-5. **ACARS correlation:** callsign/flight correlation, structured progress/position parsing, alerts, and operational status.
-6. **Administration and governance:** member console, audit viewer/export, retention and data-subject workflows, operational alerts.
-
-Each area must preserve tenant isolation, explicit state transitions, Hoppie safety, privacy-by-default, scale-to-zero economics where practical, and the distinction between passing tests and live-provider acceptance.
+1. Apply the reviewed migration to the intended database after backup and
+   rehearsal.
+2. Verify Clerk organization roles, legal configuration, BotID, and tenant
+   encryption keys.
+3. Complete manual pilot and dispatcher journeys against the deployed UI.
+4. Verify Hoppie, SimBrief, Navigraph, and the MSFS client only with operator-
+   supplied credentials appropriate to that environment.
+5. Record any provider or legal prerequisite as external; do not replace it
+   with test-only configuration or a hidden fallback.
 
 ## Documentation rule
 
-When one of these limitations is removed:
-
-1. Add evidence-backed tests.
-2. Update the relevant deep Wiki page.
-3. Move the item from **Not implemented** or **boundaries** into **Implemented** here.
-4. Update Home and role descriptions if the user-visible promise changes.
-5. Publish the reviewed `wiki/` mirror to the GitHub Wiki.
+When a boundary changes, update the implementation, OpenAPI contract, focused
+tests, relevant Wiki page, and this status page together. Publish the reviewed
+`wiki/` mirror intentionally to the separate GitHub Wiki repository.

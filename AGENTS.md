@@ -15,10 +15,11 @@ Hoppie ground-station connection. The first configured tenant is vSAS, exposed
 at `/vsas`, but persistence and authorization are tenant-scoped throughout.
 
 The checked-out default branch is the source of truth. Do not describe a
-planned or unmerged feature as implemented. In particular, the current product
-does not include SimBrief generation, aircraft telemetry/live map tracking, or
-automatic OOOI updates unless those capabilities are present in the branch you
-are actually inspecting.
+planned or unmerged feature as implemented. The integrated product includes
+revisioned dispatch releases, pilot-owned SimBrief/Navigraph workflows,
+authenticated simulator telemetry and OOOI, member/audit administration, and
+privacy lifecycle operations. Verify the branch before changing or documenting
+any of those cross-layer contracts.
 
 ## Start here
 
@@ -96,14 +97,19 @@ Database scripts are intentionally separate:
 
 ```bash
 pnpm db:generate
+pnpm db:check
 pnpm db:migrate
+pnpm db:adopt:pr29
+pnpm db:signature
 pnpm db:push
 pnpm db:studio
 ```
 
 `db:push`, `db:migrate`, and `db:studio` act on the configured database. Confirm
-the target and obtain authorization before using them outside a disposable
-local database. Never infer that a `.env` file points to a safe environment.
+the target and obtain authorization before using them. `db:push` is disposable-
+development-only. Released databases use the immutable PR29 baseline, guarded
+legacy adoption where applicable, and additive migrations described in
+`docs/database-migrations.md`. Never infer that a `.env` file is safe.
 
 ## Runtime shape and request flow
 
@@ -187,12 +193,12 @@ do not accidentally put them behind the human check.
 
 ## Scheduling domain
 
-Pilots submit one or more UTC availability intervals, a requested flight count,
-an optional title, and free-text notes that may describe route or aircraft
-preferences. Dispatchers can review and fulfill a request with one or more
-flight offers. A pilot may cancel their own non-terminal request. The current UI
-does not provide general request editing; implement editing only with an
-explicit contract, concurrency behavior, audit events, and tests.
+Pilots submit normalized UTC availability intervals, a requested flight count,
+an optional title, and free-text notes. A pilot may version-edit an owned
+`pending` request before dispatch starts review. Dispatchers can fulfill in
+one or more atomic batches; each batch requires an idempotency key and observes
+cumulative request capacity. Cancellation requires an explicit linked-flight
+policy and preserves terminal history.
 
 Allowed schedule-request transitions:
 
@@ -220,10 +226,10 @@ Time handling rules:
 ## Flights and dispatch
 
 A dispatcher can build offers from a schedule request or create an ad-hoc
-flight. Dispatcher notes are accepted only through dispatcher-authorized
-routes, and the audit actor comes from authenticated context. A flight does not
-currently store a dispatcher identity snapshot; do not claim one exists or let
-a future client forge dispatcher attribution.
+flight. Request-linked offers must use the locked bulk-fulfillment path; single
+flight creation is ad-hoc only. Dispatcher attribution comes from authenticated
+context and immutable dispatch-release/SimBrief snapshots, never client-supplied
+names.
 
 Allowed flight transitions:
 
@@ -241,16 +247,18 @@ Dispatchers may cancel non-terminal flights. Use
 `apps/api/src/domain/flights/transitions.ts`; never reproduce transition logic
 inside a component or route.
 
-Current product boundaries matter when changing this area:
+Current contracts matter when changing this area:
 
-- SimBrief/Navigraph generation is not part of the default-branch workflow.
-- Flight monitoring is status/board based; there is no aircraft position,
-  simulator telemetry, or automatic OOOI feed.
-- Cancellation does not automatically cascade between a schedule request and
-  its flights.
-- Bulk offer creation has no general idempotency key.
-- Partial fulfillment cannot currently be appended through a separate
-  follow-up workflow.
+- Flight and request mutations use numeric versions. Material edits invalidate
+  stale acceptance/planning state; notes-only edits do not.
+- A declined source flight is immutable. Re-offer creates one tenant-coherent
+  replacement and concurrent losers discover the winning replacement.
+- Dispatch releases are revisioned canonical planning snapshots. Dispatch
+  prepares SimBrief data; the assigned pilot generates using their own account.
+- Simulator telemetry has revocable device ownership, bounded tracks, current
+  presence, and provenance-aware automatic/manual OOOI updates.
+- Required lock order is schedule request before linked flights. Preserve it in
+  every transaction that touches both.
 
 A feature that changes one of these boundaries normally requires coordinated
 schema, repository, service, route, OpenAPI, web schema, UI, audit, and test
@@ -277,15 +285,17 @@ Security and ownership rules:
 
 Delivery behavior is intentionally conservative:
 
-- Outbound messages are persisted as sent only after Hoppie returns success.
-- Inbound polling runs per configured tenant through the authenticated cron.
-- There is no automatic outbound retry because duplicate operational messages
-  are worse than an explicit failure. Add idempotency/deduplication before
-  adding retries.
-- Preserve provider message IDs, direction, provider/type metadata, timestamps,
-  and auditability.
-- The web dispatcher workspace polls stored messages; it does not directly poll
-  Hoppie.
+- Persist the logical outbound row as `pending` before provider I/O, then mark
+  it `accepted`, `rejected`, or `ambiguous`. A post-call uncertainty must remain
+  visible rather than becoming a generic retry error.
+- Never automatically retry an ambiguous send. The dispatcher checks the
+  conversation before composing another message.
+- Inbound polling runs per configured tenant through the authenticated cron and
+  suppresses repeated provider payloads only within the bounded fingerprint
+  window.
+- Preserve provider metadata, timestamps, privacy headers, and auditability.
+- Web ACARS is dispatcher/admin only. Pilots use the simulator client and their
+  personal Hoppie affiliation.
 
 When changing the provider adapter, test error mapping, malformed responses,
 recipient scoping, configuration failure, and the production mock hard-off.
@@ -309,11 +319,12 @@ Keep the standard JSON error envelope and request IDs. Do not expose raw SQL,
 provider errors, secrets, or stack traces. Pagination must use the shared
 helpers and deterministic ordering.
 
-The canonical schema is `apps/api/src/db/schema.ts`. Schema changes require a
-reviewable migration strategy and compatibility/rollout notes. There are no
-historical migrations currently checked into the repository, so do not imply
-that `db:push` is an adequate production migration history. Preserve foreign
-keys, tenant indexes, uniqueness constraints, and timestamp semantics.
+The canonical schema is `apps/api/src/db/schema.ts`. Every schema change requires
+an additive migration and regenerated snapshot after the immutable baseline.
+Run `pnpm db:check`, fresh migration, populated upgrade, and relevant real-
+PostgreSQL contracts. Never edit an applied migration or fold later schema into
+the baseline. Preserve foreign keys, tenant indexes, uniqueness constraints,
+and timestamp semantics.
 
 Audit security- and operations-relevant mutations. Audit rows should record
 the authenticated actor, tenant, action, entity, and useful non-secret metadata
@@ -362,9 +373,11 @@ legal pages, or third-party services.
 - Keep secure headers, CORS allowlists, secret masking, GitHub secret scanning,
   dependency review, and CodeQL protections intact.
 
-The repository documents privacy operations but does not automate every data
-subject or retention workflow. Do not claim automated deletion/export or a
-retention schedule unless the implementation and operating procedure exist.
+The privacy control plane automates approved retention runs, export, correction,
+restriction, objection, anonymization/erasure, holds, and external-provider
+tasks. It does not choose the operator's lawful basis or retention schedule,
+certify GDPR compliance, purge external backups by itself, or make the audit
+table tamper-evident. Keep those responsibilities explicit.
 
 ## Testing expectations
 
@@ -385,9 +398,13 @@ Minimum focused expectations:
 - Documentation-only change: formatting plus link/path and code-reference
   review.
 
-The Playwright suite uses deterministic route fixtures rather than a real
-Clerk/Neon/Hoppie stack. Describe it as browser workflow coverage, not full
-live-system end-to-end proof.
+The fast Playwright suite uses deterministic route fixtures and proves focused
+UI behavior. The separate integrated suite starts the real web and API against
+an explicitly confirmed disposable PostgreSQL database, deterministic local
+provider adapters, and a production-hard-off auth fixture. It contains one
+pilot and one dispatcher journey. Neither suite proves live Hoppie, Clerk,
+BotID, SimBrief, Navigraph, or production rewrites; those require deployed
+acceptance.
 
 The full local quality target is:
 
@@ -399,6 +416,7 @@ pnpm test:coverage
 pnpm security:audit
 pnpm build
 pnpm --filter @va-dispatch/web test:e2e
+pnpm --filter @va-dispatch/web test:e2e:integrated
 ```
 
 If a command cannot run because infrastructure, browsers, credentials, or

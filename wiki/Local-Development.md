@@ -67,13 +67,18 @@ Configure development-safe legal values as described in [Configuration Reference
 
 ### 3. Apply the schema
 
-The current repository has no checked-in migration history. Bootstrap the development database from `apps/api/src/db/schema.ts`:
+Create a disposable development database and apply the checked-in migration
+history:
 
 ```bash
-DATABASE_URL='postgresql://...' pnpm db:push
+DATABASE_URL='postgresql://...' \
+MIGRATION_CONFIRM_DATABASE='exact_database_name' \
+pnpm db:migrate
 ```
 
-Use only a disposable or explicitly authorized development database. Do not run `db:push` against a shared or production database from an automated coding session.
+Use `pnpm db:push` only for disposable schema exploration. Released or shared
+databases use reviewed migrations; exact pre-migration catalogs follow
+`docs/database-migrations.md` after backup and rehearsal.
 
 ### 4. Start both services
 
@@ -137,25 +142,28 @@ To test Hoppie deliberately, configure a development tenant ground station throu
 
 ## Useful commands
 
-| Command                                   | Purpose                                               |
-| ----------------------------------------- | ----------------------------------------------------- |
-| `pnpm dev`                                | Run API and web in parallel                           |
-| `pnpm dev:api`                            | Run Hono on port 3001                                 |
-| `pnpm dev:web`                            | Run Next.js on port 3000                              |
-| `pnpm typecheck`                          | Type-check all workspaces                             |
-| `pnpm lint`                               | Lint workspaces that expose a lint script             |
-| `pnpm format:check`                       | Check repository formatting                           |
-| `pnpm test`                               | Run unit and component tests                          |
-| `pnpm test:coverage`                      | Run configured full-source coverage gates             |
-| `pnpm build`                              | Build every workspace                                 |
-| `pnpm test:api`                           | Run API tests only                                    |
-| `pnpm test:web`                           | Run web tests only                                    |
-| `pnpm --filter @va-dispatch/web test:e2e` | Run Playwright smoke journeys                         |
-| `pnpm security:audit`                     | Reject high-severity dependency advisories            |
-| `pnpm db:push`                            | Reconcile schema directly; development/bootstrap only |
-| `pnpm db:generate`                        | Generate Drizzle migration artifacts                  |
-| `pnpm db:migrate`                         | Apply generated Drizzle migrations                    |
-| `pnpm db:studio`                          | Open Drizzle Studio                                   |
+| Command                                   | Purpose                                                |
+| ----------------------------------------- | ------------------------------------------------------ |
+| `pnpm dev`                                | Run API and web in parallel                            |
+| `pnpm dev:api`                            | Run Hono on port 3001                                  |
+| `pnpm dev:web`                            | Run Next.js on port 3000                               |
+| `pnpm typecheck`                          | Type-check all workspaces                              |
+| `pnpm lint`                               | Lint workspaces that expose a lint script              |
+| `pnpm format:check`                       | Check repository formatting                            |
+| `pnpm test`                               | Run unit and component tests                           |
+| `pnpm test:coverage`                      | Run configured full-source coverage gates              |
+| `pnpm build`                              | Build every workspace                                  |
+| `pnpm test:api`                           | Run API tests only                                     |
+| `pnpm test:web`                           | Run web tests only                                     |
+| `pnpm --filter @va-dispatch/web test:e2e` | Run Playwright smoke journeys                          |
+| `pnpm test:e2e:integrated`                | Run two real web/API/PostgreSQL journeys               |
+| `pnpm security:audit`                     | Reject high-severity dependency advisories             |
+| `pnpm db:check`                           | Verify migration snapshots and schema drift            |
+| `pnpm db:push`                            | Reconcile schema directly; disposable development only |
+| `pnpm db:generate`                        | Generate Drizzle migration artifacts                   |
+| `pnpm db:migrate`                         | Apply generated Drizzle migrations                     |
+| `pnpm db:adopt:pr29`                      | Guarded exact released-catalog adoption                |
+| `pnpm db:studio`                          | Open Drizzle Studio                                    |
 
 ## Playwright
 
@@ -171,7 +179,8 @@ Then run:
 pnpm --filter @va-dispatch/web test:e2e
 ```
 
-The browser suite starts its own Next.js development server on port 3100 by default and intercepts API calls with deterministic fixtures. It validates user journeys and frontend contracts; it is not a live Clerk/Neon/Hoppie end-to-end test.
+The fast suite starts Next.js on port 3100 and uses deterministic route fixtures.
+It validates focused user journeys and frontend contracts.
 
 Override the port or target an already-running test deployment when necessary:
 
@@ -179,6 +188,12 @@ Override the port or target an already-running test deployment when necessary:
 E2E_PORT=3200 pnpm --filter @va-dispatch/web test:e2e
 E2E_BASE_URL=https://preview.example.test pnpm --filter @va-dispatch/web test:e2e
 ```
+
+For real persistence through Next.js, Hono, repositories, and PostgreSQL, run
+the deliberately small integrated suite as documented in
+[`docs/integrated-e2e.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/docs/integrated-e2e.md).
+It requires an explicitly confirmed disposable database and blocks external
+provider traffic.
 
 ## Before editing Next.js code
 
@@ -189,5 +204,6 @@ This repository uses Next.js 16.3.0 and APIs may differ from older training mate
 - Use synthetic users, schedules, flights, messages, and screenshots.
 - Never commit `.env` files, Hoppie logons, Clerk keys, database URLs, cron secrets, or personal data.
 - Do not point tests at production services.
-- Do not enable `AUTH_DEV_BYPASS`, `E2E_AUTH_BYPASS`, or `NEXT_PUBLIC_E2E_AUTH_BYPASS` in production.
+- Do not enable `AUTH_DEV_BYPASS`, `E2E_FIXTURE_MODE`, or
+  `NEXT_PUBLIC_E2E_FIXTURE_MODE` in production; runtime validation rejects them.
 - Do not treat a passing fixture browser test as proof of live-provider integration.

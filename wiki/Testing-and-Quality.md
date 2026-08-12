@@ -4,13 +4,10 @@ VA Dispatch combines backend unit/route tests, frontend unit/component tests, de
 
 ## Test inventory
 
-At the reviewed baseline:
-
-- 15 API test files;
-- 24 web unit/component test files; and
-- 6 Playwright journeys in one browser suite.
-
-The count will change as the project grows; the important part is the layer and risk covered.
+The repository has four distinct evidence layers: API/web unit and component
+tests, real PostgreSQL contracts, a fast fixture browser suite, and a two-
+journey integrated browser suite. File and assertion counts change; the
+important part is naming the layer and risk actually covered.
 
 ## API tests
 
@@ -18,7 +15,7 @@ API tests use Vitest in a Node environment and cover:
 
 - Hoppie payload, response, error, timeout, callsign-lock, and poll parsing;
 - production/mock provider selection;
-- outbound storage only after provider acceptance;
+- pending/accepted/rejected/ambiguous ACARS outcomes and bounded inbound replay;
 - linked-flight validation before contacting Hoppie;
 - ACARS route authorization;
 - flight and schedule state transitions;
@@ -32,6 +29,11 @@ API tests use Vitest in a Node environment and cover:
 - security headers;
 - PostgreSQL unique-error recognition; and
 - OpenAPI route completeness, unique operation IDs, descriptions, and resolvable references.
+- schedule/flight versions, idempotency, races, rollback, and tenant-coherent constraints;
+- SimBrief revision/callback atomicity and trusted attribution;
+- simulator-device ownership, telemetry/OOOI provenance, pruning, and visibility;
+- admin reassignment, last-admin recovery, audit redaction/export; and
+- privacy dry-run/execute, holds, subject workflows, and external-task recovery.
 
 ## Web tests
 
@@ -43,27 +45,32 @@ Web tests use Vitest, jsdom, Testing Library, and a `server-only` test shim. The
 - unknown-tenant and role routing;
 - tenant-branded sign-in/sign-up;
 - schedule availability and UTC normalization;
-- exact-count offers;
+- partial/final idempotent offer batches and conflict recovery;
 - pilot decisions;
 - ACARS draft retention, setup gating, mock mode, and flight recipient selection;
 - member and organization settings;
 - strict legal configuration;
 - privacy preference parsing/storage;
 - consent UI and cross-tab behavior; and
-- per-event optional telemetry gating.
+- live simulator presence/OOOI displays and device controls;
+- SimBrief/Navigraph planning and callback recovery; and
+- member, audit, and privacy control planes.
 
 ## Browser journeys
 
-Playwright verifies:
+The fast Playwright suite uses deterministic route fixtures for focused UI
+behavior. The integrated suite contains exactly two journeys:
 
-1. public legal pages and privacy controls;
-2. pilot UTC schedule request and offer acceptance;
-3. dispatcher exact offer and flight advancement;
-4. dispatcher Hoppie send experience;
-5. development inbound ACARS simulation; and
-6. administrator Hoppie ground-station configuration.
+1. pilot sign-in, authorization denial, schedule/cancellation, flight
+   acceptance, release consumption, lifecycle completion, persistence, assets,
+   styles, and sign-out; and
+2. dispatcher fulfillment, release publication, deterministic
+   SimBrief/Navigraph, ACARS send/poll/storage, and cross-tenant denial.
 
-The suite uses deterministic route interception and a test-only identity fixture. It is a browser/user-journey suite, not a live Clerk, Neon, Vercel BotID, or Hoppie integration test.
+The integrated suite starts real Next.js and Hono processes and persists through
+repositories to a confirmed disposable PostgreSQL database. It blocks external
+provider traffic and uses a production-hard-off synthetic auth authority. It is
+not a live Clerk, BotID, Vercel rewrite, Hoppie, SimBrief, or Navigraph test.
 
 ## Coverage thresholds
 
@@ -89,6 +96,7 @@ pnpm test:coverage
 pnpm security:audit
 pnpm build
 pnpm --filter @va-dispatch/web test:e2e
+pnpm test:e2e:integrated
 ```
 
 Install Chromium once if needed:
@@ -101,18 +109,18 @@ Coverage reports go to `apps/api/coverage` and `apps/web/coverage`. Failed brows
 
 ## CI
 
-The `CI` workflow runs on pull requests, pushes to `main`, and manual dispatch:
+The `CI` workflow runs on pull requests, pushes to `main`, and manual dispatch.
+Its main jobs cover:
 
 1. checkout with persisted credentials disabled;
 2. pnpm setup;
 3. Node 24.15.0 with pnpm cache;
 4. frozen install;
-5. format, lint, and type checks;
-6. coverage tests;
-7. coverage artifact upload;
-8. build;
-9. Playwright Chromium install; and
-10. browser smoke tests with failure-report upload.
+5. fresh migration, released-schema adoption/upgrade, drift rejection, rollback,
+   and real PostgreSQL contracts;
+6. format, lint, type, coverage, security audit, and production build;
+7. fast browser workflows; and
+8. isolated PostgreSQL integrated E2E with failure-only artifacts.
 
 Concurrency cancels an older run for the same ref.
 
@@ -139,24 +147,25 @@ Do not perform broad dependency updates incidentally. Read release notes, check 
 
 ## What to test for common changes
 
-| Change               | Minimum focused evidence                                                        |
-| -------------------- | ------------------------------------------------------------------------------- |
-| New API resource     | validation, role denial, tenant isolation, happy path, serializer/OpenAPI       |
-| State transition     | allowed path, illegal jumps, actor ownership, UI action matrix                  |
-| Schema field         | repository, serializer, web schema, null/backfill behavior, rollout             |
-| Clerk/tenant logic   | signed out, wrong org, unknown tenant, role map, disabled membership            |
-| Hoppie behavior      | provider error class, no-secret error, no store on failure, manual retry UI     |
-| BotID policy         | matching client/server level and excluded routes                                |
-| Optional third party | pre-consent absence, accept, reject, withdrawal, version expiry, cross-tab      |
-| UI workflow          | loading, empty, error, mutation success/failure, accessibility, browser journey |
-| Legal copy/config    | strict production failure and rendered public pages                             |
+| Change               | Minimum focused evidence                                                         |
+| -------------------- | -------------------------------------------------------------------------------- |
+| New API resource     | validation, role denial, tenant isolation, happy path, serializer/OpenAPI        |
+| State transition     | allowed path, illegal jumps, actor ownership, UI action matrix                   |
+| Schema field         | repository, serializer, web schema, null/backfill behavior, rollout              |
+| Clerk/tenant logic   | signed out, wrong org, unknown tenant, role map, disabled membership             |
+| Hoppie behavior      | provider error class, no-secret error, explicit ambiguous outcome, no auto retry |
+| BotID policy         | matching client/server level and excluded routes                                 |
+| Optional third party | pre-consent absence, accept, reject, withdrawal, version expiry, cross-tab       |
+| UI workflow          | loading, empty, error, mutation success/failure, accessibility, browser journey  |
+| Legal copy/config    | strict production failure and rendered public pages                              |
 
 ## Evidence language
 
 Be precise in handoffs:
 
 - “unit tests passed” is not “live Hoppie verified”;
-- “fixture browser tests passed” is not “full-stack E2E passed”;
+- “fixture browser tests passed” is not “integrated E2E passed”;
+- “integrated E2E passed” is not “live providers or deployed routing passed”;
 - “build passed” is not “deployment succeeded”;
 - “health returned ok” is not “database query succeeded”; and
 - “Hoppie accepted” is not “pilot received.”
