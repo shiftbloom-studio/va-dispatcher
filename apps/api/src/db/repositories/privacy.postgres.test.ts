@@ -292,14 +292,18 @@ describePostgres("privacy lifecycle repository (PostgreSQL)", () => {
       currentCount: string;
       leaseCount: string;
       trackCount: string;
-    }>(`
+    }>(
+      `
       select tenant.id::text as "tenantId",
         (select count(*) from flight_telemetry_current current_state where current_state.tenant_id=tenant.id) as "currentCount",
         (select count(*) from flight_telemetry_leases lease where lease.tenant_id=tenant.id) as "leaseCount",
         (select count(*) from flight_telemetry_track track where track.tenant_id=tenant.id) as "trackCount"
       from tenants tenant
+      where tenant.id = any($1::uuid[])
       order by tenant.id
-    `);
+    `,
+      [[TENANT_ONE, TENANT_TWO]],
+    );
     expect(counts.rows).toEqual([
       {
         tenantId: TENANT_ONE,

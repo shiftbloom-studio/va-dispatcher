@@ -35,6 +35,18 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'flight_operational_events') THEN
     missing := array_append(missing, 'flight_operational_events');
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'simulator_devices') THEN
+    missing := array_append(missing, 'simulator_devices');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'flight_telemetry_current') THEN
+    missing := array_append(missing, 'flight_telemetry_current');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'privacy_subject_requests') THEN
+    missing := array_append(missing, 'privacy_subject_requests');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'schedule_fulfillment_attempts') THEN
+    missing := array_append(missing, 'schedule_fulfillment_attempts');
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'memberships' AND column_name = 'navigraph_subject'
@@ -48,6 +60,14 @@ BEGIN
       AND created_at = 1786547752000
   ) THEN
     missing := array_append(missing, 'exact drizzle baseline ledger record');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM drizzle.__drizzle_migrations
+    WHERE name = '20260812174040_dispatch_operations'
+      AND hash = '2f832f8c67d532017435efe3de4d6d06bbc7f904b1660e06ad4e00a568e8d4e1'
+      AND created_at = 1786556440000
+  ) THEN
+    missing := array_append(missing, 'exact dispatch operations ledger record');
   END IF;
 
   IF cardinality(missing) > 0 THEN

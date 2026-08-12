@@ -75,11 +75,13 @@ jobs:
             MIGRATION_CONFIRM_DATABASE=va_dispatch_adopt_pr29 \
             ADOPT_PR29_BASELINE=I_HAVE_A_VERIFIED_BACKUP \
             pnpm db:adopt:pr29
+          psql --dbname va_dispatch_adopt_pr29 --set ON_ERROR_STOP=1 --file apps/api/drizzle/test-fixtures/pr29-upgrade-data.sql
           psql --dbname va_dispatch_adopt_pr29 --tuples-only --no-align --file apps/api/drizzle/adoption/schema_signature.sql > /tmp/pr29-after-adoption.txt
           diff --unified /tmp/pr29-before-adoption.txt /tmp/pr29-after-adoption.txt
           DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_adopt_pr29 \
             MIGRATION_CONFIRM_DATABASE=va_dispatch_adopt_pr29 \
             pnpm db:migrate
+          test "$(psql --dbname va_dispatch_adopt_pr29 --tuples-only --no-align --command "SELECT (SELECT revision FROM simbrief_dispatches WHERE id = '31000000-0000-4000-8000-000000000041'), (SELECT revision FROM simbrief_dispatches WHERE id = '31000000-0000-4000-8000-000000000042'), (SELECT delivery_status FROM acars_messages WHERE id = '31000000-0000-4000-8000-000000000051'), (SELECT revision FROM simbrief_flight_heads WHERE flight_id = '31000000-0000-4000-8000-000000000021')")" = "1|2|accepted|2"
 
       - name: Upgrade post-PR14 and pre-PR14 released schemas
         run: |

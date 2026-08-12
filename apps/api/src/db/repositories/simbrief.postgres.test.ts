@@ -85,6 +85,10 @@ const baseSchemaSql = `
     off_at timestamptz,
     on_at timestamptz,
     in_at timestamptz,
+    out_manual_override boolean DEFAULT false NOT NULL,
+    off_manual_override boolean DEFAULT false NOT NULL,
+    on_manual_override boolean DEFAULT false NOT NULL,
+    in_manual_override boolean DEFAULT false NOT NULL,
     created_at timestamptz DEFAULT now() NOT NULL,
     updated_at timestamptz DEFAULT now() NOT NULL
   );
