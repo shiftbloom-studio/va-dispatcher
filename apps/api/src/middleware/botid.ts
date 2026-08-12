@@ -1,6 +1,7 @@
 import { checkBotId } from "botid/server";
 import type { MiddlewareHandler } from "hono";
 
+import { isE2eFixtureAuthorized } from "../lib/e2e-fixture.js";
 import type { AppVariables } from "./auth.js";
 
 export type BotIdCheckLevel = "basic" | "deepAnalysis";
@@ -41,6 +42,14 @@ export const requireHuman: MiddlewareHandler<{
 }> = async (c, next) => {
   const checkLevel = botIdCheckLevel(c.req.method, c.req.path);
   if (!checkLevel) {
+    await next();
+    return;
+  }
+
+  // Integrated E2E uses a dedicated, non-production authority and a browser
+  // request through the real API. It must not depend on Vercel's challenge
+  // service, but the ordinary dev-auth bypass alone never skips BotID.
+  if (isE2eFixtureAuthorized(c.req.header("X-E2E-Fixture-Token"))) {
     await next();
     return;
   }

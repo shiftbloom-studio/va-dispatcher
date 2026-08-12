@@ -11,7 +11,7 @@ export default defineConfig({
     coverage: {
       provider: "istanbul",
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts"],
+      exclude: ["src/**/*.test.ts", "src/e2e-server.ts"],
       reporter: ["text", "html", "lcov", "json-summary"],
       thresholds: {
         statements: 26,

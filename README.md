@@ -133,6 +133,7 @@ vercel deploy
 | `pnpm test:coverage`                      | Full-source tests and coverage    |
 | `pnpm security:audit`                     | High-severity dependency audit    |
 | `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests |
+| `pnpm test:e2e:integrated`                | Real web/API/PostgreSQL journeys  |
 | `pnpm db:generate`                        | Generate a reviewed migration     |
 | `pnpm db:check`                           | Check migration history and drift |
 | `pnpm db:migrate`                         | Apply confirmed migrations        |
@@ -143,6 +144,11 @@ vercel deploy
 Production databases use the versioned workflow in
 [`docs/database-migrations.md`](docs/database-migrations.md). `db:push` is for
 empty, disposable development databases only.
+
+The integrated browser suite requires a separately confirmed disposable
+PostgreSQL database. See
+[`docs/integrated-e2e.md`](docs/integrated-e2e.md) for its guarded local command,
+provider isolation, and deployed-browser acceptance checklist.
 
 ## Contributing
 

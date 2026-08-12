@@ -60,6 +60,12 @@ internalRoutes.on(
 
 internalRoutes.post(
   "/internal/seed/vsas",
+  async (c, next) => {
+    if (env().NODE_ENV === "production") {
+      throw new AppError("NOT_FOUND", "Route not found");
+    }
+    await next();
+  },
   zValidator(
     "json",
     z
@@ -71,12 +77,13 @@ internalRoutes.post(
       .optional(),
   ),
   async (c) => {
-    // Allow seed with cron secret or when AUTH_DEV_BYPASS
     const config = env();
+    // Local developer convenience only. Integrated E2E uses a separate,
+    // process-scoped authority that is never shared with the cron credential.
     const authorizationHeader = c.req.header("authorization");
     const isSeedAuthorized =
       authorizationHeader === `Bearer ${config.CRON_SECRET}` ||
-      (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production");
+      config.AUTH_DEV_BYPASS;
     if (!isSeedAuthorized) {
       throw new AppError("UNAUTHORIZED", "Seed not authorized");
     }

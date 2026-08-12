@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 
 import { getTenantAuthRoutes } from "@/lib/auth-routes";
+import { e2eFixtureEnabled } from "@/lib/e2e-fixture";
 
 export default async function TenantLayout({
   children,
@@ -12,9 +13,7 @@ export default async function TenantLayout({
 }) {
   const { slug } = await params;
   const authRoutes = getTenantAuthRoutes(slug);
-  const fixtureMode =
-    process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS === "true" &&
-    process.env.NODE_ENV !== "production";
+  const fixtureMode = e2eFixtureEnabled();
 
   return fixtureMode ? (
     children

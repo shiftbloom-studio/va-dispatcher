@@ -10,11 +10,13 @@ const brand = {
 
 const pilot = {
   id: "11111111-1111-4111-8111-111111111111",
+  clerkUserId: "user_e2e_pilot",
   role: "pilot",
   pilotCallsign: "SAS101",
   displayName: "Test Pilot",
   status: "active",
   createdAt: timestamp,
+  updatedAt: timestamp,
 };
 
 function flight(overrides: Record<string, unknown> = {}) {
@@ -182,7 +184,7 @@ async function baseFixtures(page: Page) {
     }),
   );
   await page.route("**/api/v1/members", (route) =>
-    json(route, { items: [pilot] }),
+    json(route, { items: [pilot], nextCursor: null }),
   );
   await page.route("**/api/v1/tenant", (route) =>
     json(route, {

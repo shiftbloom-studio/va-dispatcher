@@ -48,6 +48,11 @@ pnpm build
 pnpm --filter @va-dispatch/web test:e2e
 ```
 
+CI also runs the two real web/API/PostgreSQL journeys. To run them locally,
+create and explicitly confirm a disposable database by following
+[`docs/integrated-e2e.md`](docs/integrated-e2e.md); never reuse a shared
+database for this suite.
+
 Install the Playwright browser once before running browser tests locally:
 
 ```bash

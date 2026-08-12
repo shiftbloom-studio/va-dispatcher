@@ -90,4 +90,39 @@ describe("ACARS polling cron", () => {
     expect(unauthorized.status).toBe(401);
     expect(mocks.runPrivacyLifecycleCron).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps the developer seed route absent in production regardless of cron authority", async () => {
+    resetEnvCache();
+    loadEnv({
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://user:pass@localhost/va_dispatch",
+      CLERK_SECRET_KEY: "sk_test_configured",
+      TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
+      CRON_SECRET: "production-cron-secret",
+    });
+
+    const response = await app.request("/internal/seed/vsas", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer production-cron-secret",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ adminClerkUserId: "user_arbitrary_admin" }),
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "NOT_FOUND", message: "Route not found" },
+    });
+
+    const malformed = await app.request("/internal/seed/vsas", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer production-cron-secret",
+        "Content-Type": "application/json",
+      },
+      body: "{",
+    });
+    expect(malformed.status).toBe(404);
+  });
 });
