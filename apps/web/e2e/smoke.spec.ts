@@ -192,6 +192,41 @@ async function baseFixtures(page: Page) {
   );
 }
 
+async function flightFeatureFixtures(
+  page: Page,
+  telemetry: Record<string, unknown> = {
+    presence: "disconnected",
+    current: null,
+    track: [],
+    oooiEvents: [],
+  },
+) {
+  // Register these after broad `/flights/*` fixtures. Playwright resolves the
+  // most recently registered matching route first.
+  await page.route("**/api/v1/flights/*/simbrief/dispatches", (route) =>
+    json(route, { items: [] }),
+  );
+  await page.route("**/api/v1/simbrief/connection", (route) =>
+    json(route, {
+      connection: {
+        connected: false,
+        userId: null,
+        verified: false,
+        verifiedAt: null,
+        oauth: {
+          configured: false,
+          connected: false,
+          username: null,
+          connectedAt: null,
+        },
+      },
+    }),
+  );
+  await page.route("**/api/v1/flights/*/telemetry?*", (route) =>
+    json(route, telemetry),
+  );
+}
+
 async function continueWithoutAnalytics(page: Page) {
   const notice = page.getByRole("complementary", { name: "Cookie notice" });
   await expect(notice).toBeVisible();
@@ -294,6 +329,7 @@ test("pilot requests a UTC schedule and accepts an offer", async ({
   await page.route("**/api/v1/flights/*", (route) =>
     json(route, flightDetail(currentFlight)),
   );
+  await flightFeatureFixtures(page);
 
   await page.goto("/vsas/portal/schedule-requests/new");
   await continueWithoutAnalytics(page);
@@ -463,6 +499,7 @@ test("dispatcher builds the exact offer and advances a flight", async ({
   await page.route("**/api/v1/dispatch/board", (route) =>
     json(route, emptyBoard()),
   );
+  await flightFeatureFixtures(page);
 
   await page.goto(`/vsas/dispatch/requests/${currentRequest.id}`);
   await continueWithoutAnalytics(page);
@@ -700,6 +737,140 @@ test("dispatcher cancels a request while preserving its linked offers", async ({
 
   await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
   await expect(page.getByText("Offered", { exact: true })).toBeVisible();
+});
+
+test("dispatcher monitors MSFS telemetry and records an OOOI correction", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    { name: "e2e-role", value: "dispatcher", domain: "127.0.0.1", path: "/" },
+  ]);
+  let currentFlight = flight({
+    status: "active",
+    outAt: "2026-09-10T08:01:00.000Z",
+  });
+  const automaticEvent = {
+    id: "44444444-4444-4444-8444-444444444444",
+    eventType: "out",
+    occurredAt: "2026-09-10T08:01:00.000Z",
+    source: "telemetry",
+    actorMembershipId: null,
+    deviceId: "55555555-5555-4555-8555-555555555555",
+    reason: "Automatic simulator phase transition",
+    createdAt: "2026-09-10T08:01:00.000Z",
+  };
+  const liveTelemetry = {
+    presence: "online",
+    current: {
+      flightId: currentFlight.id,
+      membershipId: pilot.id,
+      phase: "taxi_out",
+      latitude: 55.618,
+      longitude: 12.656,
+      altitudeFeet: 24,
+      groundSpeedKnots: 17,
+      headingDegrees: 220,
+      simulatorTime: "2026-09-10T08:01:00.000Z",
+      sampleAt: "2026-09-10T08:01:02.000Z",
+      sequence: 42,
+    },
+    track: [],
+    oooiEvents: [automaticEvent],
+  };
+
+  await baseFixtures(page);
+  await page.route("**/api/v1/flights/*", (route) =>
+    json(route, { flight: currentFlight }),
+  );
+  await flightFeatureFixtures(page, liveTelemetry);
+  await page.route("**/api/v1/flights/*/oooi", async (route) => {
+    expect(route.request().method()).toBe("PATCH");
+    expect(route.request().postDataJSON()).toEqual({
+      outAt: "2026-09-10T08:05:00.000Z",
+      reason: "Gate release confirmed by dispatch",
+    });
+    currentFlight = flight({
+      status: "active",
+      outAt: "2026-09-10T08:05:00.000Z",
+    });
+    return json(route, {
+      flight: {
+        id: currentFlight.id,
+        outAt: currentFlight.outAt,
+        offAt: null,
+        onAt: null,
+        inAt: null,
+      },
+      oooiEvents: [
+        {
+          ...automaticEvent,
+          id: "66666666-6666-4666-8666-666666666666",
+          occurredAt: currentFlight.outAt,
+          source: "manual",
+          actorMembershipId: "dispatcher-membership",
+          deviceId: null,
+          reason: "Gate release confirmed by dispatch",
+          createdAt: "2026-09-10T08:05:02.000Z",
+        },
+      ],
+    });
+  });
+
+  await page.goto(`/vsas/dispatch/flights/${currentFlight.id}`);
+  await continueWithoutAnalytics(page);
+  await expect(
+    page.getByText("Simulator online", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("taxi out", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("out · telemetry", { exact: true }),
+  ).toBeVisible();
+
+  await page.getByLabel("OUT · off blocks").fill("2026-09-10T08:05");
+  await page
+    .getByLabel("Correction reason")
+    .fill("Gate release confirmed by dispatch");
+  await page.getByRole("button", { name: "Save OOOI correction" }).click();
+
+  await expect(
+    page.getByText("OOOI timestamps and provenance were updated."),
+  ).toBeVisible();
+});
+
+test("dispatcher telemetry workspace fails closed when the flight resource is denied", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    { name: "e2e-role", value: "dispatcher", domain: "127.0.0.1", path: "/" },
+  ]);
+  const currentFlight = flight({ status: "active" });
+  await baseFixtures(page);
+  await page.route("**/api/v1/flights/*", (route) =>
+    json(route, { flight: currentFlight }),
+  );
+  await flightFeatureFixtures(page);
+  await page.route("**/api/v1/flights/*/telemetry?*", (route) =>
+    json(
+      route,
+      {
+        error: {
+          code: "NOT_FOUND",
+          message: "Flight telemetry not found",
+        },
+      },
+      404,
+    ),
+  );
+
+  await page.goto(`/vsas/dispatch/flights/${currentFlight.id}`);
+  await continueWithoutAnalytics(page);
+
+  await expect(page.getByText("Flight telemetry not found")).toBeVisible();
+  await expect(page.getByText("Simulator online", { exact: true })).toHaveCount(
+    0,
+  );
 });
 
 test("dispatcher sends Hoppie ACARS", async ({ page, context }) => {

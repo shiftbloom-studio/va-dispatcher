@@ -74,6 +74,13 @@ describe("PilotFlightDetail decisions", () => {
             },
           },
         });
+      if (path === "/flights/flight-1/telemetry?trackLimit=0")
+        return Promise.resolve({
+          presence: "disconnected",
+          current: null,
+          track: [],
+          oooiEvents: [],
+        });
       if (path === "/flights/flight-1/decline") {
         currentFlight = {
           ...offeredFlight,

@@ -136,6 +136,7 @@ const clerkOrDevSecurity = [
 ];
 
 const cronSecurity = [{ cronBearerAuth: [] }];
+const simulatorDeviceSecurity = [{ simulatorDeviceBearerAuth: [] }];
 
 const schemas = {
   Uuid: {
@@ -241,6 +242,18 @@ const schemas = {
       presence: schemaRef("BrandPresence"),
       logoUrl: { type: "string", format: "uri", nullable: true },
     },
+  },
+  PresenceState: {
+    type: "string",
+    enum: ["online", "stale", "disconnected"],
+  },
+  TelemetryPhase: {
+    type: "string",
+    enum: ["preflight", "taxi_out", "airborne", "taxi_in", "parked"],
+  },
+  OooiEventType: {
+    type: "string",
+    enum: ["out", "off", "on", "in"],
   },
   ErrorCode: {
     type: "string",
@@ -888,6 +901,81 @@ const schemas = {
       generatedAt: schemaRef("NullableDateTime"),
     },
   },
+  SimulatorDevice: {
+    type: "object",
+    required: ["id", "name", "status", "lastSeenAt", "revokedAt", "createdAt"],
+    properties: {
+      id: schemaRef("Uuid"),
+      name: { type: "string", minLength: 1, maxLength: 80 },
+      status: { type: "string", enum: ["active", "revoked"] },
+      lastSeenAt: schemaRef("NullableDateTime"),
+      revokedAt: schemaRef("NullableDateTime"),
+      createdAt: schemaRef("DateTime"),
+    },
+  },
+  FlightTelemetry: {
+    type: "object",
+    required: [
+      "flightId",
+      "membershipId",
+      "phase",
+      "latitude",
+      "longitude",
+      "altitudeFeet",
+      "groundSpeedKnots",
+      "headingDegrees",
+      "simulatorTime",
+      "sampleAt",
+      "sequence",
+    ],
+    properties: {
+      flightId: schemaRef("Uuid"),
+      membershipId: schemaRef("Uuid"),
+      phase: schemaRef("TelemetryPhase"),
+      latitude: { type: "number", minimum: -90, maximum: 90 },
+      longitude: { type: "number", minimum: -180, maximum: 180 },
+      altitudeFeet: { type: "integer", minimum: -1500, maximum: 100000 },
+      groundSpeedKnots: { type: "integer", minimum: 0, maximum: 1500 },
+      headingDegrees: { type: "number", minimum: 0, exclusiveMaximum: 360 },
+      simulatorTime: schemaRef("DateTime"),
+      sampleAt: schemaRef("DateTime"),
+      sequence: { type: "integer", minimum: 1 },
+    },
+  },
+  OooiEvent: {
+    type: "object",
+    required: [
+      "id",
+      "eventType",
+      "occurredAt",
+      "source",
+      "actorMembershipId",
+      "deviceId",
+      "reason",
+      "createdAt",
+    ],
+    properties: {
+      id: schemaRef("Uuid"),
+      eventType: schemaRef("OooiEventType"),
+      occurredAt: schemaRef("NullableDateTime"),
+      source: { type: "string", enum: ["telemetry", "manual"] },
+      actorMembershipId: schemaRef("NullableUuid"),
+      deviceId: schemaRef("NullableUuid"),
+      reason: schemaRef("NullableString"),
+      createdAt: schemaRef("DateTime"),
+    },
+  },
+  FlightOooi: {
+    type: "object",
+    required: ["id", "outAt", "offAt", "onAt", "inAt"],
+    properties: {
+      id: schemaRef("Uuid"),
+      outAt: schemaRef("NullableDateTime"),
+      offAt: schemaRef("NullableDateTime"),
+      onAt: schemaRef("NullableDateTime"),
+      inAt: schemaRef("NullableDateTime"),
+    },
+  },
   UpdateProfileInput: {
     type: "object",
     minProperties: 1,
@@ -1233,6 +1321,54 @@ const schemas = {
       releaseRevision: { type: "integer", minimum: 1 },
     },
   },
+  CreateSimulatorDeviceInput: {
+    type: "object",
+    required: ["name"],
+    additionalProperties: false,
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 80 },
+    },
+  },
+  TelemetryIngestInput: {
+    type: "object",
+    required: [
+      "flightId",
+      "sequence",
+      "simulatorTime",
+      "phase",
+      "latitude",
+      "longitude",
+      "altitudeFeet",
+      "groundSpeedKnots",
+      "headingDegrees",
+    ],
+    additionalProperties: false,
+    properties: {
+      flightId: schemaRef("Uuid"),
+      sequence: { type: "integer", minimum: 1, maximum: 2147483647 },
+      simulatorTime: schemaRef("DateTime"),
+      phase: schemaRef("TelemetryPhase"),
+      latitude: { type: "number", minimum: -90, maximum: 90 },
+      longitude: { type: "number", minimum: -180, maximum: 180 },
+      altitudeFeet: { type: "integer", minimum: -1500, maximum: 100000 },
+      groundSpeedKnots: { type: "integer", minimum: 0, maximum: 1500 },
+      headingDegrees: { type: "number", minimum: 0, exclusiveMaximum: 360 },
+    },
+  },
+  OooiCorrectionInput: {
+    type: "object",
+    required: ["reason"],
+    additionalProperties: false,
+    description:
+      "Provide at least one OOOI field. A null value clears that timestamp; all resulting timestamps must remain chronological.",
+    properties: {
+      outAt: schemaRef("NullableDateTime"),
+      offAt: schemaRef("NullableDateTime"),
+      onAt: schemaRef("NullableDateTime"),
+      inAt: schemaRef("NullableDateTime"),
+      reason: { type: "string", minLength: 1, maxLength: 500 },
+    },
+  },
   SeedVsasInput: {
     type: "object",
     properties: {
@@ -1534,6 +1670,92 @@ const schemas = {
     required: ["dispatch"],
     properties: { dispatch: schemaRef("SimbriefCallbackDispatch") },
   },
+  SimulatorDeviceResponse: {
+    type: "object",
+    required: ["device"],
+    properties: { device: schemaRef("SimulatorDevice") },
+  },
+  SimulatorDeviceCreatedResponse: {
+    type: "object",
+    required: ["device", "token", "warning"],
+    properties: {
+      device: schemaRef("SimulatorDevice"),
+      token: {
+        type: "string",
+        writeOnly: true,
+        description:
+          "One-time simulator-device bearer token. Store it in the MSFS client; it cannot be recovered later.",
+      },
+      warning: { type: "string" },
+    },
+  },
+  SimulatorDeviceListResponse: {
+    type: "object",
+    required: ["items"],
+    properties: {
+      items: { type: "array", items: schemaRef("SimulatorDevice") },
+    },
+  },
+  TelemetryIngestResponse: {
+    type: "object",
+    required: [
+      "accepted",
+      "flightId",
+      "sequence",
+      "receivedAt",
+      "presence",
+      "oooiEvents",
+    ],
+    properties: {
+      accepted: { type: "boolean", enum: [true] },
+      flightId: schemaRef("Uuid"),
+      sequence: { type: "integer", minimum: 1 },
+      receivedAt: schemaRef("DateTime"),
+      presence: schemaRef("PresenceState"),
+      oooiEvents: { type: "array", items: schemaRef("OooiEvent") },
+    },
+  },
+  FlightTelemetryResponse: {
+    type: "object",
+    required: ["presence", "current", "track", "oooiEvents"],
+    properties: {
+      presence: schemaRef("PresenceState"),
+      current: {
+        allOf: [schemaRef("FlightTelemetry")],
+        nullable: true,
+      },
+      track: { type: "array", items: schemaRef("FlightTelemetry") },
+      oooiEvents: { type: "array", items: schemaRef("OooiEvent") },
+    },
+  },
+  DispatchTelemetryResponse: {
+    type: "object",
+    required: ["items", "generatedAt"],
+    properties: {
+      items: {
+        type: "array",
+        items: {
+          allOf: [
+            schemaRef("FlightTelemetry"),
+            {
+              type: "object",
+              required: ["presence"],
+              properties: { presence: schemaRef("PresenceState") },
+            },
+          ],
+        },
+      },
+      generatedAt: schemaRef("DateTime"),
+    },
+  },
+  OooiCorrectionResponse: {
+    type: "object",
+    required: ["flight", "oooiEvents"],
+    properties: {
+      flight: schemaRef("FlightOooi"),
+      oooiEvents: { type: "array", items: schemaRef("OooiEvent") },
+    },
+  },
   DispatchBoardResponse: {
     type: "object",
     required: ["flights", "metrics", "scheduleRequestCounts"],
@@ -1715,7 +1937,7 @@ export const openApiDocument = {
     title: "VA Dispatch API",
     version: "0.1.0",
     description:
-      "Multi-tenant REST API for Virtual Airline scheduling, live dispatch, flights, SimBrief flight planning, membership administration, and ACARS messaging. All tenant data is resolved from the authenticated Clerk organization; clients never supply a tenant ID.",
+      "Multi-tenant REST API for Virtual Airline scheduling, live dispatch, flights, SimBrief flight planning, simulator telemetry, membership administration, and ACARS messaging. All tenant data is resolved from authenticated Clerk membership or a scoped simulator-device credential; clients never supply a tenant ID.",
     license: {
       name: "AGPL-3.0-or-later",
       url: "https://www.gnu.org/licenses/agpl-3.0.html",
@@ -1763,6 +1985,11 @@ export const openApiDocument = {
       name: "SimBrief",
       description:
         "Navigraph account linking and tenant-scoped SimBrief flight-plan dispatches.",
+    },
+    {
+      name: "Telemetry",
+      description:
+        "Scoped simulator-device credentials, assigned-flight telemetry, presence, and auditable OOOI timestamps.",
     },
     { name: "Dispatch", description: "Dispatcher operational views." },
     { name: "ACARS", description: "Tenant-scoped ACARS messaging." },
@@ -2806,6 +3033,135 @@ export const openApiDocument = {
         },
       },
     },
+    "/telemetry/ingest": {
+      post: {
+        tags: ["Telemetry"],
+        operationId: "ingestSimulatorTelemetry",
+        summary: "Ingest one assigned-flight simulator sample",
+        description:
+          "Authenticates with a one-time-issued simulator-device token. Samples are sequence checked, rate limited, and accepted only for the device owner's assigned eligible flight. A short single-writer lease prevents multiple devices from racing one flight. Deterministic phase changes may atomically record OOOI timestamps and provenance.",
+        security: simulatorDeviceSecurity,
+        requestBody: jsonRequest(schemaRef("TelemetryIngestInput")),
+        responses: {
+          "200": jsonResponse(
+            "Accepted current state and any OOOI transition recorded by this sample.",
+            schemaRef("TelemetryIngestResponse"),
+          ),
+          "400": responseRef("BadRequest"),
+          "401": responseRef("Unauthorized"),
+          "404": responseRef("NotFound"),
+          "409": responseRef("Conflict"),
+          "429": responseRef("TooManyRequests"),
+          "500": responseRef("InternalError"),
+          "503": responseRef("ServiceUnavailable"),
+        },
+      },
+    },
+    "/telemetry/devices": {
+      get: {
+        tags: ["Telemetry"],
+        operationId: "listSimulatorDevices",
+        summary: "List the current member's simulator devices",
+        responses: {
+          "200": jsonResponse(
+            "Simulator devices without credential material.",
+            schemaRef("SimulatorDeviceListResponse"),
+          ),
+          ...authenticatedErrors,
+        },
+      },
+      post: {
+        tags: ["Telemetry"],
+        operationId: "createSimulatorDevice",
+        summary: "Create a simulator-device credential",
+        description:
+          "Creates a member-scoped device and returns its bearer token exactly once. The API stores only a keyed token verifier.",
+        requestBody: jsonRequest(schemaRef("CreateSimulatorDeviceInput")),
+        responses: {
+          "201": jsonResponse(
+            "Created device and one-time credential.",
+            schemaRef("SimulatorDeviceCreatedResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/telemetry/devices/{id}": {
+      delete: {
+        tags: ["Telemetry"],
+        operationId: "revokeSimulatorDevice",
+        summary: "Revoke one owned simulator device",
+        parameters: [pathParameter("id", "Simulator device ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Revoked device without credential material.",
+            schemaRef("SimulatorDeviceResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/flights/{id}/telemetry": {
+      get: {
+        tags: ["Telemetry"],
+        operationId: "getFlightTelemetry",
+        summary: "Get current presence, retained track, and OOOI provenance",
+        description:
+          "Assigned pilots can read their own flight. Dispatchers and admins can read tenant flights. The optional history is bounded; current presence is computed from the latest server receipt time.",
+        parameters: [
+          pathParameter("id", "Flight ID."),
+          queryParameter(
+            "trackLimit",
+            "Newest retained track samples to return. Use zero for current state only.",
+            { type: "integer", minimum: 0, maximum: 500, default: 100 },
+          ),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Current telemetry, bounded history, and OOOI provenance.",
+            schemaRef("FlightTelemetryResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/flights/{id}/oooi": {
+      patch: {
+        tags: ["Telemetry"],
+        operationId: "correctFlightOooi",
+        summary: "Correct or clear flight OOOI timestamps",
+        description:
+          "Requires the dispatcher role or higher. The timestamp changes, manual provenance events, and audit record are committed atomically after chronological validation.",
+        "x-required-role": "dispatcher",
+        parameters: [pathParameter("id", "Flight ID.")],
+        requestBody: jsonRequest(schemaRef("OooiCorrectionInput")),
+        responses: {
+          "200": jsonResponse(
+            "Corrected timestamps and full provenance history.",
+            schemaRef("OooiCorrectionResponse"),
+          ),
+          ...mutationErrors,
+          "422": responseRef("UnprocessableEntity"),
+        },
+      },
+    },
+    "/dispatch/telemetry": {
+      get: {
+        tags: ["Telemetry"],
+        operationId: "listDispatchTelemetry",
+        summary: "List tenant current telemetry for dispatcher monitoring",
+        description:
+          "Requires the dispatcher role or higher. Returns each retained current sample with a server-computed online, stale, or disconnected presence state.",
+        "x-required-role": "dispatcher",
+        responses: {
+          "200": jsonResponse(
+            "Tenant-scoped current telemetry snapshot.",
+            schemaRef("DispatchTelemetryResponse"),
+          ),
+          ...authenticatedErrors,
+        },
+      },
+    },
     "/flights/{id}/release": {
       post: {
         tags: ["Flights"],
@@ -3067,6 +3423,13 @@ export const openApiDocument = {
         type: "http",
         scheme: "bearer",
         description: "CRON_SECRET for internal deployment operations.",
+      },
+      simulatorDeviceBearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "VA-Dispatch-Simulator-Device",
+        description:
+          "Member-scoped simulator-device token returned once by POST /telemetry/devices. Tokens are revocable and never recoverable from the API.",
       },
     },
     schemas,

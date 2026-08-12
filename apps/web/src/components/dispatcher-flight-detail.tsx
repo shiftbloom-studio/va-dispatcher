@@ -25,6 +25,7 @@ import {
 } from "@/components/flight-planning-workspace";
 import { PageHeading } from "@/components/page-heading";
 import { SimbriefWorkspace } from "@/components/simbrief-workspace";
+import { FlightTelemetryStatus } from "@/components/flight-telemetry-status";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -276,6 +277,20 @@ export function DispatcherFlightDetail({
               />
             </>
           ) : null}
+          <FlightTelemetryStatus
+            slug={slug}
+            flightId={flightId}
+            mode="dispatcher"
+            initialOooi={{
+              outAt: currentFlight.outAt,
+              offAt: currentFlight.offAt,
+              onAt: currentFlight.onAt,
+              inAt: currentFlight.inAt,
+            }}
+            onOooiUpdated={() =>
+              refreshFlightData("OOOI timestamps refreshed from the server.")
+            }
+          />
         </div>
 
         <Card className="h-fit overflow-hidden">

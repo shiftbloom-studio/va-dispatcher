@@ -55,6 +55,21 @@ describe("personal account settings", () => {
         if (path === "/me" && !options.method) return Promise.resolve(me);
         if (path === "/simbrief/connection" && !options.method)
           return Promise.resolve(simbriefConnection);
+        if (path === "/telemetry/devices" && !options.method)
+          return Promise.resolve({ items: [] });
+        if (path === "/telemetry/devices" && options.method === "POST")
+          return Promise.resolve({
+            device: {
+              id: "device-1",
+              name: "Home cockpit",
+              status: "active",
+              lastSeenAt: null,
+              revokedAt: null,
+              createdAt: "2026-08-12T12:00:00.000Z",
+            },
+            token: "v1.device.one-time-token",
+            warning: "Copy this token now.",
+          });
         if (path === "/simbrief/connection" && options.method === "PUT") {
           const body = JSON.parse(options.body ?? "{}") as { userId: string };
           return Promise.resolve({
@@ -154,5 +169,30 @@ describe("personal account settings", () => {
         "Navigraph returned successfully. Your current connection status is shown below.",
       ),
     ).toBeVisible();
+  });
+
+  it("shows a simulator token exactly after creating a named device", async () => {
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AccountSettings slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.type(
+      await screen.findByLabelText("Device name"),
+      "Home cockpit",
+    );
+    await user.click(screen.getByRole("button", { name: "Create connection" }));
+
+    expect(await screen.findByText("v1.device.one-time-token")).toBeVisible();
+    const createCall = apiMock.mock.calls.find(
+      ([path, options]) =>
+        path === "/telemetry/devices" && options.method === "POST",
+    );
+    expect(JSON.parse(createCall?.[1].body ?? "{}")).toEqual({
+      name: "Home cockpit",
+    });
+    expect(screen.getByText(/precise aircraft position/i)).toBeVisible();
   });
 });

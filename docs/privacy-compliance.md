@@ -25,21 +25,59 @@ operating procedures for the actual deployment with qualified counsel.
 
 ## Data inventory in this application
 
-| System                | Personal or linkable data                                                                                                                                                                                                             |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clerk                 | User and organization identifiers, login identifier/email, name, authentication/session events, IP/device data                                                                                                                        |
-| `memberships`         | Clerk user ID, role, display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, status, timestamps                                                                      |
-| `schedule_requests`   | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                                                                                                 |
-| `flights`             | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                                                                                                |
-| OAuth transactions    | Short-lived random state lookup ID, encrypted PKCE verifier, member/tenant link, expiry and consumption times                                                                                                                         |
-| `simbrief_dispatches` | Flight/material snapshot and canonical revision, preparing dispatcher and generating pilot links, trusted dispatcher-name snapshot and remarks, SimBrief Pilot/static/request IDs, planning inputs, generated OFP, errors, timestamps |
-| `acars_messages`      | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                                                                                                         |
-| `audit_events`        | Actor, action, entity identifiers, metadata, timestamp                                                                                                                                                                                |
-| Infrastructure        | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                                                                                                           |
-| Vercel telemetry      | Consent-gated aggregated routes, referrers, coarse location/device categories and Web Vitals; essential BotID challenge and security signals                                                                                          |
+| System                | Personal or linkable data                                                                                                                                                                                                                     |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clerk                 | User and organization identifiers, login identifier/email, name, authentication/session events, IP/device data                                                                                                                                |
+| `memberships`         | Clerk user ID, role, display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, status, timestamps                                                                              |
+| `schedule_requests`   | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                                                                                                         |
+| `flights`             | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                                                                                                        |
+| OAuth transactions    | Short-lived random state lookup ID, encrypted PKCE verifier, member/tenant link, expiry and consumption times                                                                                                                                 |
+| `simbrief_dispatches` | Flight/material/release snapshot and canonical revision, preparing dispatcher and generating pilot links, trusted dispatcher-name snapshot and remarks, SimBrief Pilot/static/request IDs, planning inputs, generated OFP, errors, timestamps |
+| Simulator devices     | Tenant/member/device link, user-chosen device name, keyed token authenticator, revocation, sequence, and last-seen timestamps                                                                                                                 |
+| Flight telemetry      | Assigned flight/member/device link, precise latitude/longitude, altitude, speed, heading, simulator clock, phase, heartbeat, current position, and bounded track history                                                                      |
+| OOOI provenance       | Out/off/on/in value, automatic or manual source, correcting actor or simulator device, reason, and timestamp                                                                                                                                  |
+| `acars_messages`      | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                                                                                                                 |
+| `audit_events`        | Actor, action, entity identifiers, metadata, timestamp                                                                                                                                                                                        |
+| Infrastructure        | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                                                                                                                   |
+| Vercel telemetry      | Consent-gated aggregated routes, referrers, coarse location/device categories and Web Vitals; essential BotID challenge and security signals                                                                                                  |
 
 Free-text fields can contain personal data even when the schema does not ask
 for it. Train dispatchers and members not to enter sensitive or unrelated data.
+
+### MSFS 2024 telemetry decision
+
+The exact device pairing, trusted-time, deterministic OOOI, manual precedence,
+and retention behavior is specified in
+[`telemetry-and-oooi.md`](telemetry-and-oooi.md).
+
+Simulator telemetry is core operational processing only after a member chooses
+to create a device connection and configures its one-time token in an MSFS 2024
+client. The proposed legal basis is Article 6(1)(b) GDPR where telemetry is
+needed for the requested member service, otherwise Article 6(1)(f) GDPR for the
+Virtual Airline's legitimate interest in coordinating simulated operations.
+The controller must confirm that assessment and document any balancing test;
+this feature must not be presented as optional analytics consent.
+
+- Precision: the client sends exact coordinates plus altitude, speed, heading,
+  simulator time, phase, flight ID, sequence, and heartbeat. Dispatchers can
+  see current state; the assigned pilot can see their own flight state.
+- Retention: current state is replaced by each accepted sample. While a flight
+  reports, each accepted sample prunes its track to the newest 5,000 points and
+  physically removes points older than 24 hours; every track read also excludes
+  points outside that 24-hour window. Dormant expired rows, the current point,
+  device records, and OOOI provenance remain until the controller's recurring
+  operational/account deletion process or a valid deletion request applies.
+  Issue #27 owns the production retention job; this feature does not configure
+  or claim wall-clock physical deletion for disconnected tracks.
+- Transfers: the application does not send telemetry to a map or simulator
+  provider. It is processed by the configured Vercel and Neon infrastructure,
+  whose transfer safeguards apply. The user's simulator client is the source,
+  not an additional application processor.
+- Rights: data export and deletion procedures must include device records,
+  current telemetry, track points, and OOOI provenance. Revoking a device stops
+  future ingestion but does not silently erase required operational history.
+- Safety: simulator data may be delayed, inaccurate, replayed, disconnected, or
+  manually corrected. It is not a real-world aviation safety service.
 
 ## Processor and transfer controls
 

@@ -15,7 +15,8 @@ const TOKEN_MAC_SALT = Buffer.from("va-dispatch:token-mac:v1", "utf8");
 const OPAQUE_TOKEN_KEY_LENGTH_BYTES = 32;
 const OPAQUE_TOKEN_SALT = Buffer.from("va-dispatch:opaque-token:v1", "utf8");
 
-export type TokenMacPurpose = "simbrief-dispatch-callback";
+export type TokenMacPurpose =
+  "simbrief-dispatch-callback" | "simulator-device-token";
 export type OpaqueTokenPurpose = "navigraph-oauth-state";
 
 function decodeEncryptionKey(encodedKey: string | undefined): Buffer {

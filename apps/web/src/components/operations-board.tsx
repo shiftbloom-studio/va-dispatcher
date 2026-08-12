@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
   CheckCheck,
@@ -21,6 +22,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiErrorMessage } from "@/lib/api/http";
 import {
   dispatchBoardSchema,
+  dispatchTelemetrySchema,
   membersSchema,
   type BoardFlight,
   type Member,
@@ -185,6 +187,12 @@ export function OperationsBoard({ slug }: { slug: string }) {
     queryFn: () => api("/members", { schema: membersSchema }),
     staleTime: 60_000,
   });
+  const telemetry = useQuery({
+    queryKey: [slug, "dispatch", "telemetry"],
+    queryFn: () =>
+      api("/dispatch/telemetry", { schema: dispatchTelemetrySchema }),
+    refetchInterval: 10_000,
+  });
 
   if (board.isPending || members.isPending) {
     return <LoadingState label="Loading live operations board" />;
@@ -311,7 +319,6 @@ export function OperationsBoard({ slug }: { slug: string }) {
           );
         })}
       </div>
-
       {selectedFlightId ? (
         <FlightPlanningDialog
           key={selectedFlightId}
@@ -321,6 +328,80 @@ export function OperationsBoard({ slug }: { slug: string }) {
           onClose={() => setSelectedFlightId(null)}
         />
       ) : null}
+
+      <section className="mt-8" aria-labelledby="live-telemetry-heading">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2
+              id="live-telemetry-heading"
+              className="font-display text-xl font-semibold text-slate-950"
+            >
+              Simulator monitoring
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Precise MSFS 2024 position and heartbeat data. Operational
+              awareness only; not a real-world safety service.
+            </p>
+          </div>
+          <Activity aria-hidden className="size-6 text-slate-500" />
+        </div>
+        {telemetry.isPending ? (
+          <LoadingState label="Loading live simulator telemetry" />
+        ) : telemetry.isError ? (
+          <ErrorState
+            message={apiErrorMessage(telemetry.error)}
+            onRetry={() => void telemetry.refetch()}
+          />
+        ) : telemetry.data.items.length ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {telemetry.data.items.map((item) => {
+              const boardFlight = board.data.flights.find(
+                (flight) => flight.id === item.flightId,
+              );
+              const member = memberMap.get(item.membershipId);
+              return (
+                <Link
+                  key={item.flightId}
+                  href={`/${slug}/dispatch/flights/${item.flightId}`}
+                  className="rounded-xl border border-slate-200 bg-white p-4 hover:border-slate-300 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-slate-950">
+                      {boardFlight?.flightNumber || "Assigned flight"}
+                    </p>
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                      <span
+                        aria-hidden
+                        className={`size-2 rounded-full ${
+                          item.presence === "online"
+                            ? "bg-emerald-500"
+                            : item.presence === "stale"
+                              ? "bg-amber-500"
+                              : "bg-slate-400"
+                        }`}
+                      />
+                      {item.presence}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {memberLabel(member)} · {item.phase.replace("_", " ")}
+                  </p>
+                  <p className="mt-3 font-mono text-xs text-slate-700">
+                    {item.latitude.toFixed(3)}, {item.longitude.toFixed(3)} ·{" "}
+                    {item.altitudeFeet.toLocaleString()} ft ·{" "}
+                    {item.groundSpeedKnots} kt
+                  </p>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            title="No simulator heartbeats"
+            detail="Assigned pilots appear here after an authenticated MSFS 2024 client reports telemetry."
+          />
+        )}
+      </section>
     </>
   );
 }

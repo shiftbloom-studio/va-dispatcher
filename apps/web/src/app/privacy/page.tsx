@@ -63,7 +63,9 @@ export default async function PrivacyPage() {
           operational data handled through them. Data comes from you, Virtual
           Airline administrators and dispatchers, the configured authentication
           provider, and—when live ACARS is enabled—participating Hoppie&apos;s
-          ACARS stations.
+          ACARS stations. When you create a simulator connection, data also
+          comes from the MSFS 2024 client you configure with its one-time device
+          token.
         </p>
         <p>
           The service is multi-tenant. Membership and operational records are
@@ -88,6 +90,12 @@ export default async function PrivacyPage() {
               "Build and coordinate requested virtual flight schedules and keep an operational history",
               "Article 6(1)(b) GDPR where needed for the member service; otherwise Article 6(1)(f) GDPR (coordinate Virtual Airline operations)",
               "While required for the member service and operational history; then deleted or anonymized unless obligations or claims require longer retention",
+            ],
+            [
+              "Simulator device name and revocation state; assigned flight and device links; exact latitude/longitude, altitude, speed, heading, simulator time, phase and heartbeat; automatic or corrected OOOI provenance",
+              "Show the assigned pilot's simulator connection, give dispatch current simulated-flight awareness, keep a short operational track, and derive auditable Out/Off/On/In events",
+              "Article 6(1)(b) GDPR where needed for the requested member service; otherwise Article 6(1)(f) GDPR (coordinate voluntary Virtual Airline simulator operations). Creating and configuring a device is voluntary and is not optional analytics consent",
+              "Current position is replaced by each sample. While reporting, accepted samples prune track history to the newest 5,000 points and physically remove points older than 24 hours; track views exclude every older sample. Dormant rows, device records, and OOOI records follow the approved recurring account and operational-history deletion process or a valid rights request",
             ],
             [
               "Hoppie's ACARS station identifiers, virtual message text, direction, provider metadata, and timestamps",
@@ -122,6 +130,12 @@ export default async function PrivacyPage() {
           Authorized Virtual Airline members receive only the information their
           operational role permits. The following providers process data to run
           the service:
+        </p>
+        <p>
+          MSFS telemetry is sent from the simulator client directly to this
+          application and is not forwarded to an external map or simulator
+          provider. Vercel and Neon process it as hosting and database providers
+          under the safeguards described below.
         </p>
         <ul className="list-disc space-y-3 pl-6">
           <li>
@@ -269,6 +283,12 @@ export default async function PrivacyPage() {
           . We may need to verify your identity before disclosing or changing
           account data.
         </p>
+        <p>
+          An access, portability, correction, or erasure request also covers
+          simulator devices, current telemetry, retained track points, and OOOI
+          provenance where the applicable conditions permit. Revoking a device
+          stops future samples but does not by itself erase operational history.
+        </p>
       </LegalSection>
 
       <LegalSection title="8. Complaints">
@@ -298,6 +318,9 @@ export default async function PrivacyPage() {
           decision with legal or similarly significant effects is made. BotID
           automatically classifies protected requests for abuse prevention as
           described above; it is not used for marketing or member evaluation.
+          Simulator telemetry may be delayed, inaccurate, stale, or manually
+          corrected and is provided only for simulated Virtual Airline
+          awareness, never real-world aviation safety.
         </p>
       </LegalSection>
 
