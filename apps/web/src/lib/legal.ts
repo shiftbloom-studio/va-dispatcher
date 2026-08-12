@@ -1,4 +1,4 @@
-export const LEGAL_NOTICE_VERSION = "2026-08-12";
+export const LEGAL_NOTICE_VERSION = "2026-08-12.2";
 export const LEGAL_NOTICE_LAST_UPDATED = "12 August 2026";
 
 type Environment = Record<string, string | undefined>;
@@ -7,6 +7,7 @@ export type LegalConfig = {
   configured: boolean;
   missingEnvironmentVariables: string[];
   operatorName: string;
+  operatorDescription: string | null;
   addressLines: string[];
   email: string;
   privacyEmail: string;
@@ -51,6 +52,10 @@ function addressLines(value: string | null): string[] {
     .split("|")
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+export function toTelephoneUri(phone: string): string {
+  return `tel:${phone.replace(/\(\s*0\s*\)/g, "").replace(/[^+\d]/g, "")}`;
 }
 
 function hasRequiredValue(
@@ -157,6 +162,7 @@ export function loadLegalConfig(
     configured: missingEnvironmentVariables.length === 0,
     missingEnvironmentVariables,
     operatorName: requiredValue(source, "LEGAL_OPERATOR_NAME"),
+    operatorDescription: optionalValue(source, "LEGAL_OPERATOR_DESCRIPTION"),
     addressLines: addressLines(requiredValue(source, "LEGAL_OPERATOR_ADDRESS")),
     email,
     privacyEmail,

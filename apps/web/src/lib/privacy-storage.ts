@@ -1,16 +1,20 @@
 import { LEGAL_NOTICE_VERSION } from "@/lib/legal";
 
-export const COOKIE_NOTICE_STORAGE_KEY = "va-dispatch.cookie-notice";
+export const PRIVACY_PREFERENCES_STORAGE_KEY =
+  "va-dispatch.privacy-preferences";
 export const OPEN_COOKIE_SETTINGS_EVENT = "va-dispatch:open-cookie-settings";
+export const PRIVACY_PREFERENCES_CHANGED_EVENT =
+  "va-dispatch:privacy-preferences-changed";
 
-export type CookieNoticeRecord = {
+export type PrivacyPreferencesRecord = {
   version: string;
-  acknowledgedAt: string;
+  decidedAt: string;
+  analyticsAllowed: boolean;
 };
 
-export function parseCookieNoticeRecord(
+export function parsePrivacyPreferencesRecord(
   raw: string | null,
-): CookieNoticeRecord | null {
+): PrivacyPreferencesRecord | null {
   if (!raw) return null;
 
   try {
@@ -19,53 +23,62 @@ export function parseCookieNoticeRecord(
       typeof candidate !== "object" ||
       candidate === null ||
       !("version" in candidate) ||
-      !("acknowledgedAt" in candidate) ||
+      !("decidedAt" in candidate) ||
+      !("analyticsAllowed" in candidate) ||
       candidate.version !== LEGAL_NOTICE_VERSION ||
-      typeof candidate.acknowledgedAt !== "string" ||
-      Number.isNaN(Date.parse(candidate.acknowledgedAt))
+      typeof candidate.decidedAt !== "string" ||
+      Number.isNaN(Date.parse(candidate.decidedAt)) ||
+      typeof candidate.analyticsAllowed !== "boolean"
     ) {
       return null;
     }
     return {
       version: candidate.version,
-      acknowledgedAt: candidate.acknowledgedAt,
+      decidedAt: candidate.decidedAt,
+      analyticsAllowed: candidate.analyticsAllowed,
     };
   } catch {
     return null;
   }
 }
 
-export function readCookieNotice(
+export function readPrivacyPreferences(
   storage: Pick<Storage, "getItem">,
-): CookieNoticeRecord | null {
+): PrivacyPreferencesRecord | null {
   try {
-    return parseCookieNoticeRecord(storage.getItem(COOKIE_NOTICE_STORAGE_KEY));
+    return parsePrivacyPreferencesRecord(
+      storage.getItem(PRIVACY_PREFERENCES_STORAGE_KEY),
+    );
   } catch {
     return null;
   }
 }
 
-export function saveCookieNotice(
+export function savePrivacyPreferences(
   storage: Pick<Storage, "setItem">,
+  analyticsAllowed: boolean,
   now: Date = new Date(),
-): CookieNoticeRecord {
+): PrivacyPreferencesRecord {
   const record = {
     version: LEGAL_NOTICE_VERSION,
-    acknowledgedAt: now.toISOString(),
+    decidedAt: now.toISOString(),
+    analyticsAllowed,
   };
   try {
-    storage.setItem(COOKIE_NOTICE_STORAGE_KEY, JSON.stringify(record));
+    storage.setItem(PRIVACY_PREFERENCES_STORAGE_KEY, JSON.stringify(record));
   } catch {
     // Storage can be unavailable in hardened/private browser modes. The current
-    // page still dismisses the notice without blocking access to the service.
+    // page still applies the choice without blocking access to the service.
   }
   return record;
 }
 
-export function clearCookieNotice(storage: Pick<Storage, "removeItem">): void {
+export function clearPrivacyPreferences(
+  storage: Pick<Storage, "removeItem">,
+): void {
   try {
-    storage.removeItem(COOKIE_NOTICE_STORAGE_KEY);
+    storage.removeItem(PRIVACY_PREFERENCES_STORAGE_KEY);
   } catch {
-    // See saveCookieNotice: privacy controls must remain usable without storage.
+    // See savePrivacyPreferences: controls must remain usable without storage.
   }
 }

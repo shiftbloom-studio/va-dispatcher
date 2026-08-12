@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 
 import { LegalPageShell, LegalSection } from "@/components/legal-page-shell";
-import { loadLegalConfig } from "@/lib/legal";
+import { loadLegalConfig, toTelephoneUri } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Impressum",
@@ -16,12 +16,18 @@ export default async function ImpressumPage() {
   return (
     <LegalPageShell
       title="Impressum"
-      description="Provider information for this digital service pursuant to Section 5 of the German Digital Services Act (DDG)."
+      description="Provider identification for this digital service under Section 5 DDG and, where applicable, Section 18 MStV."
       config={config}
     >
       <LegalSection title="Service provider">
         <address className="not-italic">
           <strong className="text-slate-950">{config.operatorName}</strong>
+          {config.operatorDescription ? (
+            <>
+              <br />
+              <span>{config.operatorDescription}</span>
+            </>
+          ) : null}
           <br />
           {config.addressLines.map((line) => (
             <span key={line}>
@@ -51,7 +57,7 @@ export default async function ImpressumPage() {
               <br />
               Phone:{" "}
               <a
-                href={`tel:${config.phone.replace(/[^+\d]/g, "")}`}
+                href={toTelephoneUri(config.phone)}
                 className="font-semibold text-slate-950 underline underline-offset-4"
               >
                 {config.phone}
@@ -102,9 +108,10 @@ export default async function ImpressumPage() {
 
       <LegalSection title="Service scope">
         <p>
-          vSAS Live Operations is a virtual-airline scheduling, dispatch, and
-          simulated ACARS service. It does not provide real-world aviation,
-          airline, or air-traffic-control services.
+          vSAS Live Operations is an open-source virtual-airline scheduling and
+          dispatch service that exchanges virtual operational messages through
+          Hoppie&apos;s ACARS. It is solely for flight simulation and does not
+          provide real-world aviation, airline, or air-traffic-control services.
         </p>
       </LegalSection>
     </LegalPageShell>

@@ -1,6 +1,7 @@
 import { Children, isValidElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
+import { OptionalTelemetry } from "@/components/optional-telemetry";
 import { PrivacyControls } from "@/components/privacy-controls";
 
 import RootLayout from "./layout";
@@ -23,6 +24,11 @@ describe("root layout", () => {
     expect(
       Children.toArray(body.props.children).some(
         (child) => isValidElement(child) && child.type === PrivacyControls,
+      ),
+    ).toBe(true);
+    expect(
+      Children.toArray(body.props.children).some(
+        (child) => isValidElement(child) && child.type === OptionalTelemetry,
       ),
     ).toBe(true);
   });
