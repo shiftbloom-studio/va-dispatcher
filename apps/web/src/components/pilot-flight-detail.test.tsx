@@ -173,4 +173,20 @@ describe("PilotFlightDetail decisions", () => {
     ).toBeInTheDocument();
     await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2));
   });
+
+  it("surfaces SimBrief callback recovery on the flight workspace", async () => {
+    render(
+      <TestQueryProvider>
+        <PilotFlightDetail
+          slug="vsas"
+          flightId="flight-1"
+          simbriefRecovery="ready"
+        />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText(/SimBrief returned successfully/i),
+    ).toBeVisible();
+  });
 });

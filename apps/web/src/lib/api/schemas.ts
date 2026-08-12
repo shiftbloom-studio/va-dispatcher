@@ -277,6 +277,7 @@ export const simbriefDispatchSchema = z.object({
   dispatcherRemarks: z.string().nullable(),
   staticId: z.string(),
   status: z.enum(["prepared", "pending", "ready"]),
+  revision: z.number().int().positive(),
   request: z.record(z.string(), z.string()),
   ofp: z.record(z.string(), z.unknown()).nullable(),
   simbriefRequestId: z.string().nullable(),

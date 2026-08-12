@@ -142,4 +142,17 @@ describe("personal account settings", () => {
     ).toBeInTheDocument();
     expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
   });
+  it("surfaces Navigraph callback recovery after returning to settings", async () => {
+    render(
+      <TestQueryProvider>
+        <AccountSettings slug="vsas" simbriefRecovery="navigraph-connected" />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        "Navigraph returned successfully. Your current connection status is shown below.",
+      ),
+    ).toBeVisible();
+  });
 });

@@ -486,7 +486,14 @@ export const simbriefDispatches = pgTable(
     simbriefUserId: text("simbrief_user_id"),
     staticId: text("static_id").notNull(),
     callbackTokenMac: text("callback_token_mac"),
+    callbackExpiresAt: timestamp("callback_expires_at", {
+      withTimezone: true,
+    }),
     status: simbriefDispatchStatusEnum("status").notNull().default("pending"),
+    revision: integer("revision").notNull(),
+    flightSnapshot: jsonb("flight_snapshot")
+      .$type<Record<string, string | null>>()
+      .notNull(),
     request: jsonb("request")
       .$type<Record<string, string>>()
       .notNull()
@@ -504,6 +511,58 @@ export const simbriefDispatches = pgTable(
       t.tenantId,
       t.flightId,
       t.createdAt,
+    ),
+    uniqueIndex("simbrief_dispatches_tenant_flight_revision_uidx").on(
+      t.tenantId,
+      t.flightId,
+      t.revision,
+    ),
+    foreignKey({
+      columns: [t.tenantId, t.flightId],
+      foreignColumns: [flights.tenantId, flights.id],
+      name: "simbrief_dispatches_tenant_flight_fk",
+    }).onDelete("cascade"),
+    check(
+      "simbrief_dispatches_flight_snapshot_object_check",
+      sql`jsonb_typeof(${t.flightSnapshot}) = 'object'`,
+    ),
+    check(
+      "simbrief_dispatches_positive_revision_check",
+      sql`${t.revision} > 0`,
+    ),
+    check(
+      "simbrief_dispatches_callback_lifecycle_check",
+      sql`${t.callbackTokenMac} IS NULL OR (${t.status} = 'pending' AND ${t.callbackExpiresAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/** Linearization point for canonical SimBrief revision prepare/generate races. */
+export const simbriefFlightHeads = pgTable(
+  "simbrief_flight_heads",
+  {
+    flightId: uuid("flight_id")
+      .primaryKey()
+      .references(() => flights.id, { onDelete: "cascade" }),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("simbrief_flight_heads_tenant_flight_uidx").on(
+      t.tenantId,
+      t.flightId,
+    ),
+    foreignKey({
+      columns: [t.tenantId, t.flightId],
+      foreignColumns: [flights.tenantId, flights.id],
+      name: "simbrief_flight_heads_tenant_flight_fk",
+    }).onDelete("cascade"),
+    check(
+      "simbrief_flight_heads_positive_revision_check",
+      sql`${t.revision} > 0`,
     ),
   ],
 );
@@ -650,6 +709,7 @@ export type SimbriefDispatch = typeof simbriefDispatches.$inferSelect;
 export type DispatchRelease = typeof dispatchReleases.$inferSelect;
 export type FlightOperationalEvent =
   typeof flightOperationalEvents.$inferSelect;
+export type SimbriefFlightHead = typeof simbriefFlightHeads.$inferSelect;
 export type AcarsMessage = typeof acarsMessages.$inferSelect;
 export type MemberRole = (typeof memberRoleEnum.enumValues)[number];
 export type FlightStatus = (typeof flightStatusEnum.enumValues)[number];

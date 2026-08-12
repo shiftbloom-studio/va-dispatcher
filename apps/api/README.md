@@ -136,9 +136,11 @@ Before enabling the integration:
 3. Set `SIMBRIEF_CALLBACK_URL` to the separate flight-plan completion callback,
    `https://www.va-dispatcher.world/api/v1/simbrief/callback` in production.
 4. Apply the reviewed database migrations with `pnpm db:migrate` after setting
-   `MIGRATION_CONFIRM_DATABASE` to the exact target database name.
+   `MIGRATION_CONFIRM_DATABASE` to the exact target database name. The SimBrief
+   migration invalidates legacy callback MACs that have no immutable expiry;
+   authenticated manual sync remains available for those unfinished plans.
 
-The authenticated API flow is:
+Members connect a numeric Pilot ID separately from optional Navigraph OAuth:
 
 ```http
 PUT /api/v1/simbrief/connection
@@ -150,6 +152,9 @@ Content-Type: application/json
 `userId` is the numeric SimBrief Pilot ID, not the username. The connection is
 marked verified only after SimBrief returns a matching OFP for a dispatch the
 member authenticated in the SimBrief window.
+
+The dispatcher then stores a canonical preparation without contacting
+SimBrief:
 
 ```http
 POST /api/v1/flights/{flightId}/simbrief/dispatches
@@ -163,18 +168,35 @@ Content-Type: application/json
 }
 ```
 
-The response contains a `dispatchUrl`. A future UI should open it in a new
-browser window immediately. The assigned pilot may create a plan for their own
-flight; dispatchers and admins may create one for any flight in their tenant.
-The person opening the URL must be signed into the same SimBrief Pilot ID they
-connected to this API.
+The server derives the preparing dispatcher name from the active authenticated
+membership, keeps remarks separate, snapshots the flight assignment and
+material route/schedule/aircraft fields, and atomically advances a per-flight
+revision head with the preparation audit. This operation has no provider side
+effect and returns a `prepared` revision, not a generation URL.
+
+Only the assigned active pilot can launch the canonical newest revision:
+
+```http
+POST /api/v1/flights/{flightId}/simbrief/dispatches/{dispatchId}/generate
+```
+
+That atomic transition rechecks pilot ownership, account linkage, the material
+flight snapshot, and the revision head. Obsolete or stale revisions return
+`409 CONFLICT`. A successful response contains `dispatchUrl`; the pilot opens
+it in the existing flight workspace and authenticates directly with SimBrief.
+The callback lifetime is fixed at two hours from this transition. Sync errors
+may update diagnostic timestamps but cannot extend that expiry.
 
 After generation, SimBrief redirects to the one-time callback. That callback
 fetches the OFP by the generated `static_id`, verifies its SimBrief user ID and
-origin/destination, stores it, and consumes the callback token. Consumers can
-read the latest state and full JSON OFP with:
+origin/destination, and atomically stores the ready OFP, consumes the callback
+MAC, verifies the pilot link, and records the ready audit. Preparation,
+generation, and ready-state audits roll back with their associated mutations
+if audit insertion fails. Consumers can read newest-first immutable revision
+history or the latest state and full JSON OFP with:
 
 ```http
+GET /api/v1/flights/{flightId}/simbrief/dispatches
 GET /api/v1/flights/{flightId}/simbrief
 ```
 
@@ -185,9 +207,16 @@ can retry the fetch idempotently:
 POST /api/v1/flights/{flightId}/simbrief/dispatches/{dispatchId}/sync
 ```
 
-SimBrief's JSON can include `plan_html`. Treat it as untrusted third-party HTML
-and sanitize it before any future UI renders it. The API returns operational
-JSON only and does not add a SimBrief UI in this change.
+The web flight workspace shows callback recovery, revision attribution and
+remarks, synchronization errors, and the imported OFP as escaped JSON. SimBrief
+can include `plan_html`; it remains untrusted third-party HTML and must be
+sanitized before any future rich rendering.
+
+Audit-integrity boundary: the dispatch lifecycle mutations above are atomic
+with their audit evidence. Manual SimBrief account connect/disconnect and
+Navigraph account-link mutations still update membership state before writing
+their audit row; do not describe account-link auditing as transactionally
+atomic until that separate repository boundary is implemented.
 
 ## ACARS
 

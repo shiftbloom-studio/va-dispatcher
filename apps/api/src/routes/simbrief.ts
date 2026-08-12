@@ -281,6 +281,7 @@ function serializeDispatch(dispatch: SimbriefDispatch) {
     dispatcherRemarks: dispatcherRemarks ?? null,
     staticId: dispatch.staticId,
     status: dispatch.status,
+    revision: dispatch.revision,
     request,
     ofp: dispatch.ofp,
     simbriefRequestId: dispatch.simbriefRequestId,

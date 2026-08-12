@@ -142,7 +142,6 @@ export function SimbriefWorkspace({
         {latest ? (
           <Revision
             dispatch={latest}
-            revision={revisions.length}
             mode={mode}
             canGenerate={isConnected && latest.status === "prepared"}
             busy={generate.isPending || sync.isPending}
@@ -178,11 +177,10 @@ export function SimbriefWorkspace({
               Earlier planning revisions ({revisions.length - 1})
             </summary>
             <div className="mt-4 space-y-3">
-              {revisions.slice(1).map((dispatch, index) => (
+              {revisions.slice(1).map((dispatch) => (
                 <Revision
                   key={dispatch.id}
                   dispatch={dispatch}
-                  revision={revisions.length - index - 1}
                   mode={mode}
                   canGenerate={false}
                   busy={false}
@@ -322,7 +320,6 @@ function PreparationForm({
 
 function Revision({
   dispatch,
-  revision,
   mode,
   canGenerate,
   busy,
@@ -331,7 +328,6 @@ function Revision({
   compact = false,
 }: {
   dispatch: SimbriefDispatch;
-  revision: number;
   mode: "pilot" | "dispatcher";
   canGenerate: boolean;
   busy: boolean;
@@ -344,7 +340,7 @@ function Revision({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-semibold text-slate-950">
-            Revision {revision} · {dispatch.status}
+            Revision {dispatch.revision} · {dispatch.status}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             Prepared by {dispatch.dispatcherName} ·{" "}
