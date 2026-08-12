@@ -5,14 +5,13 @@ const mocks = vi.hoisted(() => ({
   findFlight: vi.fn(),
   findMembershipById: vi.fn(),
   updateMembership: vi.fn(),
-  markSimbriefVerified: vi.fn(),
-  createSimbriefDispatch: vi.fn(),
-  startSimbriefDispatch: vi.fn(),
+  createSimbriefDispatchAtomic: vi.fn(),
+  startSimbriefDispatchAtomic: vi.fn(),
   listSimbriefDispatches: vi.fn(),
   findSimbriefDispatch: vi.fn(),
   findLatestSimbriefDispatch: vi.fn(),
   findSimbriefDispatchForCallback: vi.fn(),
-  completeSimbriefDispatch: vi.fn(),
+  completeSimbriefDispatchAtomic: vi.fn(),
   recordSimbriefSyncError: vi.fn(),
   writeAudit: vi.fn(),
   buildDispatchUrl: vi.fn(),
@@ -25,16 +24,15 @@ vi.mock("../../db/repositories/flights.js", () => ({
 vi.mock("../../db/repositories/memberships.js", () => ({
   findMembershipById: mocks.findMembershipById,
   updateMembership: mocks.updateMembership,
-  markSimbriefVerified: mocks.markSimbriefVerified,
 }));
 vi.mock("../../db/repositories/simbrief.js", () => ({
-  createSimbriefDispatch: mocks.createSimbriefDispatch,
-  startSimbriefDispatch: mocks.startSimbriefDispatch,
+  createSimbriefDispatchAtomic: mocks.createSimbriefDispatchAtomic,
+  startSimbriefDispatchAtomic: mocks.startSimbriefDispatchAtomic,
   listSimbriefDispatches: mocks.listSimbriefDispatches,
   findSimbriefDispatch: mocks.findSimbriefDispatch,
   findLatestSimbriefDispatch: mocks.findLatestSimbriefDispatch,
   findSimbriefDispatchForCallback: mocks.findSimbriefDispatchForCallback,
-  completeSimbriefDispatch: mocks.completeSimbriefDispatch,
+  completeSimbriefDispatchAtomic: mocks.completeSimbriefDispatchAtomic,
   recordSimbriefSyncError: mocks.recordSimbriefSyncError,
 }));
 vi.mock("../../db/repositories/audit.js", () => ({
@@ -120,7 +118,18 @@ function preparedDispatch(
     simbriefUserId: null,
     staticId: "VAD_40000000000040008000000000000001",
     callbackTokenMac: null,
+    callbackExpiresAt: null,
     status: "prepared",
+    revision: 1,
+    flightSnapshot: {
+      pilotMembershipId: flight.pilotMembershipId!,
+      flightNumber: flight.flightNumber,
+      depIcao: flight.depIcao,
+      arrIcao: flight.arrIcao,
+      etd: flight.etd.toISOString(),
+      eta: flight.eta.toISOString(),
+      aircraftType: flight.aircraftType,
+    },
     request: {
       orig: "EKCH",
       dest: "KSFO",
@@ -158,7 +167,7 @@ describe("SimBrief dispatch service", () => {
     mocks.buildDispatchUrl.mockReturnValue(
       "https://www.simbrief.com/ofp/ofp.loader.api.php?signed=1",
     );
-    mocks.createSimbriefDispatch.mockImplementation(
+    mocks.createSimbriefDispatchAtomic.mockImplementation(
       async (input: Parameters<typeof preparedDispatch>[0]) =>
         preparedDispatch(input),
     );
@@ -181,14 +190,21 @@ describe("SimBrief dispatch service", () => {
     );
 
     expect(result.status).toBe("prepared");
-    expect(mocks.createSimbriefDispatch).toHaveBeenCalledWith(
+    expect(mocks.createSimbriefDispatchAtomic).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: membership.tenantId,
         flightId: flight.id,
         createdByMembershipId: membership.id,
-        simbriefUserId: null,
-        callbackTokenMac: null,
-        status: "prepared",
+        preparedAt: now,
+        flightSnapshot: {
+          pilotMembershipId: membership.id,
+          flightNumber: "SK935",
+          depIcao: "EKCH",
+          arrIcao: "KSFO",
+          etd: "2026-08-13T10:05:00.000Z",
+          eta: "2026-08-13T21:35:00.000Z",
+          aircraftType: "A359",
+        },
         request: expect.objectContaining({
           orig: "EKCH",
           dest: "KSFO",
@@ -213,15 +229,22 @@ describe("SimBrief dispatch service", () => {
   it("lets only the assigned pilot launch a prepared plan in their account", async () => {
     const prepared = preparedDispatch();
     mocks.findSimbriefDispatch.mockResolvedValue(prepared);
-    mocks.startSimbriefDispatch.mockImplementation(async (input) =>
-      preparedDispatch({
+    mocks.startSimbriefDispatchAtomic.mockImplementation(async (input) => ({
+      status: "started",
+      latestId: prepared.id,
+      dispatch: preparedDispatch({
         status: "pending",
         generatedByMembershipId: input.generatedByMembershipId,
         simbriefUserId: input.simbriefUserId,
         callbackTokenMac: input.callbackTokenMac,
-        request: input.request,
+        callbackExpiresAt: input.callbackExpiresAt,
+        request: {
+          ...prepared.request,
+          userid: input.simbriefUserId,
+          pid: input.simbriefUserId,
+        },
       }),
-    );
+    }));
 
     const result = await generateDispatch(
       {
@@ -234,13 +257,19 @@ describe("SimBrief dispatch service", () => {
     );
 
     expect(result.dispatchUrl).toContain("signed=1");
-    expect(mocks.startSimbriefDispatch).toHaveBeenCalledWith(
+    expect(mocks.startSimbriefDispatchAtomic).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: membership.tenantId,
         flightId: flight.id,
         generatedByMembershipId: membership.id,
         simbriefUserId: "123456",
-        request: expect.objectContaining({
+        startedAt: now,
+        callbackExpiresAt: new Date("2026-08-12T14:00:00.000Z"),
+      }),
+    );
+    expect(mocks.buildDispatchUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parameters: expect.objectContaining({
           userid: "123456",
           pid: "123456",
           dxname: "Test Pilot",
@@ -273,7 +302,7 @@ describe("SimBrief dispatch service", () => {
         prepared.id,
       ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(mocks.startSimbriefDispatch).not.toHaveBeenCalled();
+    expect(mocks.startSimbriefDispatchAtomic).not.toHaveBeenCalled();
   });
 
   it("requires the assigned pilot to connect a SimBrief Pilot ID", async () => {
@@ -337,6 +366,7 @@ describe("SimBrief dispatch service", () => {
         Buffer.alloc(32, 7).toString("base64"),
         "simbrief-dispatch-callback",
       ),
+      callbackExpiresAt: new Date("2026-08-12T14:00:00.000Z"),
     });
     mocks.findSimbriefDispatchForCallback.mockResolvedValue(generated);
     const ofp = { params: { request_id: "request_123" } };
@@ -354,16 +384,20 @@ describe("SimBrief dispatch service", () => {
       generatedAt: now,
       syncedAt: now,
     });
-    mocks.completeSimbriefDispatch.mockResolvedValue(ready);
+    mocks.completeSimbriefDispatchAtomic.mockResolvedValue(ready);
 
     await expect(
       completeDispatchCallback(generated.id, callbackToken),
     ).resolves.toEqual(ready);
-    expect(mocks.markSimbriefVerified).toHaveBeenCalledWith({
+    expect(mocks.completeSimbriefDispatchAtomic).toHaveBeenCalledWith({
+      id: generated.id,
       tenantId: membership.tenantId,
-      membershipId: membership.id,
+      flightId: flight.id,
       simbriefUserId: "123456",
-      verifiedAt: now,
+      ofp,
+      simbriefRequestId: "request_123",
+      generatedAt: now,
+      syncedAt: now,
     });
   });
 
@@ -372,11 +406,86 @@ describe("SimBrief dispatch service", () => {
       status: "pending",
       simbriefUserId: "123456",
       callbackTokenMac: "a".repeat(43),
+      callbackExpiresAt: new Date("2026-08-12T14:00:00.000Z"),
     });
     mocks.findSimbriefDispatchForCallback.mockResolvedValue(generated);
 
     await expect(
       completeDispatchCallback(generated.id, generated.callbackTokenMac!),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(mocks.fetchFlightPlan).not.toHaveBeenCalled();
+  });
+
+  it("rejects an obsolete prepared revision with the latest canonical id", async () => {
+    const prepared = preparedDispatch();
+    const latestId = "40000000-0000-4000-8000-000000000099";
+    mocks.findSimbriefDispatch.mockResolvedValue(prepared);
+    mocks.startSimbriefDispatchAtomic.mockResolvedValue({
+      status: "superseded",
+      latestId,
+      dispatch: null,
+    });
+
+    await expect(
+      generateDispatch(
+        {
+          tenantId: membership.tenantId,
+          membershipId: membership.id,
+          role: "pilot",
+        },
+        flight.id,
+        prepared.id,
+      ),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { latestDispatchId: latestId },
+    });
+  });
+
+  it("rejects a prepared plan after material flight details change", async () => {
+    const prepared = preparedDispatch();
+    mocks.findSimbriefDispatch.mockResolvedValue(prepared);
+    mocks.startSimbriefDispatchAtomic.mockResolvedValue({
+      status: "stale",
+      latestId: prepared.id,
+      dispatch: null,
+    });
+
+    await expect(
+      generateDispatch(
+        {
+          tenantId: membership.tenantId,
+          membershipId: membership.id,
+          role: "pilot",
+        },
+        flight.id,
+        prepared.id,
+      ),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { latestDispatchId: prepared.id },
+    });
+  });
+
+  it("does not extend callback validity when a sync error refreshes updatedAt", async () => {
+    const callbackToken = "callback-token";
+    const { createTokenMac } = await import("../../lib/crypto.js");
+    const generated = preparedDispatch({
+      status: "pending",
+      simbriefUserId: "123456",
+      callbackTokenMac: createTokenMac(
+        callbackToken,
+        Buffer.alloc(32, 7).toString("base64"),
+        "simbrief-dispatch-callback",
+      ),
+      callbackExpiresAt: now,
+      updatedAt: new Date("2026-08-12T12:00:00.000Z"),
+      lastError: "OFP was not ready yet",
+    });
+    mocks.findSimbriefDispatchForCallback.mockResolvedValue(generated);
+
+    await expect(
+      completeDispatchCallback(generated.id, callbackToken),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     expect(mocks.fetchFlightPlan).not.toHaveBeenCalled();
   });

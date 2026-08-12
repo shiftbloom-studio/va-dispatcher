@@ -3,7 +3,6 @@ import { writeAudit } from "../../db/repositories/audit.js";
 import { findFlight } from "../../db/repositories/flights.js";
 import {
   findMembershipById,
-  markSimbriefVerified,
   updateMembership,
 } from "../../db/repositories/memberships.js";
 import * as simbriefRepo from "../../db/repositories/simbrief.js";
@@ -132,29 +131,23 @@ export async function prepareDispatch(
     dispatcherName,
   );
 
-  const dispatch = await simbriefRepo.createSimbriefDispatch({
+  const preparedAt = new Date();
+  const dispatch = await simbriefRepo.createSimbriefDispatchAtomic({
     id,
     tenantId: actor.tenantId,
     flightId: flight.id,
     createdByMembershipId: actor.membershipId,
-    simbriefUserId: null,
     staticId,
-    callbackTokenMac: null,
     request: parameters,
-    status: "prepared",
+    flightSnapshot: snapshotFlight(flight),
+    preparedAt,
   });
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
-    action: "simbrief.dispatch_prepare",
-    entityType: "simbrief_dispatch",
-    entityId: dispatch.id,
-    meta: {
-      flightId: flight.id,
-      staticId,
-      hasRemarks: Boolean(options.customRemarks),
-    },
-  });
+  if (!dispatch) {
+    throw new AppError(
+      "CONFLICT",
+      "The flight changed while this planning revision was being prepared. Reload and prepare it again.",
+    );
+  }
   return dispatch;
 }
 
@@ -217,7 +210,8 @@ export async function generateDispatch(
     );
   }
 
-  const dispatch = await simbriefRepo.startSimbriefDispatch({
+  const startedAt = new Date();
+  const start = await simbriefRepo.startSimbriefDispatchAtomic({
     id: prepared.id,
     tenantId: actor.tenantId,
     flightId,
@@ -228,27 +222,30 @@ export async function generateDispatch(
       config.secretsKey,
       "simbrief-dispatch-callback",
     ),
-    request: parameters,
+    callbackExpiresAt: new Date(startedAt.getTime() + CALLBACK_MAX_AGE_MS),
+    startedAt,
   });
-  if (!dispatch) {
+  if (start.status === "superseded") {
+    throw new AppError(
+      "CONFLICT",
+      "A newer SimBrief planning revision is available. Reload before generating.",
+      { details: { latestDispatchId: start.latestId } },
+    );
+  }
+  if (start.status === "stale") {
+    throw new AppError(
+      "CONFLICT",
+      "The flight assignment or material planning details changed. Dispatch must prepare a new revision.",
+      { details: { latestDispatchId: start.latestId } },
+    );
+  }
+  if (start.status === "unavailable" || !start.dispatch) {
     throw new AppError(
       "CONFLICT",
       "This SimBrief preparation was launched from another session",
     );
   }
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
-    action: "simbrief.dispatch_generate",
-    entityType: "simbrief_dispatch",
-    entityId: dispatch.id,
-    meta: {
-      flightId: flight.id,
-      staticId: prepared.staticId,
-      preparedByMembershipId: prepared.createdByMembershipId,
-    },
-  });
-  return { dispatch, dispatchUrl };
+  return { dispatch: start.dispatch, dispatchUrl };
 }
 
 export async function listDispatches(
@@ -312,7 +309,8 @@ export async function completeDispatchCallback(
     await simbriefRepo.findSimbriefDispatchForCallback(dispatchId);
   if (
     !dispatch?.callbackTokenMac ||
-    Date.now() - dispatch.updatedAt.getTime() > CALLBACK_MAX_AGE_MS ||
+    !dispatch.callbackExpiresAt ||
+    Date.now() >= dispatch.callbackExpiresAt.getTime() ||
     !verifyTokenMac(
       callbackToken,
       dispatch.callbackTokenMac,
@@ -359,8 +357,11 @@ async function syncStoredDispatch(
   }
 
   const syncedAt = new Date();
-  const completed = await simbriefRepo.completeSimbriefDispatch({
+  const completed = await simbriefRepo.completeSimbriefDispatchAtomic({
     id: dispatch.id,
+    tenantId: dispatch.tenantId,
+    flightId: dispatch.flightId,
+    simbriefUserId: dispatch.simbriefUserId,
     ofp: result.ofp,
     simbriefRequestId: result.requestId,
     generatedAt: result.generatedAt,
@@ -374,26 +375,22 @@ async function syncStoredDispatch(
     throw new AppError("NOT_FOUND", "SimBrief dispatch not found");
   }
 
-  if (dispatch.generatedByMembershipId) {
-    await markSimbriefVerified({
-      tenantId: dispatch.tenantId,
-      membershipId: dispatch.generatedByMembershipId,
-      simbriefUserId: dispatch.simbriefUserId,
-      verifiedAt: syncedAt,
-    });
-  }
-  await writeAudit({
-    tenantId: dispatch.tenantId,
-    actorMembershipId: dispatch.generatedByMembershipId,
-    action: "simbrief.dispatch_ready",
-    entityType: "simbrief_dispatch",
-    entityId: dispatch.id,
-    meta: {
-      flightId: dispatch.flightId,
-      simbriefRequestId: result.requestId,
-    },
-  });
   return completed;
+}
+
+function snapshotFlight(flight: Flight): simbriefRepo.SimbriefFlightSnapshot {
+  if (!flight.pilotMembershipId) {
+    throw new AppError("UNPROCESSABLE", "Assign a pilot before dispatching");
+  }
+  return {
+    pilotMembershipId: flight.pilotMembershipId,
+    flightNumber: flight.flightNumber,
+    depIcao: flight.depIcao,
+    arrIcao: flight.arrIcao,
+    etd: flight.etd.toISOString(),
+    eta: flight.eta.toISOString(),
+    aircraftType: flight.aircraftType,
+  };
 }
 
 function dispatchParameters(

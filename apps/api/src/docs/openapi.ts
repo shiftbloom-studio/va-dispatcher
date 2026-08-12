@@ -802,6 +802,7 @@ const schemas = {
       "dispatcherRemarks",
       "staticId",
       "status",
+      "revision",
       "request",
       "ofp",
       "simbriefRequestId",
@@ -824,6 +825,12 @@ const schemas = {
       dispatcherRemarks: schemaRef("NullableString"),
       staticId: { type: "string", example: "VAD_0123456789abcdef" },
       status: schemaRef("SimbriefDispatchStatus"),
+      revision: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "Immutable per-flight planning revision. Only the canonical highest revision can be launched.",
+      },
       request: {
         type: "object",
         additionalProperties: { type: "string" },
@@ -2704,7 +2711,7 @@ export const openApiDocument = {
         operationId: "prepareSimbriefDispatch",
         summary: "Save a dispatcher planning revision",
         description:
-          "Dispatchers and admins save canonical planning inputs without using a personal SimBrief account. Dispatcher attribution is derived and snapshotted from authenticated server context; dispatcherName is not accepted from the client.",
+          "Dispatchers and admins atomically advance and save the canonical planning revision without using a personal SimBrief account. Dispatcher attribution is derived and snapshotted from active authenticated server context; dispatcherName is not accepted from the client.",
         parameters: [pathParameter("flightId", "Flight ID.")],
         requestBody: optionalJsonRequest(
           schemaRef("CreateSimbriefDispatchInput"),
@@ -2726,7 +2733,7 @@ export const openApiDocument = {
         operationId: "generatePreparedSimbriefDispatch",
         summary: "Launch a prepared plan in the assigned pilot's account",
         description:
-          "Only the assigned pilot may attach their connected numeric Pilot ID and receive the signed SimBrief Dispatch Redirect URL. Hoppie, Navigraph, or SimBrief provider traffic is never proxied through a browser API client.",
+          "Only the assigned pilot may attach their connected numeric Pilot ID and receive the signed SimBrief Dispatch Redirect URL. The API atomically rejects obsolete revisions and revisions whose assignment, route, schedule, or aircraft snapshot no longer matches the flight. Hoppie, Navigraph, or SimBrief provider traffic is never proxied through a browser API client.",
         parameters: [
           pathParameter("flightId", "Flight ID."),
           pathParameter("dispatchId", "Prepared SimBrief revision ID."),

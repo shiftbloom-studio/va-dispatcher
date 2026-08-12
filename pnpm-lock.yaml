@@ -46,7 +46,7 @@ importers:
         version: 1.5.11(next@16.3.0(@babel/core@7.29.7(supports-color@7.2.0))(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
       drizzle-orm:
         specifier: 1.0.0-rc.4
-        version: 1.0.0-rc.4(@neondatabase/serverless@1.1.0)(@types/pg@8.21.0)(pg@8.23.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@neondatabase/serverless@1.1.0)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.7)(zod@4.4.3)
       hono:
         specifier: 4.13.1
         version: 4.13.1
@@ -66,6 +66,9 @@ importers:
       pg:
         specifier: 8.23.0
         version: 8.23.0
+      postgres:
+        specifier: 3.4.7
+        version: 3.4.7
       tsx:
         specifier: 4.23.12
         version: 4.23.12
@@ -3238,6 +3241,10 @@ packages:
     resolution: {integrity: sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==}
     engines: {node: '>=0.10.0'}
 
+  postgres@3.4.7:
+    resolution: {integrity: sha512-Jtc2612XINuBjIl/QTWsV5UvE8UHuNblcO3vVADSrKsrc6RqGX6lOW1cEo3CM2v0XG4Nat8nI+YM7/f26VxXLw==}
+    engines: {node: '>=12'}
+
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
@@ -5215,11 +5222,12 @@ snapshots:
       get-tsconfig: 4.14.1
       jiti: 2.7.0
 
-  drizzle-orm@1.0.0-rc.4(@neondatabase/serverless@1.1.0)(@types/pg@8.21.0)(pg@8.23.0)(zod@4.4.3):
+  drizzle-orm@1.0.0-rc.4(@neondatabase/serverless@1.1.0)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.7)(zod@4.4.3):
     optionalDependencies:
       '@neondatabase/serverless': 1.1.0
       '@types/pg': 8.21.0
       pg: 8.23.0
+      postgres: 3.4.7
       zod: 4.4.3
 
   dunder-proto@1.0.1:
@@ -6421,6 +6429,8 @@ snapshots:
   postgres-interval@1.2.0:
     dependencies:
       xtend: 4.0.2
+
+  postgres@3.4.7: {}
 
   prelude-ls@1.2.1: {}
 
