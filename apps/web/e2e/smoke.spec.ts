@@ -98,6 +98,40 @@ async function baseFixtures(page: Page) {
   );
 }
 
+test("public legal pages expose necessary-storage controls", async ({
+  page,
+}) => {
+  await page.goto("/privacy");
+  await expect(
+    page.getByRole("heading", { name: "Privacy Notice", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Example Aviation e.V.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('script[src*="clerk"]')).toHaveCount(0);
+
+  const notice = page.getByRole("complementary", { name: "Cookie notice" });
+  await expect(notice).toBeVisible();
+  await page.getByRole("button", { name: "Details" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByText("Always active", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Acknowledge notice" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(notice).toBeHidden();
+
+  await page.reload();
+  await expect(notice).toBeHidden();
+  await page.getByRole("button", { name: "Cookie settings" }).click();
+  await page.getByRole("button", { name: "Show notice again" }).click();
+  await expect(notice).toBeVisible();
+
+  await page.goto("/imprint");
+  await expect(page).toHaveURL(/\/impressum$/);
+  await expect(
+    page.getByRole("heading", { name: "Impressum", exact: true }),
+  ).toBeVisible();
+});
+
 test("pilot requests a UTC schedule and accepts an offer", async ({
   page,
   context,
