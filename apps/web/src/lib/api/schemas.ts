@@ -301,6 +301,84 @@ export const simbriefDispatchListSchema = z.object({
   items: z.array(simbriefDispatchSchema),
 });
 
+export const simulatorDeviceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(["active", "revoked"]),
+  lastSeenAt: z.string().nullable(),
+  revokedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type SimulatorDevice = z.infer<typeof simulatorDeviceSchema>;
+export const simulatorDeviceListSchema = z.object({
+  items: z.array(simulatorDeviceSchema),
+});
+export const simulatorDeviceResponseSchema = z.object({
+  device: simulatorDeviceSchema,
+});
+export const simulatorDeviceCreatedSchema =
+  simulatorDeviceResponseSchema.extend({
+    token: z.string(),
+    warning: z.string(),
+  });
+
+export const presenceSchema = z.enum(["online", "stale", "disconnected"]);
+export type Presence = z.infer<typeof presenceSchema>;
+export const telemetryPhaseSchema = z.enum([
+  "preflight",
+  "taxi_out",
+  "airborne",
+  "taxi_in",
+  "parked",
+]);
+export const flightTelemetrySchema = z.object({
+  flightId: z.string(),
+  membershipId: z.string(),
+  phase: telemetryPhaseSchema,
+  latitude: z.number(),
+  longitude: z.number(),
+  altitudeFeet: z.number(),
+  groundSpeedKnots: z.number(),
+  headingDegrees: z.number(),
+  simulatorTime: z.string(),
+  sampleAt: z.string(),
+  sequence: z.number(),
+});
+export type FlightTelemetry = z.infer<typeof flightTelemetrySchema>;
+export const oooiEventSchema = z.object({
+  id: z.string(),
+  eventType: z.enum(["out", "off", "on", "in"]),
+  occurredAt: z.string().nullable(),
+  source: z.enum(["telemetry", "manual"]),
+  actorMembershipId: z.string().nullable(),
+  deviceId: z.string().nullable(),
+  reason: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type OooiEvent = z.infer<typeof oooiEventSchema>;
+export const flightOooiSchema = z.object({
+  id: z.string(),
+  outAt: z.string().nullable(),
+  offAt: z.string().nullable(),
+  onAt: z.string().nullable(),
+  inAt: z.string().nullable(),
+});
+export type FlightOooi = z.infer<typeof flightOooiSchema>;
+export const oooiCorrectionResponseSchema = z.object({
+  flight: flightOooiSchema,
+  oooiEvents: z.array(oooiEventSchema),
+});
+export const flightTelemetryResponseSchema = z.object({
+  presence: presenceSchema,
+  current: flightTelemetrySchema.nullable(),
+  track: z.array(flightTelemetrySchema),
+  oooiEvents: z.array(oooiEventSchema),
+});
+export const dispatchTelemetrySchema = z.object({
+  items: z.array(flightTelemetrySchema.extend({ presence: presenceSchema })),
+  generatedAt: z.string(),
+});
+
 export const memberSchema = z.object({
   id: z.string(),
   clerkUserId: z.string(),

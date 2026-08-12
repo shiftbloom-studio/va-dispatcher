@@ -110,6 +110,10 @@ const flight: Flight = {
   offAt: null,
   onAt: null,
   inAt: null,
+  outManualOverride: false,
+  offManualOverride: false,
+  onManualOverride: false,
+  inManualOverride: false,
   createdAt: now,
   updatedAt: now,
 };

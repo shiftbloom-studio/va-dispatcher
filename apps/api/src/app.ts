@@ -18,6 +18,7 @@ import { docsRoutes } from "./routes/docs.js";
 import { simbriefPublicRoutes, simbriefRoutes } from "./routes/simbrief.js";
 import { publicRoutes } from "./routes/public.js";
 import { auditRoutes } from "./routes/audit.js";
+import { telemetryClientRoutes, telemetryRoutes } from "./routes/telemetry.js";
 import type { AppVariables } from "./middleware/auth.js";
 
 // Ensure env is loaded once at import for local/dev.
@@ -86,6 +87,9 @@ export function createApp() {
   v1.route("/", internalRoutes);
   v1.route("/", simbriefPublicRoutes);
   v1.route("/", publicRoutes);
+  // Simulator clients authenticate with revocable per-device bearer tokens,
+  // not Clerk or browser BotID. Keep this narrow route before business auth.
+  v1.route("/", telemetryClientRoutes);
   v1.use("*", requireHuman);
   v1.route("/", meRoutes);
   v1.route("/", tenantRoutes);
@@ -96,6 +100,7 @@ export function createApp() {
   v1.route("/", dispatchRoutes);
   v1.route("/", acarsRoutes);
   v1.route("/", simbriefRoutes);
+  v1.route("/", telemetryRoutes);
 
   app.route("/api/v1", v1);
   // Also mount at /v1 when service-scoped rewrite strips /api

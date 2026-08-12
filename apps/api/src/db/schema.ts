@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -91,6 +93,28 @@ export const flightEventSourceEnum = pgEnum("flight_event_source", [
   "dispatcher",
 ]);
 
+export const simulatorDeviceStatusEnum = pgEnum("simulator_device_status", [
+  "active",
+  "revoked",
+]);
+
+export const telemetryPhaseEnum = pgEnum("telemetry_phase", [
+  "preflight",
+  "taxi_out",
+  "airborne",
+  "taxi_in",
+  "parked",
+]);
+
+export const oooiEventTypeEnum = pgEnum("oooi_event_type", [
+  "out",
+  "off",
+  "on",
+  "in",
+]);
+
+export const oooiSourceEnum = pgEnum("oooi_source", ["telemetry", "manual"]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -157,6 +181,7 @@ export const memberships = pgTable(
   },
   (t) => [
     uniqueIndex("memberships_tenant_user_uidx").on(t.tenantId, t.clerkUserId),
+    uniqueIndex("memberships_tenant_id_uidx").on(t.tenantId, t.id),
     uniqueIndex("memberships_tenant_callsign_uidx").on(
       t.tenantId,
       t.pilotCallsign,
@@ -250,6 +275,10 @@ export const flights = pgTable(
     offAt: timestamp("off_at", { withTimezone: true }),
     onAt: timestamp("on_at", { withTimezone: true }),
     inAt: timestamp("in_at", { withTimezone: true }),
+    outManualOverride: boolean("out_manual_override").notNull().default(false),
+    offManualOverride: boolean("off_manual_override").notNull().default(false),
+    onManualOverride: boolean("on_manual_override").notNull().default(false),
+    inManualOverride: boolean("in_manual_override").notNull().default(false),
     ...timestamps,
   },
   (t) => [
@@ -570,6 +599,258 @@ export const simbriefFlightHeads = pgTable(
   ],
 );
 
+/** Revocable simulator-client credential. Only a keyed authenticator is stored. */
+export const simulatorDevices = pgTable(
+  "simulator_devices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenMac: text("token_mac").notNull(),
+    status: simulatorDeviceStatusEnum("status").notNull().default("active"),
+    lastSequence: integer("last_sequence"),
+    lastIngestAt: timestamp("last_ingest_at", { withTimezone: true }),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("simulator_devices_tenant_member_idx").on(t.tenantId, t.membershipId),
+    uniqueIndex("simulator_devices_tenant_id_uidx").on(t.tenantId, t.id),
+    uniqueIndex("simulator_devices_tenant_member_id_uidx").on(
+      t.tenantId,
+      t.membershipId,
+      t.id,
+    ),
+    foreignKey({
+      columns: [t.tenantId, t.membershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: "simulator_devices_tenant_member_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+/** Latest known simulator state. This is intentionally separate from history. */
+export const flightTelemetryCurrent = pgTable(
+  "flight_telemetry_current",
+  {
+    flightId: uuid("flight_id")
+      .primaryKey()
+      .references(() => flights.id, { onDelete: "cascade" }),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    deviceId: uuid("device_id")
+      .notNull()
+      .references(() => simulatorDevices.id, { onDelete: "cascade" }),
+    phase: telemetryPhaseEnum("phase").notNull(),
+    latitude: doublePrecision("latitude").notNull(),
+    longitude: doublePrecision("longitude").notNull(),
+    altitudeFeet: integer("altitude_feet").notNull(),
+    groundSpeedKnots: integer("ground_speed_knots").notNull(),
+    headingDegrees: doublePrecision("heading_degrees").notNull(),
+    simulatorTime: timestamp("simulator_time", {
+      withTimezone: true,
+    }).notNull(),
+    sampleAt: timestamp("sample_at", { withTimezone: true }).notNull(),
+    sequence: integer("sequence").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("flight_telemetry_current_tenant_sample_idx").on(
+      t.tenantId,
+      t.sampleAt,
+    ),
+    index("flight_telemetry_current_member_idx").on(t.tenantId, t.membershipId),
+    foreignKey({
+      columns: [t.tenantId, t.flightId],
+      foreignColumns: [flights.tenantId, flights.id],
+      name: "flight_telemetry_current_tenant_flight_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.tenantId, t.membershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: "flight_telemetry_current_tenant_member_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.tenantId, t.membershipId, t.deviceId],
+      foreignColumns: [
+        simulatorDevices.tenantId,
+        simulatorDevices.membershipId,
+        simulatorDevices.id,
+      ],
+      name: "flight_telemetry_current_tenant_member_device_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+/** Single-writer lease preventing two active clients from racing one flight. */
+export const flightTelemetryLeases = pgTable(
+  "flight_telemetry_leases",
+  {
+    flightId: uuid("flight_id")
+      .primaryKey()
+      .references(() => flights.id, { onDelete: "cascade" }),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    deviceId: uuid("device_id")
+      .notNull()
+      .references(() => simulatorDevices.id, { onDelete: "cascade" }),
+    leaseExpiresAt: timestamp("lease_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("flight_telemetry_leases_device_uidx").on(t.deviceId),
+    index("flight_telemetry_leases_tenant_device_idx").on(
+      t.tenantId,
+      t.deviceId,
+    ),
+    foreignKey({
+      columns: [t.tenantId, t.flightId],
+      foreignColumns: [flights.tenantId, flights.id],
+      name: "flight_telemetry_leases_tenant_flight_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.tenantId, t.membershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: "flight_telemetry_leases_tenant_member_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.tenantId, t.membershipId, t.deviceId],
+      foreignColumns: [
+        simulatorDevices.tenantId,
+        simulatorDevices.membershipId,
+        simulatorDevices.id,
+      ],
+      name: "flight_telemetry_leases_tenant_member_device_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+/** Retained, bounded flight track used for operational replay and export. */
+export const flightTelemetryTrack = pgTable(
+  "flight_telemetry_track",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    flightId: uuid("flight_id")
+      .notNull()
+      .references(() => flights.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    deviceId: uuid("device_id")
+      .notNull()
+      .references(() => simulatorDevices.id, { onDelete: "cascade" }),
+    phase: telemetryPhaseEnum("phase").notNull(),
+    latitude: doublePrecision("latitude").notNull(),
+    longitude: doublePrecision("longitude").notNull(),
+    altitudeFeet: integer("altitude_feet").notNull(),
+    groundSpeedKnots: integer("ground_speed_knots").notNull(),
+    headingDegrees: doublePrecision("heading_degrees").notNull(),
+    simulatorTime: timestamp("simulator_time", {
+      withTimezone: true,
+    }).notNull(),
+    sampleAt: timestamp("sample_at", { withTimezone: true }).notNull(),
+    sequence: integer("sequence").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("flight_telemetry_track_flight_sample_idx").on(
+      t.tenantId,
+      t.flightId,
+      t.sampleAt,
+    ),
+    foreignKey({
+      columns: [t.tenantId, t.flightId],
+      foreignColumns: [flights.tenantId, flights.id],
+      name: "flight_telemetry_track_tenant_flight_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.tenantId, t.membershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: "flight_telemetry_track_tenant_member_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.tenantId, t.membershipId, t.deviceId],
+      foreignColumns: [
+        simulatorDevices.tenantId,
+        simulatorDevices.membershipId,
+        simulatorDevices.id,
+      ],
+      name: "flight_telemetry_track_tenant_member_device_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+/** Append-only provenance for automatic and manually corrected OOOI values. */
+export const flightOooiEvents = pgTable(
+  "flight_oooi_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    flightId: uuid("flight_id")
+      .notNull()
+      .references(() => flights.id, { onDelete: "cascade" }),
+    eventType: oooiEventTypeEnum("event_type").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }),
+    source: oooiSourceEnum("source").notNull(),
+    actorMembershipId: uuid("actor_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    deviceId: uuid("device_id").references(() => simulatorDevices.id, {
+      onDelete: "set null",
+    }),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("flight_oooi_events_flight_created_idx").on(
+      t.tenantId,
+      t.flightId,
+      t.createdAt,
+    ),
+    foreignKey({
+      columns: [t.tenantId, t.flightId],
+      foreignColumns: [flights.tenantId, flights.id],
+      name: "flight_oooi_events_tenant_flight_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.tenantId, t.actorMembershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: "flight_oooi_events_tenant_actor_fk",
+    }),
+    foreignKey({
+      columns: [t.tenantId, t.deviceId],
+      foreignColumns: [simulatorDevices.tenantId, simulatorDevices.id],
+      name: "flight_oooi_events_tenant_device_fk",
+    }),
+  ],
+);
+
 export const acarsMessages = pgTable(
   "acars_messages",
   {
@@ -713,6 +994,11 @@ export type DispatchRelease = typeof dispatchReleases.$inferSelect;
 export type FlightOperationalEvent =
   typeof flightOperationalEvents.$inferSelect;
 export type SimbriefFlightHead = typeof simbriefFlightHeads.$inferSelect;
+export type SimulatorDevice = typeof simulatorDevices.$inferSelect;
+export type FlightTelemetryCurrent = typeof flightTelemetryCurrent.$inferSelect;
+export type FlightTelemetryLease = typeof flightTelemetryLeases.$inferSelect;
+export type FlightTelemetryTrack = typeof flightTelemetryTrack.$inferSelect;
+export type FlightOooiEvent = typeof flightOooiEvents.$inferSelect;
 export type AcarsMessage = typeof acarsMessages.$inferSelect;
 export type MemberRole = (typeof memberRoleEnum.enumValues)[number];
 export type FlightStatus = (typeof flightStatusEnum.enumValues)[number];
@@ -725,3 +1011,4 @@ export type DispatchUnit = (typeof dispatchUnitEnum.enumValues)[number];
 export type FlightEventKind = (typeof flightEventKindEnum.enumValues)[number];
 export type FlightEventSource =
   (typeof flightEventSourceEnum.enumValues)[number];
+export type TelemetryPhase = (typeof telemetryPhaseEnum.enumValues)[number];

@@ -7,6 +7,7 @@ import { useState } from "react";
 
 import { PageHeading } from "@/components/page-heading";
 import { SimbriefAccount } from "@/components/simbrief-account";
+import { SimulatorDevices } from "@/components/simulator-devices";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/fields";
@@ -77,6 +78,7 @@ export function AccountSettings({
         <ProfileCard slug={slug} membership={me.data.membership} />
         <SimbriefAccount slug={slug} />
         <HoppieGuide />
+        <SimulatorDevices slug={slug} />
       </div>
     </>
   );

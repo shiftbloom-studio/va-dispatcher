@@ -19,6 +19,7 @@ import { ReasonAction } from "@/components/action-dialog";
 import { DispatchReleaseSnapshot } from "@/components/flight-planning-workspace";
 import { PageHeading } from "@/components/page-heading";
 import { SimbriefWorkspace } from "@/components/simbrief-workspace";
+import { FlightTelemetryStatus } from "@/components/flight-telemetry-status";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -237,7 +238,6 @@ export function PilotFlightDetail({
               </div>
             ) : null}
           </Card>
-
           {detail.data.release ? (
             <Card className="overflow-hidden">
               <CardHeader
@@ -282,6 +282,17 @@ export function PilotFlightDetail({
               </ol>
             </Card>
           ) : null}
+          <FlightTelemetryStatus
+            slug={slug}
+            flightId={flightId}
+            mode="pilot"
+            initialOooi={{
+              outAt: flight.outAt,
+              offAt: flight.offAt,
+              onAt: flight.onAt,
+              inAt: flight.inAt,
+            }}
+          />
         </div>
 
         <Card className="h-fit overflow-hidden xl:sticky xl:top-22">
