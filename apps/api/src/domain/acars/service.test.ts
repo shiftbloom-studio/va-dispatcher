@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   writeAudit: vi.fn(),
   findTenantById: vi.fn(),
   listHoppieTenants: vi.fn(),
+  findFlight: vi.fn(),
   providerFactoryError: null as Error | null,
 }));
 
@@ -39,6 +40,9 @@ vi.mock("../../db/repositories/tenants.js", () => ({
   findTenantById: mocks.findTenantById,
   listHoppieTenants: mocks.listHoppieTenants,
 }));
+vi.mock("../../db/repositories/flights.js", () => ({
+  findFlight: mocks.findFlight,
+}));
 
 import { sendTelex, simulateInbound } from "./service.js";
 
@@ -59,6 +63,7 @@ describe("ACARS service outbound delivery", () => {
     vi.clearAllMocks();
     mocks.providerFactoryError = null;
     mocks.findTenantById.mockResolvedValue(tenant);
+    mocks.findFlight.mockResolvedValue({ id: "flight_test" });
   });
 
   it("fails safely before sending when Hoppie is not configured", async () => {
@@ -145,5 +150,28 @@ describe("ACARS service outbound delivery", () => {
       }),
     );
     expect(mocks.writeAudit).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an unknown or cross-tenant flight before contacting Hoppie", async () => {
+    mocks.findFlight.mockResolvedValue(null);
+
+    await expect(
+      sendTelex({
+        tenantId: tenant.id,
+        membershipId: "membership_test",
+        to: "SAS123",
+        body: "GATE 12",
+        flightId: "11111111-1111-4111-8111-111111111111",
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+    });
+    expect(mocks.findFlight).toHaveBeenCalledWith(
+      tenant.id,
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(mocks.sendTelex).not.toHaveBeenCalled();
+    expect(mocks.insertAcarsMessage).not.toHaveBeenCalled();
   });
 });

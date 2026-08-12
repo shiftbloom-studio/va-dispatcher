@@ -126,6 +126,100 @@ describe("ACARS compose", () => {
     expect(
       screen.queryByLabelText("Recipient station"),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Ask an organization administrator/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Open organization settings" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("links an admin to organization settings when setup is required", async () => {
+    apiMock.mockImplementation((path: string) => {
+      if (path === "/dispatch/inbox")
+        return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/flights?limit=100")
+        return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/members") return Promise.resolve({ items: [] });
+      if (path === "/tenant")
+        return Promise.resolve({
+          id: "tenant-vsas",
+          slug: "vsas",
+          name: "Virtual SAS",
+          hoppieStation: "SAS",
+          hasHoppieLogon: false,
+          acarsProvider: "hoppie",
+          hoppiePollingEnabled: false,
+          hoppieLastTestedAt: null,
+          settings: {},
+        });
+      throw new Error(`Unexpected API call: ${path}`);
+    });
+
+    render(
+      <TestQueryProvider>
+        <AcarsWorkspace slug="vsas" canManageOrganization />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "Open organization settings" }),
+    ).toHaveAttribute("href", "/vsas/settings/organization");
+  });
+
+  it("enables compose and inbound simulation with the development mock adapter", async () => {
+    apiMock.mockImplementation(
+      (path: string, options: { method?: string; body?: string }) => {
+        if (path === "/dispatch/inbox")
+          return Promise.resolve({ items: [], nextCursor: null });
+        if (path === "/flights?limit=100")
+          return Promise.resolve({ items: [], nextCursor: null });
+        if (path === "/members") return Promise.resolve({ items: [] });
+        if (path === "/tenant")
+          return Promise.resolve({
+            id: "tenant-vsas",
+            slug: "vsas",
+            name: "Virtual SAS",
+            hoppieStation: "VSAS",
+            hasHoppieLogon: false,
+            acarsProvider: "mock",
+            hoppiePollingEnabled: false,
+            hoppieLastTestedAt: null,
+            settings: {},
+          });
+        if (path === "/acars/simulate" && options.method === "POST")
+          return Promise.resolve({ queued: true, to: "VSAS" });
+        throw new Error(`Unexpected API call: ${path}`);
+      },
+    );
+
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AcarsWorkspace slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    expect(await screen.findByLabelText("Recipient station")).toBeEnabled();
+    await user.type(screen.getByLabelText("Simulated sender"), "sas404");
+    await user.type(
+      screen.getByLabelText("Simulated message"),
+      "REQUESTING GATE",
+    );
+    await user.click(screen.getByRole("button", { name: "Simulate inbound" }));
+
+    expect(
+      await screen.findByText(/simulated inbound message to VSAS is stored/i),
+    ).toBeInTheDocument();
+    const simulateCall = apiMock.mock.calls.find(
+      ([path, options]) =>
+        path === "/acars/simulate" && options.method === "POST",
+    );
+    expect(JSON.parse(simulateCall?.[1].body ?? "{}")).toEqual({
+      from: "SAS404",
+      body: "REQUESTING GATE",
+      msgType: "telex",
+    });
   });
 
   it("uses the linked pilot's saved callsign as the recipient", async () => {
