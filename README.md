@@ -38,6 +38,12 @@ pnpm dev              # web :3000 + API :3001
 
 Open `http://localhost:3000/vsas`. Health check: `GET http://localhost:3001/health`.
 
+The public legal pages are available at `/impressum` and `/privacy`. Configure
+all required `LEGAL_*` values from `apps/web/.env.example` before production;
+production requests fail closed rather than publish placeholder operator data.
+See [`docs/privacy-compliance.md`](docs/privacy-compliance.md) for the deployment
+and operating checklist.
+
 Clerk Organizations must be enabled, organization slugs must be enabled, and the vSAS Clerk organization slug must be `vsas`. Set `VSAS_CLERK_ORG_ID` to that organization's Clerk ID. The API provisions or repairs the initial vSAS tenant from this trusted value on first authenticated access, then verifies the URL slug, active Clerk organization slug, and API `/me` tenant before loading operational data.
 
 ## Core flows
