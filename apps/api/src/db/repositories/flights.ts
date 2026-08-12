@@ -263,9 +263,11 @@ const updatableFlightColumns = {
 export type UpdateFlightPatch = Parameters<typeof updateFlight>[0]["patch"];
 
 /**
- * Reserves the immutable declined source with compare-and-set, creates one
- * history-linked replacement, and records the audit event in one SQL command.
- * A zero-row result means the source was stale, non-declined, or unavailable.
+ * Creates one history-linked replacement without mutating the declined source
+ * and records the audit event in the same SQL command. The source predicate is
+ * a compare-and-set gate, while the unique replacement lineage makes
+ * concurrent retries deterministic. A zero-row result means the source was
+ * stale, non-declined, unavailable, or already replaced.
  */
 export async function createReplacementFlight(input: {
   tenantId: string;
@@ -305,18 +307,7 @@ export async function createReplacementFlight(input: {
   });
 
   const rows = await db.execute<{ id: string }>(sql`
-    WITH reserved AS (
-      UPDATE ${flights}
-      SET
-        ${flights.version} = ${flights.version} + 1,
-        ${flights.updatedAt} = NOW()
-      WHERE
-        ${flights.tenantId} = ${input.tenantId}
-        AND ${flights.id} = ${input.sourceFlightId}
-        AND ${flights.status} = 'declined'
-        AND ${flights.version} = ${input.expectedVersion}
-      RETURNING ${flights.id}
-    ), inserted AS (
+    WITH inserted AS (
       INSERT INTO ${flights} (
         id,
         tenant_id,
@@ -335,20 +326,26 @@ export async function createReplacementFlight(input: {
       )
       SELECT
         ${replacementId},
-        ${input.tenantId},
-        ${input.scheduleRequestId},
-        ${input.sourceFlightId},
+        ${flights.tenantId},
+        ${flights.scheduleRequestId},
+        ${flights.id},
         ${input.pilotMembershipId},
-        ${input.flightNumber.toUpperCase()},
-        ${input.depIcao.toUpperCase()},
-        ${input.arrIcao.toUpperCase()},
-        ${input.etd},
-        ${input.eta},
-        ${input.aircraftType},
+        ${flights.flightNumber},
+        ${flights.depIcao},
+        ${flights.arrIcao},
+        ${flights.etd},
+        ${flights.eta},
+        ${flights.aircraftType},
         'offered',
-        ${input.dispatcherNotes},
+        ${flights.dispatcherNotes},
         1
-      FROM reserved
+      FROM ${flights}
+      WHERE
+        ${flights.tenantId} = ${input.tenantId}
+        AND ${flights.id} = ${input.sourceFlightId}
+        AND ${flights.status} = 'declined'
+        AND ${flights.version} = ${input.expectedVersion}
+      ON CONFLICT (tenant_id, replaces_flight_id) DO NOTHING
       RETURNING id
     ), audited AS (
       INSERT INTO ${auditEvents} (
