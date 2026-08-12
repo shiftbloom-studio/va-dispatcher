@@ -72,6 +72,18 @@ const requiredQueryParameter = (
   schema,
 });
 
+const requiredHeaderParameter = (
+  name: string,
+  description: string,
+  schema: OpenApiObject,
+): OpenApiObject => ({
+  name,
+  in: "header",
+  required: true,
+  description,
+  schema,
+});
+
 const paginationParameters = [
   queryParameter(
     "cursor",
@@ -1309,9 +1321,37 @@ const schemas = {
   },
   BulkFlightsResponse: {
     type: "object",
-    required: ["flights"],
+    required: ["flights", "fulfillment"],
     properties: {
       flights: { type: "array", items: schemaRef("Flight") },
+      fulfillment: {
+        type: "object",
+        required: [
+          "scheduleRequestId",
+          "requestStatus",
+          "requestVersion",
+          "linkedFlightCount",
+          "remainingFlightCount",
+          "flightIds",
+        ],
+        properties: {
+          scheduleRequestId: schemaRef("Uuid"),
+          requestStatus: {
+            type: "string",
+            enum: ["partially_fulfilled", "fulfilled"],
+          },
+          requestVersion: { type: "integer", minimum: 2 },
+          linkedFlightCount: { type: "integer", minimum: 1 },
+          remainingFlightCount: { type: "integer", minimum: 0 },
+          flightIds: {
+            type: "array",
+            minItems: 1,
+            items: schemaRef("Uuid"),
+            description:
+              "Canonical flight IDs in the exact order created for the original logical submission.",
+          },
+        },
+      },
     },
   },
   SimbriefConnectionResponse: {
@@ -2052,12 +2092,19 @@ export const openApiDocument = {
         operationId: "bulkCreateFlights",
         summary: "Create offered flights for a schedule request",
         description:
-          "Requires the dispatcher role or higher. The request must be in review or partially fulfilled, expectedRequestVersion must match, and the batch cannot exceed the cumulative remaining flight count. Every flight is assigned to the requesting active pilot, ETA must be after ETD, and the full flight must fit one normalized detailed availability interval. Pilot assignment overrides to another member are rejected.",
+          "Requires the dispatcher role or higher and a caller-generated Idempotency-Key. The request must be in review or partially fulfilled, expectedRequestVersion must match, and the batch cannot exceed the cumulative remaining non-cancelled flight count. Request locking serializes competing batches; the durable idempotency result, ordered flight IDs, request status/version, canonical flights, and audits commit atomically. A replay with the same key and canonical payload returns the original ordered result even after the request becomes fulfilled; reusing the key with a different payload returns 409. Every flight is assigned to the requesting active pilot, ETA must be after ETD, and the full flight must fit one normalized detailed availability interval. Pilot assignment overrides to another member are rejected.",
         "x-required-role": "dispatcher",
+        parameters: [
+          requiredHeaderParameter(
+            "Idempotency-Key",
+            "Caller-generated key scoped to the current tenant and schedule request. Reuse only for an exact retry of the same canonical payload.",
+            { type: "string", minLength: 1, maxLength: 200 },
+          ),
+        ],
         requestBody: jsonRequest(schemaRef("BulkCreateFlightsInput")),
         responses: {
           "201": jsonResponse(
-            "Created flights.",
+            "Original durable fulfillment result, whether newly committed or safely replayed.",
             schemaRef("BulkFlightsResponse"),
           ),
           ...mutationErrors,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   acarsMessagePageSchema,
+  bulkFlightResponseSchema,
   dispatchBoardSchema,
   flightResponseSchema,
   meSchema,
@@ -84,6 +85,19 @@ describe("live API contract smoke fixtures", () => {
       updatedAt: "2026-08-01T00:00:00.000Z",
     };
     expect(flightResponseSchema.parse({ flight }).flight.depIcao).toBe("EKCH");
+    expect(
+      bulkFlightResponseSchema.parse({
+        flights: [flight],
+        fulfillment: {
+          scheduleRequestId: "r1",
+          requestStatus: "fulfilled",
+          requestVersion: 2,
+          linkedFlightCount: 1,
+          remainingFlightCount: 0,
+          flightIds: ["f1"],
+        },
+      }).fulfillment.flightIds,
+    ).toEqual(["f1"]);
     expect(
       flightResponseSchema.parse({
         flight: { ...flight, pilotMembershipId: null, status: "draft" },

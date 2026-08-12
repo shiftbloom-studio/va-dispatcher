@@ -34,6 +34,7 @@ const flightService = vi.hoisted(() => ({
   transitionFlight: vi.fn(),
   patchFlight: vi.fn(),
   reofferDeclinedFlight: vi.fn(),
+  assignmentNeedsConfirmation: vi.fn(() => false),
 }));
 vi.mock("../domain/flights/service.js", () => flightService);
 
@@ -53,10 +54,58 @@ const validAdHocFlight = {
   eta: "2026-09-10T10:00:00.000Z",
   status: "offered",
 };
+const storedFlight = {
+  id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  tenantId: fixture.tenantId,
+  scheduleRequestId: fixture.requestId,
+  replacesFlightId: null,
+  pilotMembershipId: fixture.pilotMembershipId,
+  flightNumber: "SK101",
+  depIcao: "EKCH",
+  arrIcao: "ENGM",
+  etd: new Date(validAdHocFlight.etd),
+  eta: new Date(validAdHocFlight.eta),
+  aircraftType: null,
+  version: 1,
+  status: "offered" as const,
+  cancelReason: null,
+  declinedReason: null,
+  dispatcherNotes: null,
+  outAt: null,
+  offAt: null,
+  onAt: null,
+  inAt: null,
+  createdAt: new Date("2026-08-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-08-12T00:00:00.000Z"),
+};
+const validBulkBody = {
+  scheduleRequestId: fixture.requestId,
+  expectedRequestVersion: 1,
+  flights: [
+    {
+      flightNumber: "SK101",
+      depIcao: "EKCH",
+      arrIcao: "ENGM",
+      etd: validAdHocFlight.etd,
+      eta: validAdHocFlight.eta,
+    },
+  ],
+};
 
 describe("flight HTTP creation contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    flightService.bulkCreateFlights.mockResolvedValue({
+      flights: [storedFlight],
+      fulfillment: {
+        scheduleRequestId: fixture.requestId,
+        requestStatus: "fulfilled",
+        requestVersion: 2,
+        linkedFlightCount: 1,
+        remainingFlightCount: 0,
+        flightIds: [storedFlight.id],
+      },
+    });
   });
 
   it("rejects schedule-linked fields on the ad-hoc create endpoint", async () => {
@@ -71,5 +120,45 @@ describe("flight HTTP creation contract", () => {
 
     expect(response.status).toBe(400);
     expect(flightService.createFlight).not.toHaveBeenCalled();
+  });
+
+  it("requires a caller idempotency key before bulk fulfillment", async () => {
+    const response = await app.request("/flights/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBulkBody),
+    });
+
+    expect(response.status).toBe(400);
+    expect(flightService.bulkCreateFlights).not.toHaveBeenCalled();
+  });
+
+  it("passes the normalized idempotency key and returns the durable outcome", async () => {
+    const response = await app.request("/flights/bulk", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "  batch-001  ",
+      },
+      body: JSON.stringify(validBulkBody),
+    });
+
+    expect(response.status).toBe(201);
+    expect(flightService.bulkCreateFlights).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "dispatcher" }),
+      expect.objectContaining({
+        idempotencyKey: "batch-001",
+        scheduleRequestId: fixture.requestId,
+        expectedRequestVersion: 1,
+      }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      flights: [{ id: storedFlight.id }],
+      fulfillment: {
+        requestStatus: "fulfilled",
+        requestVersion: 2,
+        flightIds: [storedFlight.id],
+      },
+    });
   });
 });

@@ -36,6 +36,7 @@ export function OfferBuilder({
   const api = useApi();
   const queryClient = useQueryClient();
   const [conflict, setConflict] = useState<string | null>(null);
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [batchSize, setBatchSize] = useState(flightCount);
   const schema = useMemo(() => offerBuilderSchema(batchSize), [batchSize]);
   const form = useForm<OfferBuilderValues>({
@@ -46,23 +47,29 @@ export function OfferBuilder({
   });
   const rows = useFieldArray({ control: form.control, name: "flights" });
   const mutation = useMutation({
-    mutationFn: (values: OfferBuilderValues) =>
-      api("/flights/bulk", {
+    mutationFn: (values: OfferBuilderValues) => {
+      const request = jsonBody({
+        scheduleRequestId: requestId,
+        expectedRequestVersion,
+        flights: values.flights.map((flight) => ({
+          flightNumber: flight.flightNumber.trim().toUpperCase(),
+          depIcao: flight.depIcao.trim().toUpperCase(),
+          arrIcao: flight.arrIcao.trim().toUpperCase(),
+          etd: utcInputToIso(flight.etd),
+          eta: utcInputToIso(flight.eta),
+          aircraftType: flight.aircraftType?.trim() || null,
+        })),
+      });
+      return api("/flights/bulk", {
         method: "POST",
         schema: bulkFlightResponseSchema,
-        ...jsonBody({
-          scheduleRequestId: requestId,
-          expectedRequestVersion,
-          flights: values.flights.map((flight) => ({
-            flightNumber: flight.flightNumber.trim().toUpperCase(),
-            depIcao: flight.depIcao.trim().toUpperCase(),
-            arrIcao: flight.arrIcao.trim().toUpperCase(),
-            etd: utcInputToIso(flight.etd),
-            eta: utcInputToIso(flight.eta),
-            aircraftType: flight.aircraftType?.trim() || null,
-          })),
-        }),
-      }),
+        ...request,
+        headers: {
+          ...request.headers,
+          "Idempotency-Key": idempotencyKey,
+        },
+      });
+    },
     onSuccess: async () => {
       await Promise.all([
         onOffered(),

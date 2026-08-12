@@ -136,6 +136,8 @@ describe("flight repository concurrency boundary", () => {
       fulfillScheduleRequest({
         tenantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         scheduleRequestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        idempotencyKey: "batch-001",
+        payloadHash: "a".repeat(64),
         expectedRequestVersion: 2,
         expectedRequestStatus: "partially_fulfilled",
         actorMembershipId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -159,6 +161,15 @@ describe("flight repository concurrency boundary", () => {
     expect(query.sql).toMatch(
       /having[\s\S]*<= request_locked\.desired_flight_count/i,
     );
+    expect(query.sql).toMatch(/insert into "schedule_fulfillment_attempts"/i);
+    expect(query.sql).toMatch(
+      /on conflict \(\s*tenant_id,\s*schedule_request_id,\s*idempotency_key\s*\) do nothing/i,
+    );
+    expect(query.sql.toLowerCase().indexOf("having")).toBeLessThan(
+      query.sql
+        .toLowerCase()
+        .indexOf('insert into "schedule_fulfillment_attempts"'),
+    );
     expect(query.sql).toMatch(/insert into "flights"/i);
     expect(query.sql).toMatch(/update "schedule_requests"/i);
     expect(query.sql).toMatch(/insert into "audit_events"/i);
@@ -180,6 +191,8 @@ describe("flight repository concurrency boundary", () => {
       fulfillScheduleRequest({
         tenantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         scheduleRequestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        idempotencyKey: "batch-002",
+        payloadHash: "b".repeat(64),
         expectedRequestVersion: 1,
         expectedRequestStatus: "in_review",
         actorMembershipId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",

@@ -6,9 +6,11 @@ import {
   auditEvents,
   flights,
   memberships,
+  scheduleFulfillmentAttempts,
   scheduleRequests,
   type Flight,
   type FlightStatus,
+  type ScheduleFulfillmentAttempt,
 } from "../schema.js";
 import {
   decodeCursor,
@@ -30,6 +32,20 @@ export type CreateFlightInput = {
   aircraftType?: string | null;
   status?: FlightStatus;
   dispatcherNotes?: string | null;
+};
+
+export type ScheduleFulfillmentOutcome = {
+  scheduleRequestId: string;
+  requestStatus: "partially_fulfilled" | "fulfilled";
+  requestVersion: number;
+  linkedFlightCount: number;
+  remainingFlightCount: number;
+  flightIds: string[];
+};
+
+export type ScheduleFulfillmentResult = {
+  flights: Flight[];
+  fulfillment: ScheduleFulfillmentOutcome;
 };
 
 export async function createFlight(input: CreateFlightInput): Promise<Flight> {
@@ -103,11 +119,14 @@ export async function createFlight(input: CreateFlightInput): Promise<Flight> {
  * competing batches; no flight can commit unless the whole requested batch,
  * request progress update, and both audit records also commit.
  *
- * Issue #19 extends this primitive with durable idempotent replay metadata.
+ * The durable attempt row is claimed only after locked capacity succeeds and
+ * commits in the same statement as flights, request progress, and audits.
  */
 export async function fulfillScheduleRequest(input: {
   tenantId: string;
   scheduleRequestId: string;
+  idempotencyKey: string;
+  payloadHash: string;
   expectedRequestVersion: number;
   expectedRequestStatus: "in_review" | "partially_fulfilled";
   actorMembershipId: string;
@@ -119,9 +138,10 @@ export async function fulfillScheduleRequest(input: {
     eta: Date;
     aircraftType?: string | null;
   }>;
-}): Promise<Flight[] | null> {
-  if (input.flights.length === 0) return [];
+}): Promise<ScheduleFulfillmentResult | null> {
+  if (input.flights.length === 0) return null;
   const db = getDb();
+  const attemptId = randomUUID();
   const proposed = input.flights.map((flight) => ({
     id: randomUUID(),
     flightNumber: flight.flightNumber,
@@ -145,8 +165,18 @@ export async function fulfillScheduleRequest(input: {
     ),
     sql`, `,
   );
+  const proposedIdArray = sql`ARRAY[${sql.join(
+    proposed.map((flight) => sql`${flight.id}::uuid`),
+    sql`, `,
+  )}]::uuid[]`;
 
-  const result = await db.execute<{ id: string }>(sql`
+  const result = await db.execute<{
+    id: string;
+    requestStatus: "partially_fulfilled" | "fulfilled";
+    requestVersion: number;
+    linkedFlightCount: number;
+    remainingFlightCount: number;
+  }>(sql`
     WITH request_locked AS (
       SELECT
         ${scheduleRequests.id} AS id,
@@ -188,6 +218,47 @@ export async function fulfillScheduleRequest(input: {
         count(${flights.id}) FILTER (
           WHERE ${flights.status} <> 'cancelled'
         ) + ${proposed.length} <= request_locked.desired_flight_count
+    ), claimed AS (
+      INSERT INTO ${scheduleFulfillmentAttempts} (
+        id,
+        tenant_id,
+        schedule_request_id,
+        idempotency_key,
+        payload_hash,
+        flight_ids,
+        request_status,
+        request_version,
+        linked_flight_count,
+        remaining_flight_count
+      )
+      SELECT
+        ${attemptId},
+        ${input.tenantId},
+        capacity.id,
+        ${input.idempotencyKey},
+        ${input.payloadHash},
+        ${proposedIdArray},
+        CASE
+          WHEN capacity.existing_flight_count + ${proposed.length}
+            >= capacity.desired_flight_count
+            THEN 'fulfilled'::schedule_request_status
+          ELSE 'partially_fulfilled'::schedule_request_status
+        END,
+        ${input.expectedRequestVersion + 1},
+        capacity.existing_flight_count + ${proposed.length},
+        greatest(
+          0,
+          capacity.desired_flight_count
+            - capacity.existing_flight_count
+            - ${proposed.length}
+        )
+      FROM capacity
+      ON CONFLICT (
+        tenant_id,
+        schedule_request_id,
+        idempotency_key
+      ) DO NOTHING
+      RETURNING id
     ), proposed (
       id,
       flight_number,
@@ -228,6 +299,7 @@ export async function fulfillScheduleRequest(input: {
         1
       FROM proposed
       CROSS JOIN capacity
+      CROSS JOIN claimed
       RETURNING ${flights.id}
     ), batch_checked AS (
       SELECT
@@ -263,6 +335,7 @@ export async function fulfillScheduleRequest(input: {
       RETURNING
         ${scheduleRequests.id},
         ${scheduleRequests.status},
+        ${scheduleRequests.version},
         batch_checked.existing_flight_count,
         batch_checked.cumulative_flight_count,
         batch_checked.desired_flight_count
@@ -307,7 +380,7 @@ export async function fulfillScheduleRequest(input: {
           'requestFromVersion', ${input.expectedRequestVersion},
           'requestToVersion', ${input.expectedRequestVersion + 1},
           'createdFlightVersion', 1,
-          'flightIds', to_jsonb(ARRAY(SELECT inserted.id FROM inserted))
+          'flightIds', to_jsonb(${proposedIdArray})
         )
       FROM request_updated
       RETURNING id
@@ -315,6 +388,14 @@ export async function fulfillScheduleRequest(input: {
       SELECT count(*)::integer AS count FROM audited
     )
     SELECT inserted.id
+      , request_updated.status AS "requestStatus"
+      , request_updated.version AS "requestVersion"
+      , request_updated.cumulative_flight_count AS "linkedFlightCount"
+      , greatest(
+          0,
+          request_updated.desired_flight_count
+            - request_updated.cumulative_flight_count
+        ) AS "remainingFlightCount"
     FROM inserted
     CROSS JOIN request_updated
     CROSS JOIN audit_totals
@@ -322,16 +403,83 @@ export async function fulfillScheduleRequest(input: {
   `);
 
   if (result.rows.length !== proposed.length) return null;
-  const ids = result.rows.map((row) => row.id);
+  const outcomeRow = result.rows[0]!;
+  return materializeScheduleFulfillment({
+    tenantId: input.tenantId,
+    scheduleRequestId: input.scheduleRequestId,
+    flightIds: proposed.map((flight) => flight.id),
+    requestStatus: outcomeRow.requestStatus,
+    requestVersion: outcomeRow.requestVersion,
+    linkedFlightCount: outcomeRow.linkedFlightCount,
+    remainingFlightCount: outcomeRow.remainingFlightCount,
+  });
+}
+
+export async function findScheduleFulfillmentAttempt(
+  tenantId: string,
+  scheduleRequestId: string,
+  idempotencyKey: string,
+): Promise<ScheduleFulfillmentAttempt | null> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(scheduleFulfillmentAttempts)
+    .where(
+      and(
+        eq(scheduleFulfillmentAttempts.tenantId, tenantId),
+        eq(scheduleFulfillmentAttempts.scheduleRequestId, scheduleRequestId),
+        eq(scheduleFulfillmentAttempts.idempotencyKey, idempotencyKey),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function replayScheduleFulfillment(
+  attempt: ScheduleFulfillmentAttempt,
+): Promise<ScheduleFulfillmentResult> {
+  return materializeScheduleFulfillment({
+    tenantId: attempt.tenantId,
+    scheduleRequestId: attempt.scheduleRequestId,
+    flightIds: attempt.flightIds,
+    requestStatus: assertFulfillmentStatus(attempt.requestStatus),
+    requestVersion: attempt.requestVersion,
+    linkedFlightCount: attempt.linkedFlightCount,
+    remainingFlightCount: attempt.remainingFlightCount,
+  });
+}
+
+async function materializeScheduleFulfillment(
+  outcome: ScheduleFulfillmentOutcome & { tenantId: string },
+): Promise<ScheduleFulfillmentResult> {
+  const db = getDb();
   const rows = await db
     .select()
     .from(flights)
-    .where(and(eq(flights.tenantId, input.tenantId), inArray(flights.id, ids)));
+    .where(
+      and(
+        eq(flights.tenantId, outcome.tenantId),
+        inArray(flights.id, outcome.flightIds),
+      ),
+    );
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const ordered = ids
+  const ordered = outcome.flightIds
     .map((id) => byId.get(id))
     .filter((row): row is Flight => !!row);
-  return ordered.length === ids.length ? ordered : null;
+  if (ordered.length !== outcome.flightIds.length) {
+    throw new Error("Stored fulfillment result references a missing flight");
+  }
+  const { tenantId: _tenantId, ...fulfillment } = outcome;
+  return { flights: ordered, fulfillment };
+}
+
+function assertFulfillmentStatus(
+  status: ScheduleFulfillmentAttempt["requestStatus"],
+): "partially_fulfilled" | "fulfilled" {
+  if (status !== "partially_fulfilled" && status !== "fulfilled") {
+    throw new Error("Stored fulfillment result has an invalid request status");
+  }
+  return status;
 }
 
 export async function findFlight(

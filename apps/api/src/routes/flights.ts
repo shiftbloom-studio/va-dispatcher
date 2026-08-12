@@ -57,6 +57,10 @@ const expectedVersionSchema = z.object({
   expectedVersion: z.number().int().min(1),
 });
 
+const idempotencyHeaderSchema = z.object({
+  "idempotency-key": z.string().trim().min(1).max(200),
+});
+
 const versionedReasonSchema = expectedVersionSchema.extend({
   reason: z.string().max(500).optional(),
 });
@@ -83,6 +87,7 @@ flightRoutes.post(
 flightRoutes.post(
   "/flights/bulk",
   requireRole("dispatcher"),
+  zValidator("header", idempotencyHeaderSchema),
   zValidator(
     "json",
     z.object({
@@ -94,15 +99,24 @@ flightRoutes.post(
   async (c) => {
     const auth = c.get("auth");
     const body = c.req.valid("json");
-    const flights = await flightService.bulkCreateFlights(
+    const result = await flightService.bulkCreateFlights(
       {
         tenantId: auth.tenantId,
         membershipId: auth.membershipId,
         role: auth.role,
       },
-      body,
+      {
+        ...body,
+        idempotencyKey: c.req.valid("header")["idempotency-key"],
+      },
     );
-    return c.json({ flights: flights.map(serializeFlight) }, 201);
+    return c.json(
+      {
+        flights: result.flights.map(serializeFlight),
+        fulfillment: result.fulfillment,
+      },
+      201,
+    );
   },
 );
 

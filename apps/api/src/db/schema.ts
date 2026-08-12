@@ -357,6 +357,70 @@ export const dispatchReleases = pgTable(
 );
 
 /**
+ * Durable result of one logical request-fulfillment submission.
+ *
+ * Canonical flights remain in `flights`; this record stores only the ordered
+ * canonical IDs and the immutable request-progress outcome needed to replay
+ * an idempotent POST without generating another batch.
+ */
+export const scheduleFulfillmentAttempts = pgTable(
+  "schedule_fulfillment_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    scheduleRequestId: uuid("schedule_request_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    flightIds: uuid("flight_ids").array().notNull(),
+    requestStatus: scheduleRequestStatusEnum("request_status").notNull(),
+    requestVersion: integer("request_version").notNull(),
+    linkedFlightCount: integer("linked_flight_count").notNull(),
+    remainingFlightCount: integer("remaining_flight_count").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("schedule_fulfillment_attempts_request_key_uidx").on(
+      t.tenantId,
+      t.scheduleRequestId,
+      t.idempotencyKey,
+    ),
+    foreignKey({
+      columns: [t.tenantId, t.scheduleRequestId],
+      foreignColumns: [scheduleRequests.tenantId, scheduleRequests.id],
+      name: "schedule_fulfillment_attempts_tenant_request_fkey",
+    }).onDelete("cascade"),
+    check(
+      "schedule_fulfillment_attempts_key_check",
+      sql`char_length(${t.idempotencyKey}) between 1 and 200`,
+    ),
+    check(
+      "schedule_fulfillment_attempts_payload_hash_check",
+      sql`char_length(${t.payloadHash}) = 64`,
+    ),
+    check(
+      "schedule_fulfillment_attempts_flights_check",
+      sql`cardinality(${t.flightIds}) > 0`,
+    ),
+    check(
+      "schedule_fulfillment_attempts_status_check",
+      sql`${t.requestStatus} in ('partially_fulfilled', 'fulfilled')`,
+    ),
+    check(
+      "schedule_fulfillment_attempts_counts_check",
+      sql`${t.requestVersion} > 1 and ${t.linkedFlightCount} > 0 and ${t.remainingFlightCount} >= 0`,
+    ),
+    index("schedule_fulfillment_attempts_request_idx").on(
+      t.tenantId,
+      t.scheduleRequestId,
+    ),
+  ],
+);
+
+/**
  * Short-lived server-side state for Navigraph Authorization Code + PKCE.
  *
  * Browser state is a versioned, server-authenticated token. Only its random
@@ -573,6 +637,8 @@ export type Tenant = typeof tenants.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type ScheduleRequest = typeof scheduleRequests.$inferSelect;
 export type Flight = typeof flights.$inferSelect;
+export type ScheduleFulfillmentAttempt =
+  typeof scheduleFulfillmentAttempts.$inferSelect;
 export type NavigraphOauthTransaction =
   typeof navigraphOauthTransactions.$inferSelect;
 export type SimbriefDispatch = typeof simbriefDispatches.$inferSelect;

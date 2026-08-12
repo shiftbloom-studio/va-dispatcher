@@ -1,7 +1,12 @@
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
-import { flights, memberships, scheduleRequests } from "./schema.js";
+import {
+  flights,
+  memberships,
+  scheduleFulfillmentAttempts,
+  scheduleRequests,
+} from "./schema.js";
 
 function expectCompositeForeignKey(
   table: PgTable,
@@ -54,5 +59,21 @@ describe("tenant-coherent operational references", () => {
       ["tenant_id", "schedule_request_id"],
       ["tenant_id", "id"],
     );
+    expectCompositeForeignKey(
+      scheduleFulfillmentAttempts,
+      "schedule_fulfillment_attempts_tenant_request_fkey",
+      ["tenant_id", "schedule_request_id"],
+      ["tenant_id", "id"],
+    );
+  });
+
+  it("deduplicates fulfillment only within one tenant request", () => {
+    const index = getTableConfig(scheduleFulfillmentAttempts).indexes.find(
+      (candidate) =>
+        candidate.config.name ===
+        "schedule_fulfillment_attempts_request_key_uidx",
+    );
+    expect(index?.config.unique).toBe(true);
+    expect(index?.config.columns).toHaveLength(3);
   });
 });
