@@ -15,6 +15,8 @@ import {
 import { mapClerkOrgRole } from "../domain/members/roles.js";
 import { AppError } from "../lib/errors.js";
 import { env } from "../env.js";
+import { acarsStationSchema } from "../domain/acars/validation.js";
+import { isUniqueViolation } from "../lib/postgres.js";
 
 export const membersRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -44,13 +46,7 @@ membersRoutes.patch(
     z.object({
       role: z.enum(["pilot", "dispatcher", "admin"]).optional(),
       displayName: z.string().min(1).max(120).nullable().optional(),
-      pilotCallsign: z
-        .string()
-        .min(1)
-        .max(20)
-        .transform((s) => s.toUpperCase())
-        .nullable()
-        .optional(),
+      pilotCallsign: acarsStationSchema.nullable().optional(),
       status: z.enum(["active", "invited", "disabled"]).optional(),
     }),
   ),
@@ -58,7 +54,18 @@ membersRoutes.patch(
     const auth = c.get("auth");
     const id = c.req.param("id");
     const body = c.req.valid("json");
-    const updated = await updateMembership(auth.tenantId, id, body);
+    let updated: Awaited<ReturnType<typeof updateMembership>>;
+    try {
+      updated = await updateMembership(auth.tenantId, id, body);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new AppError(
+          "CONFLICT",
+          "This ACARS callsign is already assigned to another member",
+        );
+      }
+      throw error;
+    }
     if (!updated) throw new AppError("NOT_FOUND", "Member not found");
     return c.json({
       id: updated.id,
@@ -82,10 +89,11 @@ membersRoutes.post("/members/sync", requireRole("dispatcher"), async (c) => {
   }
 
   const clerk = getClerkClient();
-  const membershipList = await clerk.organizations.getOrganizationMembershipList({
-    organizationId: auth.clerkOrgId,
-    limit: 100,
-  });
+  const membershipList =
+    await clerk.organizations.getOrganizationMembershipList({
+      organizationId: auth.clerkOrgId,
+      limit: 100,
+    });
 
   let synced = 0;
   for (const m of membershipList.data) {
@@ -95,7 +103,9 @@ membersRoutes.post("/members/sync", requireRole("dispatcher"), async (c) => {
     const displayName =
       [m.publicUserData?.firstName, m.publicUserData?.lastName]
         .filter(Boolean)
-        .join(" ") || m.publicUserData?.identifier || null;
+        .join(" ") ||
+      m.publicUserData?.identifier ||
+      null;
     await upsertMembership({
       tenantId: auth.tenantId,
       clerkUserId: userId,

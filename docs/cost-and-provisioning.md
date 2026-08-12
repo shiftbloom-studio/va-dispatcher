@@ -23,14 +23,14 @@ Goal: **near-zero cost when nobody is using the tool**, while staying ready for 
 
 - Fluid Compute / Active CPU: billed when handling requests, not for sitting idle.
 - Hobby/Pro free allowances cover light VA traffic.
-- Cron is **every 5 minutes** and **no-ops** when `ACARS_PROVIDER=mock` or no Hoppie logons — so it will not keep Neon awake during mock/dev.
+- The production cron is **every minute** but exits before opening Neon while `ACARS_PROVIDER=mock`. With `hoppie`, it polls only tenants with a saved logon. Vercel Pro is required for that frequency.
 
 ### ACARS
 
-| Mode                            | Idle impact                                                                                                       |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `ACARS_PROVIDER=mock` (default) | Cron does nothing; no Hoppie traffic; Neon stays asleep if no API traffic                                         |
-| `ACARS_PROVIDER=hoppie`         | Cron polls only tenants with encrypted logon; set schedule to `*/1 * * * *` only if you need near-real-time inbox |
+| Mode                    | Idle impact                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `ACARS_PROVIDER=mock`   | Cron exits before DB access; tenant Hoppie sends can be tested, but scheduled inbound polling is off |
+| `ACARS_PROVIDER=hoppie` | Cron polls only configured tenants once per minute; outbound sends are immediate                     |
 
 ## Provisioning steps
 
@@ -49,7 +49,7 @@ vercel integration add clerk --yes
 vercel env pull apps/api/.env.local --yes
 cp apps/api/.env.local apps/api/.env
 # ensure: AUTH_DEV_BYPASS=true for local without Clerk UI
-#         ACARS_PROVIDER=mock
+#         ACARS_PROVIDER=mock (deployment fallback; tenants opt in from Settings)
 #         CRON_SECRET=...
 
 pnpm db:push
