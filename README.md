@@ -38,7 +38,7 @@ pnpm dev              # web :3000 + API :3001
 
 Open `http://localhost:3000/vsas`. Health check: `GET http://localhost:3001/health`.
 
-Clerk Organizations must be enabled, organization slugs must be enabled, and the vSAS Clerk organization slug must be `vsas`. The application verifies the URL slug, active Clerk organization slug, and API `/me` tenant before loading operational data.
+Clerk Organizations must be enabled, organization slugs must be enabled, and the vSAS Clerk organization slug must be `vsas`. Set `VSAS_CLERK_ORG_ID` to that organization's Clerk ID. The API provisions or repairs the initial vSAS tenant from this trusted value on first authenticated access, then verifies the URL slug, active Clerk organization slug, and API `/me` tenant before loading operational data.
 
 ## Core flows
 

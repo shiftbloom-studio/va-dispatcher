@@ -6,7 +6,10 @@ import {
   findMembership,
   upsertMembership,
 } from "../db/repositories/memberships.js";
-import { findTenantByClerkOrgId } from "../db/repositories/tenants.js";
+import {
+  findTenantByClerkOrgId,
+  upsertTenantBySlug,
+} from "../db/repositories/tenants.js";
 import { mapClerkOrgRole } from "../domain/members/roles.js";
 import type { MemberRole } from "../db/schema.js";
 import { hasDatabase } from "../db/client.js";
@@ -121,7 +124,17 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       );
     }
 
-    const tenant = await findTenantByClerkOrgId(clerkOrgId);
+    let tenant = await findTenantByClerkOrgId(clerkOrgId);
+    if (!tenant && clerkOrgId === e.VSAS_CLERK_ORG_ID) {
+      // The configured Clerk organization is the source of truth for the
+      // initial vSAS tenant. This also repairs a stale org ID after Neon or
+      // Clerk has been reprovisioned without requiring a secret seed call.
+      tenant = await upsertTenantBySlug({
+        slug: "vsas",
+        name: "vSAS",
+        clerkOrgId,
+      });
+    }
     if (!tenant) {
       throw new AppError(
         "FORBIDDEN",
