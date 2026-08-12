@@ -33,6 +33,7 @@ operating procedures for the actual deployment with qualified counsel.
 | `acars_messages`    | Station identifiers, free-text messages, provider metadata, actor, timestamps                                  |
 | `audit_events`      | Actor, action, entity identifiers, metadata, timestamp                                                         |
 | Infrastructure      | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                    |
+| Vercel telemetry    | Aggregated routes, referrers, coarse location/device categories, Web Vitals, and BotID security signals        |
 
 Free-text fields can contain personal data even when the schema does not ask
 for it. Train dispatchers and members not to enter sensitive or unrelated data.
@@ -73,11 +74,13 @@ Document and test a request workflow that can:
 
 ## Cookies and browser storage
 
-The current build loads no analytics, advertising, marketing, social-media
-plugin, remote font, map, or embedded-media service. The banner is therefore an
-informational notice about essential authentication/security storage and the
-local acknowledgement record. It deliberately has no deceptive “Accept all”
-choice.
+The current build loads Vercel Web Analytics, Speed Insights, and BotID, but no
+advertising, marketing, social-media plugin, remote font, map, or embedded-media
+service. Web Analytics is cookie-free; BotID may use provider-controlled
+security keys for protected requests. The banner is therefore an informational
+notice about the configured telemetry, essential authentication/security
+storage, and the local acknowledgement record. It deliberately has no deceptive
+“Accept all” choice.
 
 Before adding any optional client-side service:
 

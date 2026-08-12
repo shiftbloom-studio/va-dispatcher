@@ -126,9 +126,11 @@ export function PrivacyControls() {
             Cookies and local storage
           </h2>
           <p className="mt-3 leading-7 text-slate-600">
-            This deployment currently has no optional analytics, advertising, or
-            marketing category to accept or reject. Authentication storage is
-            essential to provide the signed-in service.
+            This deployment has no optional advertising or marketing category to
+            accept or reject. Vercel&apos;s cookie-free Web Analytics,
+            performance reporting, and BotID protection are described in the
+            Privacy Notice. Authentication and security storage is essential to
+            provide and protect the signed-in service.
           </p>
 
           <div className="mt-5 space-y-3">
@@ -142,8 +144,9 @@ export function PrivacyControls() {
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 Clerk uses cookies such as <code>__session</code>,{" "}
                 <code>__client</code>, and <code>__client_uat</code> to sign you
-                in, protect sessions, and prevent abuse. Their lifetime follows
-                the configured Clerk session.
+                in, protect sessions, and prevent abuse. Vercel BotID may use
+                <code> KP_*</code> security keys to validate protected requests.
+                Their lifetimes are controlled by the respective provider.
               </p>
             </section>
             <section className="rounded-xl border border-slate-200 p-4">
