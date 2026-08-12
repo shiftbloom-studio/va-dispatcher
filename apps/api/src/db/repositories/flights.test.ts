@@ -7,9 +7,42 @@ vi.mock("../client.js", () => ({
 }));
 
 import { flights } from "../schema.js";
-import { createReplacementFlight, updateFlight } from "./flights.js";
+import {
+  createFlight,
+  createReplacementFlight,
+  fulfillScheduleRequest,
+  updateFlight,
+} from "./flights.js";
 
 describe("flight repository concurrency boundary", () => {
+  it("creates an ad-hoc flight and its actor audit atomically", async () => {
+    execute.mockRejectedValueOnce(new Error("synthetic audit insert failure"));
+
+    await expect(
+      createFlight({
+        tenantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        actorMembershipId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        pilotMembershipId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        flightNumber: "SK101",
+        depIcao: "EKCH",
+        arrIcao: "ENGM",
+        etd: new Date("2026-09-10T08:00:00.000Z"),
+        eta: new Date("2026-09-10T09:30:00.000Z"),
+        status: "offered",
+      }),
+    ).rejects.toThrow("synthetic audit insert failure");
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toMatch(
+      /with "?inserted"? as \(\s*insert into "flights"/i,
+    );
+    expect(query.sql).toMatch(/insert into "audit_events"/i);
+    expect(query.sql).toContain("'flight.create'");
+    expect(query.sql).toMatch(/inner join "?audited"?/i);
+    // A rejected audit CTE rejects the entire creation statement.
+  });
+
   it("executes compare-and-set mutation and audit as one atomic statement", async () => {
     execute.mockRejectedValueOnce(new Error("synthetic audit insert failure"));
 
@@ -94,5 +127,69 @@ describe("flight repository concurrency boundary", () => {
     expect(replacementIndex?.config.columns).toHaveLength(2);
     // The source remains byte-for-byte unchanged. Concurrent INSERTs race on
     // the unique lineage; exactly one can return a row and create its audit.
+  });
+
+  it("locks capacity and fulfills a complete batch with request and audits atomically", async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      fulfillScheduleRequest({
+        tenantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        scheduleRequestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        expectedRequestVersion: 2,
+        expectedRequestStatus: "partially_fulfilled",
+        actorMembershipId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        flights: [
+          {
+            flightNumber: "SK901",
+            depIcao: "ESSA",
+            arrIcao: "EKCH",
+            etd: new Date("2026-09-10T08:00:00.000Z"),
+            eta: new Date("2026-09-10T09:00:00.000Z"),
+            aircraftType: "A320",
+          },
+        ],
+      }),
+    ).resolves.toBeNull();
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toMatch(/with "?request_locked"? as \(\s*select/i);
+    expect(query.sql).toMatch(/for update of "schedule_requests"/i);
+    expect(query.sql).toMatch(
+      /having[\s\S]*<= request_locked\.desired_flight_count/i,
+    );
+    expect(query.sql).toMatch(/insert into "flights"/i);
+    expect(query.sql).toMatch(/update "schedule_requests"/i);
+    expect(query.sql).toMatch(/insert into "audit_events"/i);
+    expect(query.sql).toContain("'schedule_request.fulfillment_progress'");
+    expect(query.sql).toContain("'flight.bulk_create'");
+    expect(query.sql).toMatch(/where audit_totals\.count = 2/i);
+  });
+
+  it("cannot leave inserted fulfillment flights behind when auditing fails", async () => {
+    execute.mockRejectedValueOnce(
+      new Error("synthetic fulfillment audit failure"),
+    );
+
+    await expect(
+      fulfillScheduleRequest({
+        tenantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        scheduleRequestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        expectedRequestVersion: 1,
+        expectedRequestStatus: "in_review",
+        actorMembershipId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        flights: [
+          {
+            flightNumber: "SK901",
+            depIcao: "ESSA",
+            arrIcao: "EKCH",
+            etd: new Date("2026-09-10T08:00:00.000Z"),
+            eta: new Date("2026-09-10T09:00:00.000Z"),
+          },
+        ],
+      }),
+    ).rejects.toThrow("synthetic fulfillment audit failure");
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

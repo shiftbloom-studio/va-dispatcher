@@ -1,23 +1,31 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Ban, CalendarDays } from "lucide-react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { ArrowLeft, Ban, CalendarDays, Pencil } from "lucide-react";
 import Link from "next/link";
 
-import { ConfirmAction } from "@/components/action-dialog";
 import { FlightCard } from "@/components/flight-card";
 import { PageHeading } from "@/components/page-heading";
+import {
+  ScheduleCancellationAction,
+  type LinkedFlightCancellationAction,
+} from "@/components/schedule-cancellation-action";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
-import { apiErrorMessage } from "@/lib/api/http";
+import { ApiError, apiErrorMessage } from "@/lib/api/http";
 import {
   flightPageSchema,
   scheduleRequestDetailResponseSchema,
   scheduleRequestResponseSchema,
 } from "@/lib/api/schemas";
-import { useApi } from "@/lib/api/use-api";
+import { jsonBody, useApi } from "@/lib/api/use-api";
 import { canCancelScheduleRequest } from "@/lib/status";
 import { availabilityFromPreferences, formatUtc } from "@/lib/utc";
 
@@ -37,27 +45,52 @@ export function ScheduleRequestDetail({
         schema: scheduleRequestDetailResponseSchema,
       }),
   });
-  const flights = useQuery({
+  const flights = useInfiniteQuery({
     queryKey: [slug, "schedule-request", requestId, "flights"],
-    queryFn: () =>
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
       api(
-        `/flights?scheduleRequestId=${encodeURIComponent(requestId)}&limit=50`,
+        `/flights?scheduleRequestId=${encodeURIComponent(requestId)}&limit=50${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
         { schema: flightPageSchema },
       ),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
   const cancel = useMutation({
-    mutationFn: () =>
+    mutationFn: ({
+      linkedFlightAction,
+      reason,
+    }: {
+      linkedFlightAction: LinkedFlightCancellationAction;
+      reason: string;
+    }) =>
       api(`/schedule-requests/${requestId}/cancel`, {
         method: "POST",
         schema: scheduleRequestResponseSchema,
+        ...jsonBody({
+          expectedVersion: request.data?.request.version,
+          linkedFlightAction,
+          reason: reason || undefined,
+        }),
       }),
     onSuccess: async () => {
       await Promise.all([
         request.refetch(),
+        flights.refetch(),
         queryClient.invalidateQueries({
           queryKey: [slug, "pilot", "schedule-requests"],
         }),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "pilot", "flights"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "dispatch", "board"],
+        }),
       ]);
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await Promise.all([request.refetch(), flights.refetch()]);
+      }
     },
   });
 
@@ -73,6 +106,8 @@ export function ScheduleRequestDetail({
   }
 
   const scheduleRequest = request.data.request;
+  const fulfillment = request.data.fulfillment;
+  const linkedFlights = flights.data.pages.flatMap((page) => page.items);
   const availability = availabilityFromPreferences(scheduleRequest.preferences);
 
   return (
@@ -90,7 +125,20 @@ export function ScheduleRequestDetail({
           `${scheduleRequest.desiredFlightCount}-flight request`
         }
         description={`Submitted ${formatUtc(scheduleRequest.createdAt)} · ${scheduleRequest.desiredFlightCount} flight${scheduleRequest.desiredFlightCount === 1 ? "" : "s"} requested`}
-        action={<StatusBadge status={scheduleRequest.status} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {scheduleRequest.status === "pending" ? (
+              <Link
+                href={`/${slug}/portal/schedule-requests/${requestId}/edit`}
+              >
+                <Button variant="secondary" size="sm">
+                  <Pencil aria-hidden className="size-4" /> Edit request
+                </Button>
+              </Link>
+            ) : null}
+            <StatusBadge status={scheduleRequest.status} />
+          </div>
+        }
       />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -100,8 +148,8 @@ export function ScheduleRequestDetail({
             description="Canonical flight records linked to this request."
           />
           <div className="grid gap-3 p-4 md:grid-cols-2">
-            {flights.data.items.length ? (
-              flights.data.items.map((flight) => (
+            {linkedFlights.length ? (
+              linkedFlights.map((flight) => (
                 <FlightCard
                   key={flight.id}
                   flight={flight}
@@ -117,9 +165,35 @@ export function ScheduleRequestDetail({
               </div>
             )}
           </div>
+          {flights.hasNextPage ? (
+            <div className="border-t border-slate-100 p-4 text-center">
+              <Button
+                variant="secondary"
+                disabled={flights.isFetchingNextPage}
+                onClick={() => void flights.fetchNextPage()}
+              >
+                {flights.isFetchingNextPage
+                  ? "Loading history…"
+                  : "Load more linked flights"}
+              </Button>
+            </div>
+          ) : null}
         </Card>
 
         <div className="space-y-6">
+          <Card className="p-5">
+            <h2 className="font-display text-lg font-semibold">
+              Fulfillment progress
+            </h2>
+            <p className="mt-2 text-sm text-slate-700">
+              {fulfillment.linkedFlightCount} of{" "}
+              {scheduleRequest.desiredFlightCount} requested flight
+              {scheduleRequest.desiredFlightCount === 1 ? "" : "s"} linked.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {fulfillment.remainingFlightCount} remaining.
+            </p>
+          </Card>
           <Card className="overflow-hidden">
             <CardHeader title="Availability" />
             <div className="space-y-3 p-5">
@@ -172,19 +246,24 @@ export function ScheduleRequestDetail({
               <strong>Dispatch response:</strong> {scheduleRequest.rejectReason}
             </div>
           ) : null}
+          {scheduleRequest.cancelReason ? (
+            <div
+              role="status"
+              className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800"
+            >
+              <strong>Cancellation reason:</strong>{" "}
+              {scheduleRequest.cancelReason}
+            </div>
+          ) : null}
           {canCancelScheduleRequest(scheduleRequest.status) ? (
-            <ConfirmAction
+            <ScheduleCancellationAction
               trigger={
                 <Button variant="secondary" className="w-full text-red-700">
                   <Ban aria-hidden className="size-4" /> Cancel request
                 </Button>
               }
-              title="Cancel this schedule request?"
-              detail="Dispatch will stop working on this request. Existing flight records are not changed by this action."
-              confirmLabel="Cancel request"
-              danger
-              onConfirm={async () => {
-                await cancel.mutateAsync();
+              onConfirm={async (linkedFlightAction, reason) => {
+                await cancel.mutateAsync({ linkedFlightAction, reason });
               }}
             />
           ) : null}

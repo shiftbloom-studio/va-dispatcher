@@ -117,8 +117,10 @@ export const scheduleRequestSchema = z.object({
   windowStart: z.string(),
   windowEnd: z.string(),
   preferences: schedulePreferencesSchema,
+  version: z.number().int().min(1),
   status: scheduleRequestStatusSchema,
   rejectReason: z.string().nullish(),
+  cancelReason: z.string().nullish(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -135,7 +137,10 @@ export const scheduleRequestResponseSchema = z.object({
 
 export const scheduleRequestDetailResponseSchema = z.object({
   request: scheduleRequestSchema,
-  flights: z.unknown().optional(),
+  fulfillment: z.object({
+    linkedFlightCount: z.number().int().min(0),
+    remainingFlightCount: z.number().int().min(0),
+  }),
 });
 
 export const flightSchema = z.object({

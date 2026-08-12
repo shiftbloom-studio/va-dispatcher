@@ -430,8 +430,10 @@ const schemas = {
       "windowEnd",
       "desiredFlightCount",
       "preferences",
+      "version",
       "status",
       "rejectReason",
+      "cancelReason",
       "createdAt",
       "updatedAt",
     ],
@@ -444,8 +446,10 @@ const schemas = {
       windowEnd: schemaRef("DateTime"),
       desiredFlightCount: { type: "integer", minimum: 1, maximum: 50 },
       preferences: schemaRef("ArbitraryObject"),
+      version: { type: "integer", minimum: 1 },
       status: schemaRef("ScheduleRequestStatus"),
       rejectReason: schemaRef("NullableString"),
+      cancelReason: schemaRef("NullableString"),
       createdAt: schemaRef("DateTime"),
       updatedAt: schemaRef("DateTime"),
     },
@@ -894,9 +898,51 @@ const schemas = {
       preferences: schemaRef("SchedulePreferences"),
     },
   },
-  ReasonInput: {
+  UpdateScheduleRequestInput: {
     type: "object",
+    required: [
+      "expectedVersion",
+      "windowStart",
+      "windowEnd",
+      "desiredFlightCount",
+      "preferences",
+    ],
     properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      title: { type: "string", maxLength: 120, nullable: true },
+      notes: { type: "string", maxLength: 2000, nullable: true },
+      windowStart: schemaRef("DateTime"),
+      windowEnd: schemaRef("DateTime"),
+      desiredFlightCount: { type: "integer", minimum: 1, maximum: 50 },
+      preferences: schemaRef("SchedulePreferences"),
+    },
+  },
+  ExpectedScheduleRequestVersionInput: {
+    type: "object",
+    required: ["expectedVersion"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+    },
+  },
+  RejectScheduleRequestInput: {
+    type: "object",
+    required: ["expectedVersion"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      reason: { type: "string", maxLength: 500 },
+    },
+  },
+  CancelScheduleRequestInput: {
+    type: "object",
+    required: ["expectedVersion", "linkedFlightAction"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      linkedFlightAction: {
+        type: "string",
+        enum: ["keep", "cancel_predeparture"],
+        description:
+          "keep preserves every linked flight. cancel_predeparture cancels linked draft, offered, accepted, and briefed flights while preserving active and terminal history.",
+      },
       reason: { type: "string", maxLength: 500 },
     },
   },
@@ -927,8 +973,8 @@ const schemas = {
   CreateFlightInput: {
     type: "object",
     required: ["flightNumber", "depIcao", "arrIcao", "etd", "eta"],
+    additionalProperties: false,
     properties: {
-      scheduleRequestId: schemaRef("NullableUuid"),
       pilotMembershipId: schemaRef("NullableUuid"),
       flightNumber: { type: "string", minLength: 2, maxLength: 12 },
       depIcao: { type: "string", minLength: 4, maxLength: 4 },
@@ -966,9 +1012,10 @@ const schemas = {
   },
   BulkCreateFlightsInput: {
     type: "object",
-    required: ["scheduleRequestId", "flights"],
+    required: ["scheduleRequestId", "expectedRequestVersion", "flights"],
     properties: {
       scheduleRequestId: schemaRef("Uuid"),
+      expectedRequestVersion: { type: "integer", minimum: 1 },
       flights: {
         type: "array",
         minItems: 1,
@@ -1210,10 +1257,17 @@ const schemas = {
   },
   ScheduleRequestDetailResponse: {
     type: "object",
-    required: ["request", "flights"],
+    required: ["request", "fulfillment"],
     properties: {
       request: schemaRef("ScheduleRequest"),
-      flights: { type: "array", items: schemaRef("Flight") },
+      fulfillment: {
+        type: "object",
+        required: ["linkedFlightCount", "remainingFlightCount"],
+        properties: {
+          linkedFlightCount: { type: "integer", minimum: 0 },
+          remainingFlightCount: { type: "integer", minimum: 0 },
+        },
+      },
     },
   },
   FlightResponse: {
@@ -1856,7 +1910,9 @@ export const openApiDocument = {
       get: {
         tags: ["Schedule requests"],
         operationId: "getScheduleRequest",
-        summary: "Get a schedule request and linked flights",
+        summary: "Get a schedule request and fulfillment counts",
+        description:
+          "Returns uncapped fulfillment counts. Retrieve linked flight history through the cursor-paginated GET /flights?scheduleRequestId=... collection.",
         parameters: [pathParameter("id", "Schedule request ID.")],
         responses: {
           "200": jsonResponse(
@@ -1866,6 +1922,22 @@ export const openApiDocument = {
           ...resourceErrors,
         },
       },
+      patch: {
+        tags: ["Schedule requests"],
+        operationId: "updateScheduleRequest",
+        summary: "Edit a pending schedule request",
+        description:
+          "Only the owning pilot may edit. expectedVersion provides optimistic concurrency. Dispatchers do not edit pilot availability; starting review locks the request. Every edit is normalized server-side and rejected when non-cancelled linked flights exist.",
+        parameters: [pathParameter("id", "Schedule request ID.")],
+        requestBody: jsonRequest(schemaRef("UpdateScheduleRequestInput")),
+        responses: {
+          "200": jsonResponse(
+            "Updated schedule request.",
+            schemaRef("ScheduleRequestResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
     },
     "/schedule-requests/{id}/cancel": {
       post: {
@@ -1873,8 +1945,9 @@ export const openApiDocument = {
         operationId: "cancelScheduleRequest",
         summary: "Cancel a schedule request",
         description:
-          "The owning pilot may cancel their request; dispatchers and admins may cancel any tenant request.",
+          "The owning pilot may cancel their request; dispatchers and admins may cancel any tenant request. The caller must explicitly preserve linked flights or transactionally cancel draft, offered, accepted, and briefed records. Active and terminal flight history is always preserved.",
         parameters: [pathParameter("id", "Schedule request ID.")],
+        requestBody: jsonRequest(schemaRef("CancelScheduleRequestInput")),
         responses: {
           "200": jsonResponse(
             "Cancelled schedule request.",
@@ -1892,6 +1965,9 @@ export const openApiDocument = {
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Schedule request ID.")],
+        requestBody: jsonRequest(
+          schemaRef("ExpectedScheduleRequestVersionInput"),
+        ),
         responses: {
           "200": jsonResponse(
             "Schedule request in review.",
@@ -1909,10 +1985,7 @@ export const openApiDocument = {
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Schedule request ID.")],
-        requestBody: optionalJsonRequest(
-          schemaRef("ReasonInput"),
-          "Optional rejection reason.",
-        ),
+        requestBody: jsonRequest(schemaRef("RejectScheduleRequestInput")),
         responses: {
           "200": jsonResponse(
             "Rejected schedule request.",
@@ -1928,7 +2001,7 @@ export const openApiDocument = {
         operationId: "createFlight",
         summary: "Create a flight",
         description:
-          "Requires the dispatcher role or higher. ETA must be after ETD. Offered flights require an active pilot in the current tenant. A request-linked flight inherits the request owner and cannot be reassigned to another pilot; its schedule must fit one detailed availability interval.",
+          "Creates an ad-hoc flight and requires the dispatcher role or higher. ETA must be after ETD. Offered flights require an active pilot in the current tenant. Schedule-linked offers must use POST /flights/bulk so request state, cumulative capacity, flights, and audits commit atomically.",
         "x-required-role": "dispatcher",
         requestBody: jsonRequest(schemaRef("CreateFlightInput")),
         responses: {
@@ -1979,7 +2052,7 @@ export const openApiDocument = {
         operationId: "bulkCreateFlights",
         summary: "Create offered flights for a schedule request",
         description:
-          "Requires the dispatcher role or higher. Every flight is assigned to the requesting active pilot, ETA must be after ETD, and the full flight must fit one normalized detailed availability interval. Pilot assignment overrides to another member are rejected.",
+          "Requires the dispatcher role or higher. The request must be in review or partially fulfilled, expectedRequestVersion must match, and the batch cannot exceed the cumulative remaining flight count. Every flight is assigned to the requesting active pilot, ETA must be after ETD, and the full flight must fit one normalized detailed availability interval. Pilot assignment overrides to another member are rejected.",
         "x-required-role": "dispatcher",
         requestBody: jsonRequest(schemaRef("BulkCreateFlightsInput")),
         responses: {

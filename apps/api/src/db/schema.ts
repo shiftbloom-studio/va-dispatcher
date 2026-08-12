@@ -191,8 +191,10 @@ export const scheduleRequests = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
+    version: integer("version").notNull().default(1),
     status: scheduleRequestStatusEnum("status").notNull().default("pending"),
     rejectReason: text("reject_reason"),
+    cancelReason: text("cancel_reason"),
     ...timestamps,
   },
   (t) => [
