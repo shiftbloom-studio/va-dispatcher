@@ -1,0 +1,32 @@
+# dependencies
+node_modules
+.pnpm-store
+
+# build
+dist
+.next
+.turbo
+*.tsbuildinfo
+
+# env
+.env
+.env.*
+!.env.example
+
+# vercel
+.vercel
+
+# os / ide
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# test / coverage
+coverage
+playwright-report
+test-results
+blob-report
+
+# drizzle
+drizzle/meta
