@@ -110,9 +110,9 @@ export async function listMemberships(input: {
     const cursor = decodeCursor(input.cursor);
     conditions.push(
       or(
-        lt(memberships.createdAt, new Date(cursor.createdAt)),
+        lt(memberships.createdAt, new Date(cursor.sortAt)),
         and(
-          eq(memberships.createdAt, new Date(cursor.createdAt)),
+          eq(memberships.createdAt, new Date(cursor.sortAt)),
           lt(memberships.id, cursor.id),
         ),
       )!,
@@ -179,7 +179,7 @@ export async function listMemberships(input: {
   const nextCursor =
     hasMore && lastItem
       ? encodeCursor({
-          createdAt: lastItem.createdAt.toISOString(),
+          sortAt: lastItem.createdAt.toISOString(),
           id: lastItem.id,
         })
       : null;
