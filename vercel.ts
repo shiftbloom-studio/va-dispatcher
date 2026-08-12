@@ -20,6 +20,7 @@ export const config: VercelConfig = {
     },
     api: {
       root: "apps/api",
+      entrypoint: "src/index.ts",
     },
   },
   rewrites: [
