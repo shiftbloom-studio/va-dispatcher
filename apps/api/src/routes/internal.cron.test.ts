@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createApp } from "../app.js";
 import { loadEnv, resetEnvCache } from "../env.js";
 import { errorHandler } from "../middleware/error.js";
 import { internalRoutes } from "./internal.js";
@@ -22,10 +23,13 @@ describe("ACARS polling cron", () => {
     resetEnvCache();
   });
 
-  it("accepts the GET request sent by Vercel Cron", async () => {
-    const response = await app.request("/internal/cron/acars-poll", {
-      headers: { Authorization: "Bearer test-cron-secret" },
-    });
+  it("accepts the GET request sent by Vercel Cron through the full app", async () => {
+    const response = await createApp().request(
+      "/api/v1/internal/cron/acars-poll",
+      {
+        headers: { Authorization: "Bearer test-cron-secret" },
+      },
+    );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({

@@ -44,6 +44,9 @@ export function createApp() {
   app.route("/api", healthRoutes);
 
   const v1 = new Hono<{ Variables: AppVariables }>();
+  // Internal routes authenticate with their own secrets. Mount them before the
+  // business-route auth middleware, whose wildcard also matches later routes.
+  v1.route("/", internalRoutes);
   v1.route("/", meRoutes);
   v1.route("/", tenantRoutes);
   v1.route("/", membersRoutes);
@@ -51,7 +54,6 @@ export function createApp() {
   v1.route("/", flightRoutes);
   v1.route("/", dispatchRoutes);
   v1.route("/", acarsRoutes);
-  v1.route("/", internalRoutes);
 
   app.route("/api/v1", v1);
   // Also mount at /v1 when service-scoped rewrite strips /api
