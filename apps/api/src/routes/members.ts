@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
@@ -62,14 +62,19 @@ const memberUpdateSchema = z
     }
   });
 
-membersRoutes.use("*", requireAuth);
+membersRoutes.use("/members", requireAuth);
+membersRoutes.use("/members/*", requireAuth);
 
 // Member directory and work-impact responses are tenant-confidential and may
 // contain stable identity fields. Never permit shared/browser cache reuse.
-membersRoutes.use("*", async (c, next) => {
+const privateMemberResponse: MiddlewareHandler<{
+  Variables: AppVariables;
+}> = async (c, next) => {
   await next();
   c.header("Cache-Control", "private, no-store");
-});
+};
+membersRoutes.use("/members", privateMemberResponse);
+membersRoutes.use("/members/*", privateMemberResponse);
 
 membersRoutes.get(
   "/members",

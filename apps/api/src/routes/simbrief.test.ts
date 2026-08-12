@@ -49,6 +49,7 @@ vi.mock("../db/repositories/tenants.js", () => ({
 
 import { loadEnv, resetEnvCache } from "../env.js";
 import { errorHandler } from "../middleware/error.js";
+import { dispatchRoutes } from "./dispatch.js";
 import { simbriefPublicRoutes, simbriefRoutes } from "./simbrief.js";
 
 const now = new Date("2026-08-12T12:00:00.000Z");
@@ -96,7 +97,9 @@ const dispatch: SimbriefDispatch = {
 const app = new Hono();
 app.onError(errorHandler);
 app.route("/", simbriefPublicRoutes);
+app.route("/", dispatchRoutes);
 app.route("/", simbriefRoutes);
+app.get("/mounted-after-simbrief-probe", (c) => c.json({ ok: true }));
 
 describe("SimBrief routes", () => {
   beforeEach(() => {
@@ -276,6 +279,14 @@ describe("SimBrief routes", () => {
       body: JSON.stringify({ userId: "123456" }),
     });
     expect(valid.status).toBe(200);
+  });
+
+  it("does not leak dispatch roles or SimBrief cache policy onto later routers", async () => {
+    const response = await app.request("/mounted-after-simbrief-probe");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBeNull();
+    await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
   it("starts Navigraph OAuth for the authenticated member without exposing credentials", async () => {

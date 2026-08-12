@@ -37,7 +37,8 @@ const auditExportSchema = z
     path: ["to"],
   });
 
-auditRoutes.use("*", requireAuth, requireRole("admin"));
+auditRoutes.use("/audit-events", requireAuth, requireRole("admin"));
+auditRoutes.use("/audit-events/*", requireAuth, requireRole("admin"));
 
 auditRoutes.get(
   "/audit-events",

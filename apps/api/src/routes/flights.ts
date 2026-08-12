@@ -17,7 +17,8 @@ import { flightStatusEnum } from "../db/schema.js";
 
 export const flightRoutes = new Hono<{ Variables: AppVariables }>();
 
-flightRoutes.use("*", requireAuth);
+flightRoutes.use("/flights", requireAuth);
+flightRoutes.use("/flights/*", requireAuth);
 
 const icao = z
   .string()

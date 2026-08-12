@@ -1,4 +1,5 @@
 import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../client.js";
 import {
   flights,
@@ -92,85 +93,116 @@ export async function listMemberships(input: {
   limit: number;
 }): Promise<PageResult<MembershipListItem>> {
   const db = getDb();
-  const conditions = [eq(memberships.tenantId, input.tenantId)];
+  // Drizzle emits interpolated columns in raw correlated subqueries without
+  // table qualification unless the tables have explicit aliases. Every table
+  // in this query is therefore named, including the outer membership table,
+  // so PostgreSQL can distinguish the joined `id` and `tenant_id` columns.
+  const memberList = alias(memberships, "member_list");
+  const openFlights = alias(flights, "member_open_flights");
+  const activeFlights = alias(flights, "member_active_flights");
+  const openRequests = alias(scheduleRequests, "member_open_requests");
+  const linkedFlights = alias(flights, "member_linked_flights");
+  const linkedRequests = alias(scheduleRequests, "member_linked_requests");
+  const conditions = [eq(memberList.tenantId, input.tenantId)];
 
   if (input.search) {
     const pattern = `%${input.search}%`;
     conditions.push(
       or(
-        ilike(memberships.displayName, pattern),
-        ilike(memberships.pilotCallsign, pattern),
-        ilike(memberships.clerkUserId, pattern),
+        ilike(memberList.displayName, pattern),
+        ilike(memberList.pilotCallsign, pattern),
+        ilike(memberList.clerkUserId, pattern),
       )!,
     );
   }
-  if (input.role) conditions.push(eq(memberships.role, input.role));
-  if (input.status) conditions.push(eq(memberships.status, input.status));
+  if (input.role) conditions.push(eq(memberList.role, input.role));
+  if (input.status) conditions.push(eq(memberList.status, input.status));
   if (input.cursor) {
     const cursor = decodeCursor(input.cursor);
     conditions.push(
       or(
-        lt(memberships.createdAt, new Date(cursor.sortAt)),
+        lt(memberList.createdAt, new Date(cursor.sortAt)),
         and(
-          eq(memberships.createdAt, new Date(cursor.sortAt)),
-          lt(memberships.id, cursor.id),
+          eq(memberList.createdAt, new Date(cursor.sortAt)),
+          lt(memberList.id, cursor.id),
         ),
       )!,
     );
   }
 
+  const openFlightCount = db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(openFlights)
+    .where(
+      and(
+        eq(openFlights.tenantId, memberList.tenantId),
+        eq(openFlights.pilotMembershipId, memberList.id),
+        inArray(openFlights.status, [...OPEN_FLIGHT_STATUSES]),
+      ),
+    );
+  const activeFlightCount = db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(activeFlights)
+    .where(
+      and(
+        eq(activeFlights.tenantId, memberList.tenantId),
+        eq(activeFlights.pilotMembershipId, memberList.id),
+        eq(activeFlights.status, "active"),
+      ),
+    );
+  const openScheduleRequestCount = db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(openRequests)
+    .where(
+      and(
+        eq(openRequests.tenantId, memberList.tenantId),
+        eq(openRequests.pilotMembershipId, memberList.id),
+        inArray(openRequests.status, [...OPEN_REQUEST_STATUSES]),
+      ),
+    );
+  const terminalRequestLinkedFlightCount = db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(linkedFlights)
+    .innerJoin(
+      linkedRequests,
+      and(
+        eq(linkedRequests.id, linkedFlights.scheduleRequestId),
+        eq(linkedRequests.tenantId, linkedFlights.tenantId),
+      ),
+    )
+    .where(
+      and(
+        eq(linkedFlights.tenantId, memberList.tenantId),
+        eq(linkedFlights.pilotMembershipId, memberList.id),
+        inArray(linkedFlights.status, [...OPEN_FLIGHT_STATUSES]),
+        inArray(linkedRequests.status, ["fulfilled", "rejected", "cancelled"]),
+      ),
+    );
+
   const rows = await db
     .select({
-      id: memberships.id,
-      tenantId: memberships.tenantId,
-      clerkUserId: memberships.clerkUserId,
-      role: memberships.role,
-      displayName: memberships.displayName,
-      pilotCallsign: memberships.pilotCallsign,
-      simbriefUserId: memberships.simbriefUserId,
-      simbriefVerifiedAt: memberships.simbriefVerifiedAt,
-      navigraphSubject: memberships.navigraphSubject,
-      navigraphUsername: memberships.navigraphUsername,
-      navigraphConnectedAt: memberships.navigraphConnectedAt,
-      status: memberships.status,
-      createdAt: memberships.createdAt,
-      updatedAt: memberships.updatedAt,
-      openFlightCount: sql<number>`(
-        select count(*)::int
-        from ${flights}
-        where ${flights.tenantId} = ${memberships.tenantId}
-          and ${flights.pilotMembershipId} = ${memberships.id}
-          and ${inArray(flights.status, [...OPEN_FLIGHT_STATUSES])}
-      )`,
-      activeFlightCount: sql<number>`(
-        select count(*)::int
-        from ${flights}
-        where ${flights.tenantId} = ${memberships.tenantId}
-          and ${flights.pilotMembershipId} = ${memberships.id}
-          and ${flights.status} = 'active'
-      )`,
-      openScheduleRequestCount: sql<number>`(
-        select count(*)::int
-        from ${scheduleRequests}
-        where ${scheduleRequests.tenantId} = ${memberships.tenantId}
-          and ${scheduleRequests.pilotMembershipId} = ${memberships.id}
-          and ${inArray(scheduleRequests.status, [...OPEN_REQUEST_STATUSES])}
-      )`,
-      terminalRequestLinkedFlightCount: sql<number>`(
-        select count(*)::int
-        from ${flights}
-        inner join ${scheduleRequests}
-          on ${scheduleRequests.id} = ${flights.scheduleRequestId}
-          and ${scheduleRequests.tenantId} = ${flights.tenantId}
-        where ${flights.tenantId} = ${memberships.tenantId}
-          and ${flights.pilotMembershipId} = ${memberships.id}
-          and ${inArray(flights.status, [...OPEN_FLIGHT_STATUSES])}
-          and ${inArray(scheduleRequests.status, ["fulfilled", "rejected", "cancelled"])}
-      )`,
+      id: memberList.id,
+      tenantId: memberList.tenantId,
+      clerkUserId: memberList.clerkUserId,
+      role: memberList.role,
+      displayName: memberList.displayName,
+      pilotCallsign: memberList.pilotCallsign,
+      simbriefUserId: memberList.simbriefUserId,
+      simbriefVerifiedAt: memberList.simbriefVerifiedAt,
+      navigraphSubject: memberList.navigraphSubject,
+      navigraphUsername: memberList.navigraphUsername,
+      navigraphConnectedAt: memberList.navigraphConnectedAt,
+      status: memberList.status,
+      createdAt: memberList.createdAt,
+      updatedAt: memberList.updatedAt,
+      openFlightCount: sql<number>`(${openFlightCount})`,
+      activeFlightCount: sql<number>`(${activeFlightCount})`,
+      openScheduleRequestCount: sql<number>`(${openScheduleRequestCount})`,
+      terminalRequestLinkedFlightCount: sql<number>`(${terminalRequestLinkedFlightCount})`,
     })
-    .from(memberships)
+    .from(memberList)
     .where(and(...conditions))
-    .orderBy(desc(memberships.createdAt), desc(memberships.id))
+    .orderBy(desc(memberList.createdAt), desc(memberList.id))
     .limit(input.limit + 1);
 
   const hasMore = rows.length > input.limit;

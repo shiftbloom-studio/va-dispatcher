@@ -25,7 +25,8 @@ import {
 
 export const tenantRoutes = new Hono<{ Variables: AppVariables }>();
 
-tenantRoutes.use("*", requireAuth);
+tenantRoutes.use("/tenant", requireAuth);
+tenantRoutes.use("/tenant/*", requireAuth);
 
 tenantRoutes.get("/tenant", async (c) => {
   const auth = c.get("auth");

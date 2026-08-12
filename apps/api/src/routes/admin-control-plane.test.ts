@@ -65,6 +65,7 @@ const app = new Hono();
 app.onError(errorHandler);
 app.route("/", membersRoutes);
 app.route("/", auditRoutes);
+app.get("/mounted-after-admin-probe", (c) => c.json({ ok: true }));
 
 describe("admin control-plane routes", () => {
   beforeEach(() => {
@@ -134,6 +135,16 @@ describe("admin control-plane routes", () => {
     expect(patch.status).toBe(403);
     expect(patch.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.updateMemberAsAdministrator).not.toHaveBeenCalled();
+  });
+
+  it("does not leak member caching or audit authorization onto later routers", async () => {
+    const response = await app.request("/mounted-after-admin-probe", {
+      headers: { "x-test-role": "pilot" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBeNull();
+    await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
   it("derives tenant and actor from auth and never from the request payload", async () => {

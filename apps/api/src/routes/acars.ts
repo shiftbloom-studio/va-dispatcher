@@ -9,7 +9,7 @@ import { paginationQuerySchema } from "../lib/pagination.js";
 
 export const acarsRoutes = new Hono<{ Variables: AppVariables }>();
 
-acarsRoutes.use("*", requireAuth);
+acarsRoutes.use("/acars/*", requireAuth);
 
 acarsRoutes.get(
   "/acars/messages",
