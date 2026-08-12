@@ -51,21 +51,15 @@ export async function upsertTenantBySlug(input: {
   hoppieStation?: string | null;
 }): Promise<Tenant> {
   const db = getDb();
-  const existing = await findTenantBySlug(input.slug);
-  if (existing) {
-    const [updated] = await db
-      .update(tenants)
-      .set({
-        name: input.name,
-        clerkOrgId: input.clerkOrgId,
-        hoppieStation: input.hoppieStation ?? existing.hoppieStation,
-        updatedAt: new Date(),
-      })
-      .where(eq(tenants.id, existing.id))
-      .returning();
-    return updated!;
-  }
-  const [created] = await db
+  const update = {
+    name: input.name,
+    clerkOrgId: input.clerkOrgId,
+    updatedAt: new Date(),
+    ...(input.hoppieStation == null
+      ? {}
+      : { hoppieStation: input.hoppieStation }),
+  };
+  const [tenant] = await db
     .insert(tenants)
     .values({
       slug: input.slug,
@@ -73,8 +67,9 @@ export async function upsertTenantBySlug(input: {
       clerkOrgId: input.clerkOrgId,
       hoppieStation: input.hoppieStation ?? "VSAS",
     })
+    .onConflictDoUpdate({ target: tenants.slug, set: update })
     .returning();
-  return created!;
+  return tenant!;
 }
 
 export async function updateTenant(
