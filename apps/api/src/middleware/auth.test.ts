@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
   findMembership: vi.fn(),
+  provisionPilotMembershipWithAudit: vi.fn(),
+  recoverMembershipAsTenantAdmin: vi.fn(),
   upsertMembership: vi.fn(),
   findTenantByClerkOrgId: vi.fn(),
   upsertTenantBySlug: vi.fn(),
@@ -25,6 +27,8 @@ vi.mock("../db/repositories/tenants.js", () => ({
 
 vi.mock("../db/repositories/memberships.js", () => ({
   findMembership: mocks.findMembership,
+  provisionPilotMembershipWithAudit: mocks.provisionPilotMembershipWithAudit,
+  recoverMembershipAsTenantAdmin: mocks.recoverMembershipAsTenantAdmin,
   upsertMembership: mocks.upsertMembership,
 }));
 
@@ -49,6 +53,18 @@ describe("Clerk organization claims", () => {
     mocks.findTenantByClerkOrgId.mockResolvedValue({ id: "tenant_test" });
     mocks.upsertTenantBySlug.mockResolvedValue({ id: "tenant_vsas" });
     mocks.findMembership.mockResolvedValue(null);
+    mocks.recoverMembershipAsTenantAdmin.mockImplementation(
+      async ({ membershipId }) => ({
+        id: membershipId,
+        role: "admin",
+        status: "active",
+      }),
+    );
+    mocks.provisionPilotMembershipWithAudit.mockResolvedValue({
+      id: "membership_test",
+      role: "pilot",
+      status: "active",
+    });
     mocks.upsertMembership.mockImplementation(async (input) => ({
       id: "membership_test",
       role: input.role,
@@ -77,9 +93,12 @@ describe("Clerk organization claims", () => {
       clerkOrgId: "org_test",
       role: "admin",
     });
-    expect(mocks.upsertMembership).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "admin" }),
-    );
+    expect(mocks.provisionPilotMembershipWithAudit).toHaveBeenCalledWith({
+      tenantId: "tenant_test",
+      clerkUserId: "user_test",
+    });
+    expect(mocks.upsertMembership).not.toHaveBeenCalled();
+    expect(mocks.recoverMembershipAsTenantAdmin).toHaveBeenCalled();
   });
 
   it("repairs the configured vSAS tenant when its Clerk org mapping is stale", async () => {
@@ -107,9 +126,10 @@ describe("Clerk organization claims", () => {
       name: "vSAS",
       clerkOrgId: "org_vsas",
     });
-    expect(mocks.upsertMembership).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: "tenant_vsas", role: "admin" }),
-    );
+    expect(mocks.provisionPilotMembershipWithAudit).toHaveBeenCalledWith({
+      tenantId: "tenant_vsas",
+      clerkUserId: "user_test",
+    });
   });
 
   it("does not provision an unconfigured Clerk organization", async () => {
@@ -133,6 +153,76 @@ describe("Clerk organization claims", () => {
 
     expect(response.status).toBe(403);
     expect(mocks.upsertTenantBySlug).not.toHaveBeenCalled();
+    expect(mocks.provisionPilotMembershipWithAudit).not.toHaveBeenCalled();
+  });
+
+  it("recovers a verified Clerk admin only through the no-active-admin seam", async () => {
+    mocks.verifyToken.mockResolvedValue({
+      sub: "user_recovery",
+      o: { id: "org_test", rol: "admin" },
+    });
+    mocks.findMembership.mockResolvedValue({
+      id: "membership_recovery",
+      role: "pilot",
+      status: "disabled",
+    });
+    mocks.recoverMembershipAsTenantAdmin.mockResolvedValue({
+      id: "membership_recovery",
+      role: "admin",
+      status: "active",
+    });
+
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      membershipId: "membership_recovery",
+      role: "admin",
+    });
+    expect(mocks.recoverMembershipAsTenantAdmin).toHaveBeenCalledWith({
+      tenantId: "tenant_test",
+      membershipId: "membership_recovery",
+    });
+  });
+
+  it("keeps a newly provisioned Clerk admin as pilot when recovery is not eligible", async () => {
+    mocks.verifyToken.mockResolvedValue({
+      sub: "user_additional_admin",
+      o: { id: "org_test", rol: "admin" },
+    });
+    mocks.recoverMembershipAsTenantAdmin.mockResolvedValue(null);
+
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ role: "pilot" });
+    expect(mocks.provisionPilotMembershipWithAudit).toHaveBeenCalledWith({
+      tenantId: "tenant_test",
+      clerkUserId: "user_additional_admin",
+    });
+  });
+
+  it("never grants a Clerk dispatcher role during first-login provisioning", async () => {
+    mocks.verifyToken.mockResolvedValue({
+      sub: "user_new_dispatcher",
+      o: { id: "org_test", rol: "dispatcher" },
+    });
+
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ role: "pilot" });
+    expect(mocks.provisionPilotMembershipWithAudit).toHaveBeenCalledWith({
+      tenantId: "tenant_test",
+      clerkUserId: "user_new_dispatcher",
+    });
+    expect(mocks.recoverMembershipAsTenantAdmin).not.toHaveBeenCalled();
     expect(mocks.upsertMembership).not.toHaveBeenCalled();
   });
 });

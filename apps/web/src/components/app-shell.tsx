@@ -8,6 +8,7 @@ import {
   Plane,
   RadioTower,
   Settings,
+  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -33,6 +34,12 @@ const dispatcherLinks = [
 
 const settingsLink = { href: "/settings", label: "Settings", icon: Settings };
 
+const adminLink = {
+  href: "/admin",
+  label: "Administration",
+  icon: ShieldCheck,
+};
+
 export function AppShell({
   children,
   slug,
@@ -50,6 +57,7 @@ export function AppShell({
   const search = useSearchParams();
   const links = [
     ...(role === "pilot" ? pilotLinks : dispatcherLinks),
+    ...(role === "admin" ? [adminLink] : []),
     settingsLink,
   ];
   const bypass =

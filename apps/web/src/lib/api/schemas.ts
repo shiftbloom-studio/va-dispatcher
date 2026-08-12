@@ -248,14 +248,79 @@ export const bulkFlightResponseSchema = z.object({
 
 export const memberSchema = z.object({
   id: z.string(),
+  clerkUserId: z.string(),
   role: roleSchema,
   pilotCallsign: z.string().nullish(),
   displayName: z.string().nullish(),
   status: z.enum(["active", "invited", "disabled"]),
-  createdAt: z.coerce.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  openFlightCount: z.number().int().nonnegative().optional(),
+  activeFlightCount: z.number().int().nonnegative().optional(),
+  openScheduleRequestCount: z.number().int().nonnegative().optional(),
+  terminalRequestLinkedFlightCount: z.number().int().nonnegative().optional(),
 });
 export type Member = z.infer<typeof memberSchema>;
-export const membersSchema = z.object({ items: z.array(memberSchema) });
+export const membersSchema = z.object({
+  items: z.array(memberSchema),
+  nextCursor: z.string().nullable(),
+});
+export const memberImpactSchema = z.object({
+  openFlightCount: z.number().int().nonnegative(),
+  activeFlightCount: z.number().int().nonnegative(),
+  openScheduleRequestCount: z.number().int().nonnegative(),
+  terminalRequestLinkedFlightCount: z.number().int().nonnegative(),
+});
+export const memberUpdateResponseSchema = memberSchema.extend({
+  reassignedFlightCount: z.number().int().nonnegative(),
+  reassignedScheduleRequestCount: z.number().int().nonnegative(),
+});
+export const memberSyncResponseSchema = z.object({
+  complete: z.boolean(),
+  pages: z.number().int().nonnegative(),
+  seen: z.number().int().nonnegative(),
+  created: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  unchanged: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  failures: z.array(
+    z.object({
+      scope: z.enum(["page", "membership"]),
+      offset: z.number().int().nonnegative(),
+      code: z.string(),
+    }),
+  ),
+  note: z.string().optional(),
+});
+
+export const auditEventSchema = z.object({
+  id: z.string(),
+  action: z.string(),
+  entityType: z.string(),
+  entityId: z.string(),
+  meta: z.record(z.string(), z.unknown()),
+  createdAt: z.string(),
+  actor: z
+    .object({
+      membershipId: z.string(),
+      displayName: z.string().nullable(),
+      pilotCallsign: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type AuditEvent = z.infer<typeof auditEventSchema>;
+export const auditEventPageSchema = z.object({
+  items: z.array(auditEventSchema),
+  nextCursor: z.string().nullable(),
+});
+export const auditExportSchema = z.object({
+  generatedAt: z.string(),
+  filters: z.record(z.string(), z.unknown()),
+  itemCount: z.number().int().nonnegative(),
+  nextCursor: z.string().nullable(),
+  items: z.array(auditEventSchema),
+});
 
 export const boardFlightSchema = flightSchema
   .pick({

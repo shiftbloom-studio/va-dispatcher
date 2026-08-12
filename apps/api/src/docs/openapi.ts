@@ -325,6 +325,7 @@ const schemas = {
       "pilotCallsign",
       "status",
       "createdAt",
+      "updatedAt",
     ],
     properties: {
       id: schemaRef("Uuid"),
@@ -339,6 +340,11 @@ const schemas = {
       },
       status: schemaRef("MembershipStatus"),
       createdAt: schemaRef("DateTime"),
+      updatedAt: schemaRef("DateTime"),
+      openFlightCount: { type: "integer", minimum: 0 },
+      activeFlightCount: { type: "integer", minimum: 0 },
+      openScheduleRequestCount: { type: "integer", minimum: 0 },
+      terminalRequestLinkedFlightCount: { type: "integer", minimum: 0 },
     },
   },
   TenantSummary: {
@@ -880,6 +886,7 @@ const schemas = {
   },
   UpdateMemberInput: {
     type: "object",
+    minProperties: 1,
     properties: {
       role: schemaRef("Role"),
       displayName: {
@@ -896,6 +903,11 @@ const schemas = {
         nullable: true,
       },
       status: schemaRef("MembershipStatus"),
+      reassignToMembershipId: {
+        ...schemaRef("Uuid"),
+        description:
+          "Required when assigned draft/offered/accepted/briefed work or open requests exist and this change makes the member inactive or changes the pilot to a non-pilot role. The replacement must be a different active pilot.",
+      },
     },
   },
   CreateScheduleRequestInput: {
@@ -1241,17 +1253,114 @@ const schemas = {
   },
   MemberListResponse: {
     type: "object",
-    required: ["items"],
+    required: ["items", "nextCursor"],
     properties: {
       items: { type: "array", items: schemaRef("Member") },
+      nextCursor: { type: "string", nullable: true },
     },
+  },
+  MemberWorkImpact: {
+    type: "object",
+    required: [
+      "openFlightCount",
+      "activeFlightCount",
+      "openScheduleRequestCount",
+      "terminalRequestLinkedFlightCount",
+    ],
+    properties: {
+      openFlightCount: { type: "integer", minimum: 0 },
+      activeFlightCount: { type: "integer", minimum: 0 },
+      openScheduleRequestCount: { type: "integer", minimum: 0 },
+      terminalRequestLinkedFlightCount: { type: "integer", minimum: 0 },
+    },
+  },
+  MemberUpdateResponse: {
+    allOf: [
+      schemaRef("Member"),
+      {
+        type: "object",
+        required: ["reassignedFlightCount", "reassignedScheduleRequestCount"],
+        properties: {
+          reassignedFlightCount: { type: "integer", minimum: 0 },
+          reassignedScheduleRequestCount: { type: "integer", minimum: 0 },
+        },
+      },
+    ],
   },
   SyncMembersResponse: {
     type: "object",
-    required: ["synced"],
+    required: [
+      "complete",
+      "pages",
+      "seen",
+      "created",
+      "updated",
+      "unchanged",
+      "skipped",
+      "failed",
+      "failures",
+    ],
     properties: {
-      synced: { type: "integer", minimum: 0 },
+      complete: { type: "boolean" },
+      pages: { type: "integer", minimum: 0 },
+      seen: { type: "integer", minimum: 0 },
+      created: { type: "integer", minimum: 0 },
+      updated: { type: "integer", minimum: 0 },
+      unchanged: { type: "integer", minimum: 0 },
+      skipped: { type: "integer", minimum: 0 },
+      failed: { type: "integer", minimum: 0 },
+      failures: {
+        type: "array",
+        maxItems: 25,
+        items: {
+          type: "object",
+          required: ["scope", "offset", "code"],
+          properties: {
+            scope: { type: "string", enum: ["page", "membership"] },
+            offset: { type: "integer", minimum: 0 },
+            code: { type: "string" },
+          },
+        },
+      },
       note: { type: "string" },
+    },
+  },
+  AuditEvent: {
+    type: "object",
+    required: [
+      "id",
+      "action",
+      "entityType",
+      "entityId",
+      "meta",
+      "createdAt",
+      "actor",
+    ],
+    properties: {
+      id: schemaRef("Uuid"),
+      action: { type: "string" },
+      entityType: { type: "string" },
+      entityId: { type: "string" },
+      meta: schemaRef("ArbitraryObject"),
+      createdAt: schemaRef("DateTime"),
+      actor: {
+        type: "object",
+        nullable: true,
+        required: ["membershipId", "displayName", "pilotCallsign"],
+        properties: {
+          membershipId: schemaRef("Uuid"),
+          displayName: schemaRef("NullableString"),
+          pilotCallsign: schemaRef("NullableString"),
+        },
+      },
+    },
+  },
+  AuditEventListResponse: {
+    type: "object",
+    required: ["items", "nextCursor"],
+    properties: {
+      items: { type: "array", items: schemaRef("AuditEvent") },
+      nextCursor: { type: "string", nullable: true },
     },
   },
   ScheduleRequestResponse: {
@@ -1615,6 +1724,10 @@ export const openApiDocument = {
     },
     { name: "Members", description: "Tenant membership administration." },
     {
+      name: "Audit",
+      description: "Redacted, tenant-scoped administrative audit history.",
+    },
+    {
       name: "Schedule requests",
       description: "Pilot schedule demand and dispatcher review.",
     },
@@ -1865,6 +1978,33 @@ export const openApiDocument = {
         summary: "List tenant members",
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
+        parameters: [
+          queryParameter("search", "Search name, callsign, or Clerk user ID.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter(
+            "role",
+            "Filter by application role.",
+            schemaRef("Role"),
+          ),
+          queryParameter(
+            "status",
+            "Filter by membership status.",
+            schemaRef("MembershipStatus"),
+          ),
+          queryParameter(
+            "cursor",
+            "Opaque cursor returned by the previous member page.",
+            { type: "string" },
+          ),
+          queryParameter("limit", "Maximum members to return.", {
+            type: "integer",
+            minimum: 1,
+            maximum: 100,
+            default: 100,
+          }),
+        ],
         responses: {
           "200": jsonResponse(
             "Tenant members.",
@@ -1886,9 +2026,27 @@ export const openApiDocument = {
         responses: {
           "200": jsonResponse(
             "Updated member.",
-            schemaRef("MembershipProfile"),
+            schemaRef("MemberUpdateResponse"),
           ),
           ...mutationErrors,
+        },
+      },
+    },
+    "/members/{id}/impact": {
+      get: {
+        tags: ["Members"],
+        operationId: "getMemberWorkImpact",
+        summary: "Inspect work affected by a member change",
+        description:
+          "Requires the admin role. Active flights block an ineligibility change; outstanding offers and open requests require an explicit active-pilot replacement.",
+        "x-required-role": "admin",
+        parameters: [pathParameter("id", "Membership ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Current operational impact.",
+            schemaRef("MemberWorkImpact"),
+          ),
+          ...resourceErrors,
         },
       },
     },
@@ -1898,13 +2056,123 @@ export const openApiDocument = {
         operationId: "syncMembers",
         summary: "Synchronize members from Clerk",
         description:
-          "Requires the dispatcher role or higher. In local development bypass mode the operation returns without contacting Clerk.",
-        "x-required-role": "dispatcher",
+          "Requires the admin role. Pages the complete Clerk organization directory and reports bounded per-item failures without silently truncating at 100 members. In local development bypass mode the operation returns without contacting Clerk.",
+        "x-required-role": "admin",
         responses: {
           "200": jsonResponse(
             "Synchronization result.",
             schemaRef("SyncMembersResponse"),
           ),
+          ...authenticatedErrors,
+        },
+      },
+    },
+    "/audit-events": {
+      get: {
+        tags: ["Audit"],
+        operationId: "listAuditEvents",
+        summary: "List redacted tenant audit events",
+        description:
+          "Requires the admin role. Results are ordered newest first and provider payloads, credentials, tokens, and other secret-bearing metadata fields are redacted.",
+        "x-required-role": "admin",
+        parameters: [
+          ...paginationParameters,
+          queryParameter("action", "Filter by exact audit action.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter("entityType", "Filter by exact entity type.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter(
+            "actorMembershipId",
+            "Filter by actor membership.",
+            schemaRef("Uuid"),
+          ),
+          queryParameter("from", "Include events at or after this instant.", {
+            type: "string",
+            format: "date-time",
+          }),
+          queryParameter("to", "Include events at or before this instant.", {
+            type: "string",
+            format: "date-time",
+          }),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "A page of redacted audit events.",
+            schemaRef("AuditEventListResponse"),
+          ),
+          ...authenticatedErrors,
+        },
+      },
+    },
+    "/audit-events/export": {
+      get: {
+        tags: ["Audit"],
+        operationId: "exportAuditEvents",
+        summary: "Export a bounded redacted audit page",
+        description:
+          "Requires the admin role. Returns at most 1,000 events and a next cursor when additional events remain. The response is marked no-store and downloaded as JSON.",
+        "x-required-role": "admin",
+        parameters: [
+          queryParameter("cursor", "Continue a previous bounded export.", {
+            type: "string",
+          }),
+          queryParameter("limit", "Maximum events in this export file.", {
+            type: "integer",
+            minimum: 1,
+            maximum: 1000,
+            default: 500,
+          }),
+          queryParameter("action", "Filter by exact audit action.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter("entityType", "Filter by exact entity type.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter(
+            "actorMembershipId",
+            "Filter by actor membership.",
+            schemaRef("Uuid"),
+          ),
+          queryParameter("from", "Include events at or after this instant.", {
+            type: "string",
+            format: "date-time",
+          }),
+          queryParameter("to", "Include events at or before this instant.", {
+            type: "string",
+            format: "date-time",
+          }),
+        ],
+        responses: {
+          "200": {
+            description: "A bounded redacted JSON audit export.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: [
+                    "generatedAt",
+                    "filters",
+                    "itemCount",
+                    "nextCursor",
+                    "items",
+                  ],
+                  properties: {
+                    generatedAt: schemaRef("DateTime"),
+                    filters: schemaRef("ArbitraryObject"),
+                    itemCount: { type: "integer", minimum: 0, maximum: 1000 },
+                    nextCursor: { type: "string", nullable: true },
+                    items: { type: "array", items: schemaRef("AuditEvent") },
+                  },
+                },
+              },
+            },
+          },
           ...authenticatedErrors,
         },
       },

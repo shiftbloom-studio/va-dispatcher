@@ -75,6 +75,13 @@ ACARS copies, audit events, HTTP/security logs, and backups. Configure provider
 retention and implement a tested recurring deletion or anonymization process
 for each store.
 
+Application audit history is admin-only and tenant-scoped. The current
+application retention class for `audit_events` is 365 days; the automated
+lifecycle workflow must enforce it before operators claim automatic expiry.
+Audit export access is itself audited and exported metadata is redacted and
+bounded. This is append-only application history, not a cryptographically
+tamper-evident ledger. See [Administrator control plane](admin-control-plane.md).
+
 Document and test a request workflow that can:
 
 - verify the requester without collecting excessive new data;
