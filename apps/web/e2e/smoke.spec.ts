@@ -100,11 +100,11 @@ async function baseFixtures(page: Page) {
 
 async function continueWithoutAnalytics(page: Page) {
   const notice = page.getByRole("complementary", { name: "Cookie notice" });
-  if (await notice.isVisible()) {
-    await page
-      .getByRole("button", { name: "Continue without analytics" })
-      .click();
-  }
+  await expect(notice).toBeVisible();
+  await notice
+    .getByRole("button", { name: "Continue without analytics" })
+    .click();
+  await expect(notice).toBeHidden();
 }
 
 test("public legal pages expose privacy and telemetry controls", async ({
