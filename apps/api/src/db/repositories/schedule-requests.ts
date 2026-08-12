@@ -75,9 +75,9 @@ export async function listScheduleRequests(input: {
     const cursor = decodeCursor(input.cursor);
     conditions.push(
       or(
-        lt(scheduleRequests.createdAt, new Date(cursor.createdAt)),
+        lt(scheduleRequests.createdAt, new Date(cursor.sortAt)),
         and(
-          eq(scheduleRequests.createdAt, new Date(cursor.createdAt)),
+          eq(scheduleRequests.createdAt, new Date(cursor.sortAt)),
           lt(scheduleRequests.id, cursor.id),
         ),
       )!,
@@ -97,7 +97,7 @@ export async function listScheduleRequests(input: {
   const nextCursor =
     hasMore && lastItem
       ? encodeCursor({
-          createdAt: lastItem.createdAt.toISOString(),
+          sortAt: lastItem.createdAt.toISOString(),
           id: lastItem.id,
         })
       : null;

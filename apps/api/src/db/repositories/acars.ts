@@ -99,9 +99,9 @@ export async function listAcarsMessages(input: {
     const cursor = decodeCursor(input.cursor);
     conditions.push(
       or(
-        lt(acarsMessages.createdAt, new Date(cursor.createdAt)),
+        lt(acarsMessages.createdAt, new Date(cursor.sortAt)),
         and(
-          eq(acarsMessages.createdAt, new Date(cursor.createdAt)),
+          eq(acarsMessages.createdAt, new Date(cursor.sortAt)),
           lt(acarsMessages.id, cursor.id),
         ),
       )!,
@@ -121,7 +121,7 @@ export async function listAcarsMessages(input: {
   const nextCursor =
     hasMore && lastItem
       ? encodeCursor({
-          createdAt: lastItem.createdAt.toISOString(),
+          sortAt: lastItem.createdAt.toISOString(),
           id: lastItem.id,
         })
       : null;

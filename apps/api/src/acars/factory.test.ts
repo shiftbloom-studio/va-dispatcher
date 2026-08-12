@@ -23,6 +23,13 @@ const tenant: Tenant = {
   updatedAt: new Date("2026-08-12T00:00:00.000Z"),
 };
 
+const productionEnvironment = {
+  DATABASE_URL: "postgresql://user:pass@localhost/va_dispatch",
+  CLERK_SECRET_KEY: "sk_test_configured",
+  TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
+  CRON_SECRET: "production-cron-secret",
+};
+
 afterEach(() => {
   resetEnvCache();
 });
@@ -43,6 +50,7 @@ describe("ACARS provider selection", () => {
   it("forces Hoppie and fails closed in production despite a stale mock value", () => {
     loadEnv({
       ...process.env,
+      ...productionEnvironment,
       NODE_ENV: "production",
       ACARS_PROVIDER: "mock",
     });
@@ -64,6 +72,7 @@ describe("ACARS provider selection", () => {
   it("allows the internal adapter in a Vercel preview", () => {
     loadEnv({
       ...process.env,
+      ...productionEnvironment,
       NODE_ENV: "production",
       VERCEL_ENV: "preview",
       ACARS_PROVIDER: "mock",

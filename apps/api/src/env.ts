@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const DEFAULT_CRON_SECRET = "dev-cron-secret-change-me";
+
 const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -34,7 +36,7 @@ const envSchema = z.object({
     .default(
       "va-dispatch/0.1 (+https://github.com/shiftbloom-studio/va-dispatcher)",
     ),
-  CRON_SECRET: z.string().min(1).default("dev-cron-secret-change-me"),
+  CRON_SECRET: z.string().min(1).default(DEFAULT_CRON_SECRET),
   SEED_DEMO_DATA: z
     .enum(["true", "false"])
     .default("false")
@@ -59,8 +61,30 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       .join("; ");
     throw new Error(`Invalid environment: ${validationMessage}`);
   }
+  validateProductionEnvironment(parsed.data);
   cachedEnv = parsed.data;
   return parsed.data;
+}
+
+function validateProductionEnvironment(config: Env): void {
+  if (config.NODE_ENV !== "production") return;
+
+  const missing = [
+    ["DATABASE_URL", config.DATABASE_URL],
+    ["CLERK_SECRET_KEY", config.CLERK_SECRET_KEY],
+    ["TENANT_SECRETS_KEY", config.TENANT_SECRETS_KEY],
+  ].flatMap(([name, value]) => (value ? [] : [name]));
+
+  if (missing.length) {
+    throw new Error(
+      `Invalid production environment: missing ${missing.join(", ")}`,
+    );
+  }
+  if (config.CRON_SECRET === DEFAULT_CRON_SECRET) {
+    throw new Error(
+      "Invalid production environment: CRON_SECRET must not use the development default",
+    );
+  }
 }
 
 export function env(): Env {

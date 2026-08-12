@@ -9,24 +9,44 @@ const mocks = vi.hoisted(() => ({
   updateMembership: vi.fn(),
   findTenantById: vi.fn(),
   writeAudit: vi.fn(),
+  tenant: {
+    id: "tenant_test",
+    slug: "vsas",
+    name: "Virtual SAS",
+    clerkOrgId: "org_test",
+    hoppieStation: "VSAS",
+    hoppieLogonEnc: null,
+    settings: {},
+    createdAt: new Date("2026-08-12T00:00:00.000Z"),
+    updatedAt: new Date("2026-08-12T00:00:00.000Z"),
+  },
+  membership: {
+    id: "membership_test",
+    tenantId: "tenant_test",
+    clerkUserId: "user_test",
+    role: "pilot" as const,
+    displayName: "Fabian",
+    pilotCallsign: "SAS123",
+    status: "active" as const,
+    createdAt: new Date("2026-08-12T00:00:00.000Z"),
+    updatedAt: new Date("2026-08-12T00:00:00.000Z"),
+  },
 }));
 
-vi.mock("../middleware/auth.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../middleware/auth.js")>();
-  return {
-    ...actual,
-    requireAuth: createMiddleware(async (c, next) => {
-      c.set("auth", {
-        clerkUserId: "user_test",
-        tenantId: "tenant_test",
-        membershipId: "membership_test",
-        role: mocks.role,
-        clerkOrgId: "org_test",
-      });
-      await next();
-    }),
-  };
-});
+vi.mock("../middleware/auth.js", () => ({
+  requireAuth: createMiddleware(async (c, next) => {
+    c.set("auth", {
+      clerkUserId: "user_test",
+      tenantId: "tenant_test",
+      membershipId: "membership_test",
+      role: mocks.role,
+      clerkOrgId: "org_test",
+      tenant: mocks.tenant,
+      membership: mocks.membership,
+    });
+    await next();
+  }),
+}));
 vi.mock("../db/repositories/memberships.js", () => ({
   findMembership: mocks.findMembership,
   findMembershipByCallsign: mocks.findMembershipByCallsign,
@@ -62,6 +82,18 @@ describe("member account settings", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+  });
+
+  it("uses the tenant and membership resolved by authentication for identity", async () => {
+    const response = await app.request("/me");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      membership: { id: "membership_test", role: "pilot" },
+      tenant: { id: "tenant_test", slug: "vsas" },
+    });
+    expect(mocks.findMembership).not.toHaveBeenCalled();
+    expect(mocks.findTenantById).not.toHaveBeenCalled();
   });
 
   it("lets a pilot update only their own normalized ACARS callsign", async () => {
