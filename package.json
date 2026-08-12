@@ -29,7 +29,10 @@
     "security:audit": "pnpm audit --audit-level high",
     "typecheck": "pnpm -r --if-present typecheck",
     "db:generate": "pnpm --filter @va-dispatch/api db:generate",
+    "db:check": "pnpm --filter @va-dispatch/api db:check",
     "db:migrate": "pnpm --filter @va-dispatch/api db:migrate",
+    "db:adopt:pr29": "pnpm --filter @va-dispatch/api db:adopt:pr29",
+    "db:signature": "pnpm --filter @va-dispatch/api db:signature",
     "db:push": "pnpm --filter @va-dispatch/api db:push",
     "db:studio": "pnpm --filter @va-dispatch/api db:studio"
   },

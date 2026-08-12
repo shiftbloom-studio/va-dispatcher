@@ -15,16 +15,19 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
 
-VA Dispatch is a pnpm monorepo and requires Node.js 22 or newer (Node.js 24 is
-recommended) and pnpm 11.
+VA Dispatch is a pnpm monorepo and requires Node.js 24 or newer and pnpm 11.
 
 ```bash
 pnpm install
 cp .env.example apps/api/.env
 # Configure apps/web/.env.local from apps/web/.env.example.
-pnpm db:push
+MIGRATION_CONFIRM_DATABASE=va_dispatch pnpm db:migrate
 pnpm dev
 ```
+
+Use `db:push` only for an empty, disposable development database. Shared and
+production databases follow the reviewed workflow in
+[`docs/database-migrations.md`](docs/database-migrations.md).
 
 Never commit credentials, personal data, production database contents, or
 third-party API secrets. Use only synthetic data in tests and bug reports.

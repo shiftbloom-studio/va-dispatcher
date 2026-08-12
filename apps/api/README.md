@@ -41,7 +41,10 @@ X-Dev-Role: admin   # pilot | dispatcher | admin
 ## Bootstrap vSAS
 
 1. Create Clerk Organization for vSAS; copy org id → `VSAS_CLERK_ORG_ID`.
-2. Set `DATABASE_URL` (Neon) and run `pnpm db:push` from repo root.
+2. Set `DATABASE_URL` and run the reviewed migration workflow from
+   [`docs/database-migrations.md`](../../docs/database-migrations.md).
+   Existing ledger-less released databases must use its guarded
+   `pnpm db:adopt:pr29` procedure instead of applying the fresh baseline.
 3. Seed:
 
 ```bash
@@ -131,7 +134,8 @@ Before enabling the integration:
    deployment.
 3. Set `SIMBRIEF_CALLBACK_URL` to the separate flight-plan completion callback,
    `https://www.va-dispatcher.world/api/v1/simbrief/callback` in production.
-4. Apply the updated database schema with `pnpm db:push`.
+4. Apply the reviewed database migrations with `pnpm db:migrate` after setting
+   `MIGRATION_CONFIRM_DATABASE` to the exact target database name.
 
 The authenticated API flow is:
 
@@ -211,5 +215,6 @@ Registration is self-service and does not need separate API approval:
 pnpm dev          # watch mode :3001
 pnpm test
 pnpm typecheck
-pnpm db:push
+pnpm db:check
+MIGRATION_CONFIRM_DATABASE=va_dispatch pnpm db:migrate
 ```

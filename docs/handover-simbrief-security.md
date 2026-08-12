@@ -152,10 +152,12 @@ No validation has run against these uncommitted changes.
    rg -n "stateHash|state_hash|callbackTokenHash|callback_token_hash" apps/api
    ```
 
-4. **The schema rename has no generated migration.**
-   This feature has not been merged, so first determine the repository's
-   intended schema workflow. Do not assume a production database can be
-   changed destructively.
+4. **Use the checked-in migration history.**
+   SimBrief/Navigraph is part of the immutable PR29 baseline. Existing
+   ledger-less pre-PR14, post-PR14, or PR29 databases must use the guarded
+   adoption process in
+   `docs/database-migrations.md`; never apply schema changes with production
+   `db:push`.
 
 5. **The new legacy signer has not been evaluated by CodeQL.**
    Local tests can prove output compatibility, but only a pushed CodeQL run
