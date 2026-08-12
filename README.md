@@ -20,8 +20,8 @@ apps/web   — Next.js frontend (path tenancy at /vsas)
 
 ## Prerequisites
 
-- Node.js 22+ (24 recommended)
-- pnpm 11+
+- Node.js 24+ (26.7 recommended locally; Vercel currently builds on 24.x)
+- pnpm 11.21+
 - Neon Postgres + Clerk (Vercel Marketplace)
 
 ## Quick start
