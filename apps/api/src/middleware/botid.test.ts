@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   checkBotId: vi.fn(),
@@ -10,12 +10,15 @@ vi.mock("botid/server", () => ({
 }));
 
 import { botIdCheckLevel, requireHuman } from "./botid.js";
+import { loadEnv, resetEnvCache } from "../env.js";
 
 describe("BotID policy", () => {
   beforeEach(() => {
     mocks.checkBotId.mockReset();
     mocks.checkBotId.mockResolvedValue({ isBot: false });
   });
+
+  afterEach(() => resetEnvCache());
 
   it("uses Deep Analysis for high-cost and external-provider mutations", () => {
     expect(botIdCheckLevel("POST", "/api/v1/flights/bulk")).toBe(
@@ -57,5 +60,34 @@ describe("BotID policy", () => {
     expect(mocks.checkBotId).toHaveBeenCalledWith({
       advancedOptions: { checkLevel: "basic" },
     });
+  });
+
+  it("bypasses provider verification only with dedicated E2E authority", async () => {
+    const fixtureSecret = "fixture-secret-that-is-at-least-32-characters";
+    loadEnv({
+      NODE_ENV: "test",
+      AUTH_DEV_BYPASS: "true",
+      E2E_FIXTURE_MODE: "true",
+      E2E_FIXTURE_SECRET: fixtureSecret,
+      E2E_CONFIRM_DATABASE: "va_dispatch_e2e",
+    });
+    const handler = vi.fn((c) => c.json({ ok: true }));
+    const app = new Hono();
+    app.use("*", requireHuman);
+    app.post("/api/v1/schedule-requests", handler);
+
+    const response = await app.request("/api/v1/schedule-requests", {
+      method: "POST",
+      headers: { "X-E2E-Fixture-Token": fixtureSecret },
+    });
+    expect(response.status).toBe(200);
+    expect(handler).toHaveBeenCalledOnce();
+    expect(mocks.checkBotId).not.toHaveBeenCalled();
+
+    await app.request("/api/v1/schedule-requests", {
+      method: "POST",
+      headers: { "X-E2E-Fixture-Token": `${fixtureSecret}x` },
+    });
+    expect(mocks.checkBotId).toHaveBeenCalledOnce();
   });
 });

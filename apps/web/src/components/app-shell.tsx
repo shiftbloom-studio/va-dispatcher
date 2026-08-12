@@ -11,7 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { OnlineStatus } from "@/components/online-status";
@@ -19,6 +19,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { TenantLogo } from "@/components/tenant-logo";
 import type { Me, Role } from "@/lib/api/schemas";
 import { brandStyle } from "@/lib/brand";
+import { e2eFixtureEnabled } from "@/lib/e2e-fixture";
 import type { TenantConfig } from "@/lib/tenant";
 
 const pilotLinks = [
@@ -54,17 +55,22 @@ export function AppShell({
   role: Role;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const search = useSearchParams();
   const links = [
     ...(role === "pilot" ? pilotLinks : dispatcherLinks),
     ...(role === "admin" ? [adminLink] : []),
     settingsLink,
   ];
-  const bypass =
-    process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS === "true" &&
-    process.env.NODE_ENV !== "production";
+  const bypass = e2eFixtureEnabled();
   const memberName =
     me.membership?.displayName ?? me.membership?.pilotCallsign ?? "VA member";
+
+  function fixtureSignOut() {
+    document.cookie = "va-e2e-identity=; Path=/; Max-Age=0; SameSite=Lax";
+    router.replace(`/${slug}/sign-in`);
+    router.refresh();
+  }
 
   return (
     <div
@@ -146,6 +152,15 @@ export function AppShell({
                 </span>
               </span>
             </div>
+            {bypass ? (
+              <button
+                type="button"
+                onClick={fixtureSignOut}
+                className="mt-2 min-h-10 w-full border border-slate-300 px-3 text-xs font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
+              >
+                Switch test identity
+              </button>
+            ) : null}
           </div>
         </aside>
 

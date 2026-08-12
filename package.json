@@ -24,6 +24,7 @@
     "test:coverage": "pnpm -r --if-present test:coverage",
     "test:api": "pnpm --filter @va-dispatch/api test",
     "test:web": "pnpm --filter @va-dispatch/web test",
+    "test:e2e:integrated": "pnpm --filter @va-dispatch/web test:e2e:integrated",
     "lint": "pnpm -r --if-present lint",
     "format:check": "prettier --check package.json pnpm-workspace.yaml vercel.ts README.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md AGENTS.md docs wiki .github apps packages",
     "security:audit": "pnpm audit --audit-level high",

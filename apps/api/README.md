@@ -45,7 +45,12 @@ X-Dev-Role: admin   # pilot | dispatcher | admin
    [`docs/database-migrations.md`](../../docs/database-migrations.md).
    Existing ledger-less released databases must use its guarded
    `pnpm db:adopt:pr29` procedure instead of applying the fresh baseline.
-3. Seed:
+3. In production, sign in as a verified administrator of the configured Clerk
+   organization. The audited first-login and no-active-admin recovery path
+   creates the initial local tenant, membership, and administrator without a
+   secret seed request.
+
+For a disposable local database only, the non-production convenience route is:
 
 ```bash
 curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
@@ -53,6 +58,9 @@ curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
   -H "Content-Type: application/json" \
   -d '{"clerkOrgId":"org_...","adminClerkUserId":"user_..."}'
 ```
+
+`/internal/seed/vsas` returns `404` in production regardless of
+`CRON_SECRET`. It is not a production provisioning or recovery mechanism.
 
 ## Core endpoints
 
