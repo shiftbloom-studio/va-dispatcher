@@ -3,6 +3,7 @@ import { createMiddleware } from "hono/factory";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  role: "pilot" as "pilot" | "dispatcher" | "admin",
   findMembership: vi.fn(),
   findMembershipByCallsign: vi.fn(),
   updateMembership: vi.fn(),
@@ -19,7 +20,7 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
         clerkUserId: "user_test",
         tenantId: "tenant_test",
         membershipId: "membership_test",
-        role: "pilot",
+        role: mocks.role,
         clerkOrgId: "org_test",
       });
       await next();
@@ -48,6 +49,7 @@ app.route("/", meRoutes);
 describe("member account settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.role = "pilot";
     mocks.findMembershipByCallsign.mockResolvedValue(null);
     mocks.updateMembership.mockResolvedValue({
       id: "membership_test",
@@ -81,6 +83,34 @@ describe("member account settings", () => {
     await expect(response.json()).resolves.toMatchObject({
       membership: { id: "membership_test", pilotCallsign: "SAS123" },
     });
+  });
+
+  it("lets a dispatcher maintain their own ACARS callsign", async () => {
+    mocks.role = "dispatcher";
+    mocks.updateMembership.mockResolvedValue({
+      id: "membership_test",
+      tenantId: "tenant_test",
+      clerkUserId: "user_test",
+      role: "dispatcher",
+      displayName: "Dispatcher",
+      pilotCallsign: "OPS123",
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const response = await app.request("/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pilotCallsign: "ops123" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateMembership).toHaveBeenCalledWith(
+      "tenant_test",
+      "membership_test",
+      { pilotCallsign: "OPS123" },
+    );
   });
 
   it("rejects a callsign already assigned within the tenant", async () => {

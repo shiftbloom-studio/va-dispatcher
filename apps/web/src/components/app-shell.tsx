@@ -29,7 +29,11 @@ const dispatcherLinks = [
   { href: "/dispatch/acars", label: "ACARS", icon: MessageSquareText },
 ];
 
-const settingsLink = { href: "/settings", label: "Settings", icon: Settings };
+const settingsLink = {
+  href: "/settings",
+  label: "My settings",
+  icon: Settings,
+};
 
 export function AppShell({
   children,

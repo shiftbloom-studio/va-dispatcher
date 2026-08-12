@@ -57,15 +57,15 @@ Clerk Organizations must be enabled, organization slugs must be enabled, and the
 ## ACARS
 
 Production ACARS uses Hoppie exclusively. An administrator opens
-`/:slug/settings`, enters the VA ground-station callsign and Hoppie logon code,
-and runs a connection test. The code is encrypted with `TENANT_SECRETS_KEY` and
-is never returned by the API. Until that succeeds, ACARS is explicitly
-unconfigured and outbound sends fail safely.
+`/:slug/settings/organization`, enters the VA ground-station callsign and Hoppie
+logon code, and runs a connection test. The code is encrypted with
+`TENANT_SECRETS_KEY` and is never returned by the API. Until that succeeds,
+ACARS is explicitly unconfigured and outbound sends fail safely.
 
-Members save their aircraft callsign on the same settings page. Their personal
-Hoppie logon remains in their simulator ACARS client; this application never
-asks for or stores it. The pilot and VA ground-station Hoppie accounts must use
-the same network affiliation.
+Every member, including dispatchers who also fly, saves their aircraft callsign
+under `/:slug/settings`. Their personal Hoppie logon remains in their simulator
+ACARS client; this application never asks for or stores it. The member and VA
+ground-station Hoppie accounts must use the same network affiliation.
 
 Hoppie registration is free and self-service; no separate API approval is
 required: <https://www.hoppie.nl/acars/system/register.html>.
