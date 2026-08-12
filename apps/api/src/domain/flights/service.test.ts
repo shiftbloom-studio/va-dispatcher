@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   createFlight: vi.fn(),
   createFlights: vi.fn(),
   findFlight: vi.fn(),
+  findReplacementFlight: vi.fn(),
   updateFlight: vi.fn(),
   createReplacementFlight: vi.fn(),
   listFlights: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("../../db/repositories/flights.js", () => ({
   createFlight: mocks.createFlight,
   createFlights: mocks.createFlights,
   findFlight: mocks.findFlight,
+  findReplacementFlight: mocks.findReplacementFlight,
   updateFlight: mocks.updateFlight,
   createReplacementFlight: mocks.createReplacementFlight,
   listFlights: mocks.listFlights,
@@ -459,6 +461,7 @@ describe("flight server invariants", () => {
     mocks.createFlight.mockResolvedValue(stored);
     mocks.createFlights.mockResolvedValue([stored]);
     mocks.findFlight.mockResolvedValue(stored);
+    mocks.findReplacementFlight.mockResolvedValue(null);
     mocks.updateFlight.mockResolvedValue(stored);
     mocks.createReplacementFlight.mockResolvedValue({
       ...storedFlight,
@@ -839,6 +842,41 @@ describe("flight server invariants", () => {
       }),
     ).rejects.toMatchObject({ code: "UNPROCESSABLE", status: 422 });
     expect(flightRepo.createReplacementFlight).not.toHaveBeenCalled();
+  });
+
+  it("returns the winning replacement when a concurrent re-offer loses", async () => {
+    const declined = { ...storedFlight, status: "declined" as const };
+    const winningReplacement = {
+      ...storedFlight,
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      replacesFlightId: flightId,
+      status: "offered" as const,
+    };
+    flightRepo.findFlight.mockResolvedValueOnce(declined);
+    flightRepo.createReplacementFlight.mockResolvedValueOnce(null);
+    flightRepo.findReplacementFlight.mockResolvedValueOnce(winningReplacement);
+
+    await expect(
+      reofferDeclinedFlight(actor, flightId, {
+        expectedVersion: 1,
+        reason: "Concurrent retry",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+      details: {
+        latest: { id: flightId, status: "declined", version: 1 },
+        replacement: {
+          id: winningReplacement.id,
+          replacesFlightId: flightId,
+          status: "offered",
+        },
+      },
+    });
+    expect(flightRepo.findReplacementFlight).toHaveBeenCalledWith(
+      actor.tenantId,
+      flightId,
+    );
   });
 });
 

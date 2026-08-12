@@ -2103,7 +2103,7 @@ export const openApiDocument = {
         operationId: "reofferDeclinedFlight",
         summary: "Create a replacement offer for a declined flight",
         description:
-          "Requires the dispatcher role or higher. The declined source remains immutable. A new offered flight links back through replacesFlightId. Request-linked replacements remain assigned to the requesting pilot; ad-hoc replacements may choose another active pilot.",
+          "Requires the dispatcher role or higher. The declined source remains immutable. A new offered flight links back through replacesFlightId. Request-linked replacements remain assigned to the requesting pilot; ad-hoc replacements may choose another active pilot. Concurrent attempts create at most one replacement; a losing request receives 409 details containing the existing replacement so the client can navigate to it.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Declined source flight ID.")],
         requestBody: jsonRequest(schemaRef("ReofferFlightInput")),

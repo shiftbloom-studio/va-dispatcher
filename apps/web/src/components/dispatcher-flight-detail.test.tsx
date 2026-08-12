@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api/http";
 import { TestQueryProvider } from "@/test/test-query-provider";
 
 const apiMock = vi.fn();
+const routerPush = vi.fn();
 
 vi.mock("@/lib/api/use-api", () => ({
   useApi: () => apiMock,
@@ -17,7 +18,7 @@ vi.mock("@/lib/api/use-api", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
 }));
 
 const flight = {
@@ -47,6 +48,7 @@ const flight = {
 describe("DispatcherFlightDetail concurrency", () => {
   beforeEach(() => {
     apiMock.mockReset();
+    routerPush.mockReset();
   });
 
   it("sends the expected version and reloads after a concurrent edit", async () => {
@@ -121,5 +123,71 @@ describe("DispatcherFlightDetail concurrency", () => {
       await screen.findByText(/changed while you were editing/i),
     ).toBeInTheDocument();
     await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2));
+  });
+
+  it("navigates to the winning replacement after a concurrent re-offer", async () => {
+    apiMock.mockImplementation(
+      (path: string, options: { method?: string; body?: string }) => {
+        if (path === "/flights/flight-1" && !options.method) {
+          return Promise.resolve({
+            flight: { ...flight, status: "declined" },
+          });
+        }
+        if (path === "/members") {
+          return Promise.resolve({
+            items: [
+              {
+                id: "member-1",
+                role: "pilot",
+                displayName: "Test Pilot",
+                pilotCallsign: "SAS101",
+                status: "active",
+              },
+            ],
+          });
+        }
+        if (path === "/flights/flight-1/reoffer") {
+          expect(JSON.parse(options.body ?? "{}")).toMatchObject({
+            expectedVersion: 1,
+            reason: "Availability restored",
+          });
+          return Promise.reject(
+            new ApiError({
+              status: 409,
+              code: "CONFLICT",
+              message: "A replacement offer already exists",
+              details: { replacement: { id: "flight-replacement" } },
+            }),
+          );
+        }
+        throw new Error(
+          `Unexpected API call: ${String(path)} ${JSON.stringify(options)}`,
+        );
+      },
+    );
+
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <DispatcherFlightDetail slug="vsas" flightId="flight-1" />
+      </TestQueryProvider>,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Create replacement offer" }),
+    );
+    await user.type(
+      screen.getByLabelText("Replacement reason (required)"),
+      "Availability restored",
+    );
+    const confirmButtons = screen.getAllByRole("button", {
+      name: "Create replacement offer",
+    });
+    await user.click(confirmButtons.at(-1)!);
+
+    await waitFor(() =>
+      expect(routerPush).toHaveBeenCalledWith(
+        "/vsas/dispatch/flights/flight-replacement",
+      ),
+    );
   });
 });

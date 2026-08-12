@@ -404,19 +404,25 @@ function ReplacementOffer({
     flight.pilotMembershipId ?? "",
   );
   const mutation = useMutation({
-    mutationFn: (reason: string) => {
+    mutationFn: async (reason: string) => {
       if (!reason) throw new Error("A replacement reason is required.");
-      return api(`/flights/${flight.id}/reoffer`, {
-        method: "POST",
-        schema: flightResponseSchema,
-        ...jsonBody({
-          expectedVersion: flight.version,
-          pilotMembershipId,
-          reason,
-        }),
-      });
+      try {
+        return await api(`/flights/${flight.id}/reoffer`, {
+          method: "POST",
+          schema: flightResponseSchema,
+          ...jsonBody({
+            expectedVersion: flight.version,
+            pilotMembershipId,
+            reason,
+          }),
+        });
+      } catch (error) {
+        const existingReplacementId = replacementIdFromConflict(error);
+        if (!existingReplacementId) throw error;
+        return { existingReplacementId };
+      }
     },
-    onSuccess: async ({ flight: replacement }) => {
+    onSuccess: async (result) => {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: [slug, "dispatch", "flights"],
@@ -425,7 +431,11 @@ function ReplacementOffer({
           queryKey: [slug, "dispatch", "board"],
         }),
       ]);
-      router.push(`/${slug}/dispatch/flights/${replacement.id}`);
+      const replacementId =
+        "existingReplacementId" in result
+          ? result.existingReplacementId
+          : result.flight.id;
+      router.push(`/${slug}/dispatch/flights/${replacementId}`);
     },
   });
 
@@ -474,6 +484,15 @@ function ReplacementOffer({
       </div>
     </Card>
   );
+}
+
+function replacementIdFromConflict(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  if (!error.details || typeof error.details !== "object") return null;
+  const replacement = Reflect.get(error.details, "replacement");
+  if (!replacement || typeof replacement !== "object") return null;
+  const id = Reflect.get(replacement, "id");
+  return typeof id === "string" && id.length > 0 ? id : null;
 }
 
 function FlightEditor({
