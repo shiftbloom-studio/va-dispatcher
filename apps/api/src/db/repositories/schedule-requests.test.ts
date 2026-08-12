@@ -91,6 +91,7 @@ describe("schedule request repository concurrency boundary", () => {
     expect(query.sql).toContain(
       '"version" = "schedule_requests"."version" + 1',
     );
+    expect(query.sql).not.toContain('SET\n        "schedule_requests"."title"');
     expect(query.sql).toContain('"status" = $');
     expect(query.sql).toMatch(/not exists \(\s*select 1\s*from "flights"/i);
     expect(query.sql).toMatch(/insert into "audit_events"/i);
@@ -117,6 +118,7 @@ describe("schedule request repository concurrency boundary", () => {
     expect(query.sql).toMatch(
       /update "schedule_requests"[\s\S]*"version" = "schedule_requests"\."version" \+ 1/i,
     );
+    expect(query.sql).not.toMatch(/set\s+"schedule_requests"\./i);
     expect(query.sql).toMatch(
       /"flights"\."status" in \('draft', 'offered', 'accepted', 'briefed'\)/i,
     );
@@ -127,6 +129,8 @@ describe("schedule request repository concurrency boundary", () => {
     expect(query.sql).toContain("'schedule_request_cancellation'");
     expect(query.sql).toContain("'fromVersion'");
     expect(query.sql).toContain("'toVersion'");
+    expect(query.sql).toMatch(/'reason', \$\d+::text/);
+    expect(query.sql).toMatch(/'scheduleRequestId', \$\d+::uuid/);
     expect(query.params).toContain(
       JSON.stringify({
         from: "partially_fulfilled",

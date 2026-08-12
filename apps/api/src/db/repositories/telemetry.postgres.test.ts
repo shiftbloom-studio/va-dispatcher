@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
 import { drizzle } from "drizzle-orm/postgres-js";
 import { Hono } from "hono";
 import postgres, { type Sql } from "postgres";
@@ -22,6 +19,7 @@ import {
 } from "./telemetry.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
+const confirmedDatabase = process.env.TEST_CONFIRM_DATABASE;
 const postgresDescribe = databaseUrl ? describe : describe.skip;
 const tenantId = "20000000-0000-4000-8000-000000000001";
 const membershipId = "10000000-0000-4000-8000-000000000001";
@@ -36,72 +34,7 @@ const now = new Date("2026-08-12T12:00:00.000Z");
 const secretsKey = Buffer.alloc(32, 7).toString("base64");
 const routeDeviceSecret = "r".repeat(43);
 
-const baseSchemaSql = `
-  CREATE TYPE member_role AS ENUM ('pilot', 'dispatcher', 'admin');
-  CREATE TYPE member_status AS ENUM ('active', 'invited', 'disabled');
-  CREATE TYPE flight_status AS ENUM (
-    'draft', 'offered', 'accepted', 'declined', 'briefed', 'active',
-    'completed', 'cancelled'
-  );
-
-  CREATE TABLE tenants (
-    id uuid PRIMARY KEY,
-    slug text NOT NULL,
-    name text NOT NULL,
-    clerk_org_id text NOT NULL,
-    created_at timestamptz DEFAULT now() NOT NULL,
-    updated_at timestamptz DEFAULT now() NOT NULL
-  );
-  CREATE TABLE memberships (
-    id uuid PRIMARY KEY,
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    clerk_user_id text NOT NULL,
-    role member_role DEFAULT 'pilot' NOT NULL,
-    status member_status DEFAULT 'active' NOT NULL,
-    created_at timestamptz DEFAULT now() NOT NULL,
-    updated_at timestamptz DEFAULT now() NOT NULL
-  );
-  CREATE TABLE flights (
-    id uuid PRIMARY KEY,
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    pilot_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
-    schedule_request_id uuid,
-    replaces_flight_id uuid,
-    flight_number text DEFAULT 'SK101' NOT NULL,
-    dep_icao text DEFAULT 'EKCH' NOT NULL,
-    arr_icao text DEFAULT 'ENGM' NOT NULL,
-    etd timestamptz DEFAULT now() NOT NULL,
-    eta timestamptz DEFAULT (now() + interval '1 hour') NOT NULL,
-    aircraft_type text,
-    version integer DEFAULT 1 NOT NULL,
-    status flight_status DEFAULT 'draft' NOT NULL,
-    cancel_reason text,
-    declined_reason text,
-    dispatcher_notes text,
-    assignment_revision integer DEFAULT 1 NOT NULL,
-    assignment_confirmed_revision integer,
-    assignment_confirmed_at timestamptz,
-    out_at timestamptz,
-    off_at timestamptz,
-    on_at timestamptz,
-    in_at timestamptz,
-    created_at timestamptz DEFAULT now() NOT NULL,
-    updated_at timestamptz DEFAULT now() NOT NULL
-  );
-  CREATE TABLE audit_events (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    actor_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
-    action text NOT NULL,
-    entity_type text NOT NULL,
-    entity_id text NOT NULL,
-    meta jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamptz DEFAULT now() NOT NULL
-  );
-`;
-
 let sqlClient: Sql | undefined;
-let schemaName = "";
 const routeApp = new Hono();
 routeApp.onError(errorHandler);
 routeApp.route("/", telemetryClientRoutes);
@@ -165,31 +98,14 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   beforeAll(async () => {
     resetEnvCache();
     loadEnv({ NODE_ENV: "test", TENANT_SECRETS_KEY: secretsKey });
-    const admin = postgres(databaseUrl!, { max: 1, onnotice: () => undefined });
-    schemaName = `telemetry_contract_${process.pid}_${Date.now()}`;
-    await admin.unsafe(`CREATE SCHEMA "${schemaName}"`);
-    await admin.end();
-
-    const setupClient = postgres(databaseUrl!, {
+    sqlClient = postgres(databaseUrl!, {
       max: 1,
       onnotice: () => undefined,
-      connection: { search_path: schemaName },
     });
-    await setupClient.unsafe(baseSchemaSql);
-    const deltaPath = fileURLToPath(
-      new URL(
-        "../../../../../docs/schema-deltas/issue-22-telemetry.sql",
-        import.meta.url,
-      ),
-    );
-    await setupClient.unsafe(readFileSync(deltaPath, "utf8"));
-    await setupClient.end();
-
-    sqlClient = postgres(databaseUrl!, {
-      max: 10,
-      onnotice: () => undefined,
-      connection: { search_path: schemaName },
-    });
+    const [database] = await sqlClient<{ currentDatabase: string }[]>`
+      SELECT current_database() AS "currentDatabase"
+    `;
+    expect(database?.currentDatabase).toBe(confirmedDatabase);
     setDbForTests(telemetryDb(sqlClient));
   }, 30_000);
 
@@ -197,14 +113,6 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     setDbForTests(null);
     resetEnvCache();
     await sqlClient?.end();
-    if (databaseUrl && schemaName) {
-      const admin = postgres(databaseUrl, {
-        max: 1,
-        onnotice: () => undefined,
-      });
-      await admin.unsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-      await admin.end();
-    }
   }, 30_000);
 
   beforeEach(async () => {
@@ -225,10 +133,20 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       VALUES (${membershipId}, ${tenantId}, 'user_test')
     `;
     await sqlClient!`
-      INSERT INTO flights (id, tenant_id, pilot_membership_id, status)
-      VALUES
-        (${flightA}, ${tenantId}, ${membershipId}, 'briefed'),
-        (${flightB}, ${tenantId}, ${membershipId}, 'briefed')
+      INSERT INTO flights (
+        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
+        etd, eta, aircraft_type, status
+      ) VALUES
+        (
+          ${flightA}, ${tenantId}, ${membershipId}, 'SK901', 'EKCH', 'ENGM',
+          '2026-08-12T12:00:00.000Z', '2026-08-12T14:00:00.000Z', 'A320',
+          'briefed'
+        ),
+        (
+          ${flightB}, ${tenantId}, ${membershipId}, 'SK902', 'ENGM', 'EKCH',
+          '2026-08-12T15:00:00.000Z', '2026-08-12T17:00:00.000Z', 'A320',
+          'briefed'
+        )
     `;
     await sqlClient!`
       INSERT INTO simulator_devices (
@@ -557,7 +475,6 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     const blocker = postgres(databaseUrl!, {
       max: 1,
       onnotice: () => undefined,
-      connection: { search_path: schemaName },
     });
     let pendingIngest: ReturnType<typeof ingest> | undefined;
     await blocker.begin(async (transaction) => {
@@ -639,8 +556,14 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
     await sqlClient!`
-      INSERT INTO flights (id, tenant_id, pilot_membership_id, status)
-      VALUES (${otherFlightId}, ${otherTenantId}, ${otherMembershipId}, 'briefed')
+      INSERT INTO flights (
+        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
+        etd, eta, aircraft_type, status
+      ) VALUES (
+        ${otherFlightId}, ${otherTenantId}, ${otherMembershipId}, 'SK990',
+        'ESSA', 'EFHK', '2026-08-12T12:00:00.000Z',
+        '2026-08-12T14:00:00.000Z', 'A320', 'briefed'
+      )
     `;
 
     expect(
@@ -692,8 +615,14 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
     await sqlClient!`
-      INSERT INTO flights (id, tenant_id, pilot_membership_id, status)
-      VALUES (${otherFlightId}, ${otherTenantId}, ${otherMembershipId}, 'briefed')
+      INSERT INTO flights (
+        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
+        etd, eta, aircraft_type, status
+      ) VALUES (
+        ${otherFlightId}, ${otherTenantId}, ${otherMembershipId}, 'SK990',
+        'ESSA', 'EFHK', '2026-08-12T12:00:00.000Z',
+        '2026-08-12T14:00:00.000Z', 'A320', 'briefed'
+      )
     `;
     await sqlClient!`
       INSERT INTO simulator_devices (
@@ -818,8 +747,14 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
     await sqlClient!`
-      INSERT INTO flights (id, tenant_id, pilot_membership_id, status)
-      VALUES (${otherFlightId}, ${otherTenantId}, ${otherMembershipId}, 'briefed')
+      INSERT INTO flights (
+        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
+        etd, eta, aircraft_type, status
+      ) VALUES (
+        ${otherFlightId}, ${otherTenantId}, ${otherMembershipId}, 'SK990',
+        'ESSA', 'EFHK', '2026-08-12T12:00:00.000Z',
+        '2026-08-12T14:00:00.000Z', 'A320', 'briefed'
+      )
     `;
 
     const receivedAt = new Date();
@@ -969,7 +904,6 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     const blocker = postgres(databaseUrl!, {
       max: 1,
       onnotice: () => undefined,
-      connection: { search_path: schemaName },
     });
     let pendingAutomatic: ReturnType<typeof ingest> | undefined;
 

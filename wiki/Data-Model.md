@@ -205,26 +205,23 @@ Free-text fields—including notes, rejection/cancellation reasons, ACARS bodies
 The repository exposes:
 
 ```bash
-pnpm db:generate
-pnpm db:check
-pnpm db:migrate
-pnpm db:adopt:pr29
-pnpm db:signature
 pnpm db:push
+pnpm db:studio
 ```
 
-Fresh databases apply the immutable `20260812151552_pr29_baseline` followed by
-additive migrations. Exact released ledger-less catalogs may use the guarded
-PR29 adoption command only after backup and rehearsal. Unknown catalog drift
-fails before DDL or ledger writes. `db:push` is disposable-development-only.
+`apps/api/src/db/schema.ts` is canonical. This Shiftbloom project is
+pre-production and recreates an empty database when its schema changes, then
+runs `pnpm db:push` from the exact release commit. Never use `db:push` on a
+database containing data that must be preserved.
 
 For a schema change:
 
 1. Update `schema.ts`.
-2. Decide explicitly whether the change is compatible with existing data.
-3. Generate and review additive migration SQL and its snapshot.
-4. Update repositories, services, serializers, OpenAPI, web schemas, and tests.
-5. Plan rollout and rollback before touching a shared database.
+2. Recreate a disposable database and apply the schema with `db:push`.
+3. Update repositories, services, serializers, OpenAPI, web schemas, and tests.
+4. Run the real PostgreSQL contracts against that fresh schema.
+5. If durable production data is introduced, stop and agree a new
+   data-evolution policy before changing the schema.
 
 ## Model boundaries
 

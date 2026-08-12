@@ -118,7 +118,10 @@ describe("SimBrief routes", () => {
       dispatch,
       dispatchUrl: "https://www.simbrief.com/ofp/ofp.loader.api.php?signed=1",
     });
-    mocks.listDispatches.mockResolvedValue([dispatch]);
+    mocks.listDispatches.mockResolvedValue({
+      items: [dispatch],
+      currentDispatchId: dispatch.id,
+    });
     mocks.completeDispatchCallback.mockResolvedValue({
       ...dispatch,
       status: "ready",
@@ -238,6 +241,20 @@ describe("SimBrief routes", () => {
       dispatch.id,
     );
     expect(body.dispatchUrl).toContain("simbrief.com");
+  });
+
+  it("returns the server-derived canonical current planning revision", async () => {
+    const response = await app.request(
+      `/flights/${dispatch.flightId}/simbrief/dispatches`,
+    );
+    const body = (await response.json()) as {
+      currentDispatchId: string | null;
+      items: Array<{ id: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.currentDispatchId).toBe(dispatch.id);
+    expect(body.items).toEqual([expect.objectContaining({ id: dispatch.id })]);
   });
 
   it("returns a conflict and canonical revision id for a direct obsolete launch", async () => {

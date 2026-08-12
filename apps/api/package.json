@@ -14,11 +14,6 @@
     "test:postgres:privacy": "vitest run src/db/repositories/privacy.postgres.test.ts",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate",
-    "db:check": "drizzle-kit check && node scripts/check-migration-drift.mjs",
-    "db:migrate": "node scripts/run-migrations.mjs",
-    "db:adopt:pr29": "node scripts/adopt-pr29-baseline.mjs",
-    "db:signature": "node scripts/print-schema-signature.mjs",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },

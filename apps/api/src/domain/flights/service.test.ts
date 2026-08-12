@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   findFlight: vi.fn(),
   findReplacementFlight: vi.fn(),
   updateFlight: vi.fn(),
+  updateFlightWithOperationalEvent: vi.fn(),
   createReplacementFlight: vi.fn(),
   listFlights: vi.fn(),
   listBoardFlights: vi.fn(),
@@ -57,6 +58,7 @@ vi.mock("../../db/repositories/flights.js", () => ({
   findFlight: mocks.findFlight,
   findReplacementFlight: mocks.findReplacementFlight,
   updateFlight: mocks.updateFlight,
+  updateFlightWithOperationalEvent: mocks.updateFlightWithOperationalEvent,
   createReplacementFlight: mocks.createReplacementFlight,
   listFlights: mocks.listFlights,
   listBoardFlights: mocks.listBoardFlights,
@@ -81,6 +83,8 @@ import {
   patchFlight,
   publishDispatchRelease,
   reofferDeclinedFlight,
+  startFlight,
+  finishFlight,
   transitionFlight,
 } from "./service.js";
 
@@ -90,6 +94,11 @@ const dispatcher = {
   role: "dispatcher" as const,
 };
 const actor = dispatcher;
+const pilot = {
+  tenantId: "tenant-test",
+  membershipId: "pilot-test",
+  role: "pilot" as const,
+};
 const flightRepo = mocks;
 const scheduleRepo = mocks;
 const findMembershipById = mocks.findMembershipById;
@@ -227,6 +236,13 @@ describe("flight planning service", () => {
       status: "active",
     });
     mocks.updateFlight.mockImplementation(
+      async (input: { patch: Partial<Flight> }) => ({
+        ...current,
+        ...input.patch,
+        version: current.version + 1,
+      }),
+    );
+    mocks.updateFlightWithOperationalEvent.mockImplementation(
       async (input: { patch: Partial<Flight> }) => ({
         ...current,
         ...input.patch,
@@ -413,6 +429,122 @@ describe("flight planning service", () => {
         },
       }),
     );
+  });
+
+  it("starts a flight with its audit and manual event in one CAS command", async () => {
+    const scheduled = makeFlight({ version: 4 });
+    const occurredAt = new Date("2026-09-01T10:05:00.000Z");
+    mocks.findFlight.mockResolvedValue(scheduled);
+    mocks.findLatestDispatchRelease.mockResolvedValue(makeRelease());
+    mocks.updateFlightWithOperationalEvent.mockResolvedValue({
+      ...scheduled,
+      status: "active",
+      version: 5,
+      outAt: occurredAt,
+    });
+
+    const result = await startFlight(
+      pilot,
+      scheduled.id,
+      occurredAt,
+      scheduled.version,
+    );
+
+    expect(result).toMatchObject({ status: "active", version: 5 });
+    expect(mocks.updateFlightWithOperationalEvent).toHaveBeenCalledWith({
+      tenantId: pilot.tenantId,
+      id: scheduled.id,
+      expectedVersion: 4,
+      actorMembershipId: pilot.membershipId,
+      action: "flight.progress",
+      patch: {
+        status: "active",
+        outAt: occurredAt,
+        assignmentConfirmedRevision: scheduled.assignmentRevision,
+        assignmentConfirmedAt: occurredAt,
+      },
+      auditMeta: {
+        kind: "manual_start",
+        source: "pilot_web",
+        fromStatus: "briefed",
+        toStatus: "active",
+        fromVersion: 4,
+        toVersion: 5,
+      },
+      event: {
+        kind: "manual_start",
+        source: "pilot_web",
+        occurredAt,
+        meta: { fromStatus: "briefed", toStatus: "active" },
+      },
+    });
+    expect(mocks.createFlightEvent).not.toHaveBeenCalled();
+    expect(mocks.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("finishes a flight with its audit and manual event in one CAS command", async () => {
+    const active = makeFlight({ status: "active", version: 7 });
+    const occurredAt = new Date("2026-09-01T12:05:00.000Z");
+    mocks.findFlight.mockResolvedValue(active);
+    mocks.updateFlightWithOperationalEvent.mockResolvedValue({
+      ...active,
+      status: "completed",
+      version: 8,
+      inAt: occurredAt,
+    });
+
+    const result = await finishFlight(
+      pilot,
+      active.id,
+      occurredAt,
+      active.version,
+    );
+
+    expect(result).toMatchObject({ status: "completed", version: 8 });
+    expect(mocks.updateFlightWithOperationalEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: pilot.tenantId,
+        id: active.id,
+        expectedVersion: 7,
+        actorMembershipId: pilot.membershipId,
+        patch: { status: "completed", inAt: occurredAt },
+        auditMeta: expect.objectContaining({
+          kind: "manual_finish",
+          fromVersion: 7,
+          toVersion: 8,
+        }),
+        event: {
+          kind: "manual_finish",
+          source: "pilot_web",
+          occurredAt,
+          meta: { fromStatus: "active", toStatus: "completed" },
+        },
+      }),
+    );
+    expect(mocks.createFlightEvent).not.toHaveBeenCalled();
+    expect(mocks.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("returns the concurrent progress winner after a CAS loss", async () => {
+    const scheduled = makeFlight({ version: 2 });
+    const winner = makeFlight({
+      status: "active",
+      version: 3,
+      outAt: new Date("2026-09-01T10:05:00.000Z"),
+    });
+    mocks.findFlight
+      .mockResolvedValueOnce(scheduled)
+      .mockResolvedValueOnce(winner);
+    mocks.findLatestDispatchRelease.mockResolvedValue(makeRelease());
+    mocks.updateFlightWithOperationalEvent.mockResolvedValue(null);
+
+    await expect(
+      startFlight(pilot, scheduled.id, new Date(), scheduled.version),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { latest: { status: "active", version: 3 } },
+    });
+    expect(mocks.updateFlightWithOperationalEvent).toHaveBeenCalledTimes(1);
   });
 });
 

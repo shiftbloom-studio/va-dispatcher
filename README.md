@@ -36,7 +36,7 @@ cp .env.example apps/api/.env
 # configure apps/web/.env.local from apps/web/.env.example
 # fill DATABASE_URL, CLERK_SECRET_KEY, etc.
 
-MIGRATION_CONFIRM_DATABASE=va_dispatch pnpm db:migrate
+DATABASE_URL='postgresql://...' pnpm db:push
 pnpm dev              # web :3000 + API :3001
 ```
 
@@ -117,33 +117,30 @@ vercel integration add neon
 vercel integration add clerk
 vercel env pull apps/api/.env.local --yes
 # copy DATABASE_URL + CLERK_* into apps/api/.env for local
-MIGRATION_CONFIRM_DATABASE=va_dispatch pnpm db:migrate
+DATABASE_URL='postgresql://...' pnpm db:push
 vercel deploy
 ```
 
 ## Scripts
 
-| Script                                    | Description                       |
-| ----------------------------------------- | --------------------------------- |
-| `pnpm dev:api`                            | Run API locally                   |
-| `pnpm dev:web`                            | Run the Next.js app locally       |
-| `pnpm dev`                                | Run API and web together          |
-| `pnpm test:api`                           | API unit and isolation tests      |
-| `pnpm test:web`                           | Frontend unit and component tests |
-| `pnpm test:coverage`                      | Full-source tests and coverage    |
-| `pnpm security:audit`                     | High-severity dependency audit    |
-| `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests |
-| `pnpm test:e2e:integrated`                | Real web/API/PostgreSQL journeys  |
-| `pnpm db:generate`                        | Generate a reviewed migration     |
-| `pnpm db:check`                           | Check migration history and drift |
-| `pnpm db:migrate`                         | Apply confirmed migrations        |
-| `pnpm db:signature`                       | Print a public catalog signature  |
-| `pnpm db:adopt:pr29`                      | Guarded ledger-less DB adoption   |
-| `pnpm typecheck`                          | TypeScript check                  |
+| Script                                    | Description                                    |
+| ----------------------------------------- | ---------------------------------------------- |
+| `pnpm dev:api`                            | Run API locally                                |
+| `pnpm dev:web`                            | Run the Next.js app locally                    |
+| `pnpm dev`                                | Run API and web together                       |
+| `pnpm test:api`                           | API unit and isolation tests                   |
+| `pnpm test:web`                           | Frontend unit and component tests              |
+| `pnpm test:coverage`                      | Full-source tests and coverage                 |
+| `pnpm security:audit`                     | High-severity dependency audit                 |
+| `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests              |
+| `pnpm test:e2e:integrated`                | Real web/API/PostgreSQL journeys               |
+| `pnpm db:push`                            | Apply the canonical schema to a fresh database |
+| `pnpm typecheck`                          | TypeScript check                               |
 
-Production databases use the versioned workflow in
-[`docs/database-migrations.md`](docs/database-migrations.md). `db:push` is for
-empty, disposable development databases only.
+This Shiftbloom project is pre-production and uses `schema.ts` as its canonical
+database definition. Recreate an empty database and run `db:push`; never point
+that command at a database containing user data. If the product later becomes
+long-lived production software, define a new data-evolution policy first.
 
 The integrated browser suite requires a separately confirmed disposable
 PostgreSQL database. See

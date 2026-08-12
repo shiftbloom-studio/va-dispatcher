@@ -116,8 +116,8 @@ Its main jobs cover:
 2. pnpm setup;
 3. Node 24.15.0 with pnpm cache;
 4. frozen install;
-5. fresh migration, released-schema adoption/upgrade, drift rejection, rollback,
-   and real PostgreSQL contracts;
+5. canonical schema push to a fresh PostgreSQL database and real PostgreSQL
+   contracts;
 6. format, lint, type, coverage, security audit, and production build;
 7. fast browser workflows; and
 8. isolated PostgreSQL integrated E2E with failure-only artifacts.

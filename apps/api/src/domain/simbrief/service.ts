@@ -284,9 +284,23 @@ export async function generateDispatch(
 export async function listDispatches(
   actor: SimbriefActor,
   flightId: string,
-): Promise<SimbriefDispatch[]> {
-  await requireAccessibleFlight(actor, flightId);
-  return simbriefRepo.listSimbriefDispatches(actor.tenantId, flightId);
+): Promise<{
+  items: SimbriefDispatch[];
+  currentDispatchId: string | null;
+}> {
+  const flight = await requireAccessibleFlight(actor, flightId);
+  const [items, release] = await Promise.all([
+    simbriefRepo.listSimbriefDispatches(actor.tenantId, flightId),
+    findLatestDispatchRelease(actor.tenantId, flightId),
+  ]);
+  const latest = items[0];
+  return {
+    items,
+    currentDispatchId:
+      latest && dispatchMatchesCurrentPlanning(latest, flight, release)
+        ? latest.id
+        : null,
+  };
 }
 
 export async function getLatestDispatch(
@@ -574,6 +588,48 @@ function assertDispatchableFlight(flight: Flight): void {
       `Cannot create a SimBrief flight plan for a ${flight.status} flight`,
     );
   }
+}
+
+/**
+ * Compares only the inputs that can change the resulting flight plan.
+ * `flight.version` remains the preparation CAS, but notes-only edits may also
+ * advance it and therefore do not invalidate an already captured plan.
+ */
+function dispatchMatchesCurrentPlanning(
+  dispatch: SimbriefDispatch,
+  flight: Flight,
+  release: DispatchRelease | null,
+): boolean {
+  if (
+    !release ||
+    !flight.pilotMembershipId ||
+    !["accepted", "briefed"].includes(flight.status)
+  ) {
+    return false;
+  }
+
+  const snapshot = dispatch.flightSnapshot;
+  return (
+    snapshot.assignmentRevision === flight.assignmentRevision &&
+    snapshot.dispatchReleaseId === release.id &&
+    snapshot.dispatchReleaseRevision === release.revision &&
+    snapshot.pilotMembershipId === flight.pilotMembershipId &&
+    snapshot.flightNumber === flight.flightNumber &&
+    snapshot.depIcao === flight.depIcao &&
+    snapshot.arrIcao === flight.arrIcao &&
+    snapshotDateMatches(snapshot.etd, flight.etd) &&
+    snapshotDateMatches(snapshot.eta, flight.eta) &&
+    snapshot.aircraftType === flight.aircraftType
+  );
+}
+
+function snapshotDateMatches(value: unknown, current: Date): boolean {
+  if (typeof value !== "string") return false;
+  const captured = new Date(value);
+  return (
+    !Number.isNaN(captured.getTime()) &&
+    captured.getTime() === current.getTime()
+  );
 }
 
 function setOptional(

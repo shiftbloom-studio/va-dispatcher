@@ -12,6 +12,7 @@ import {
   createReplacementFlight,
   fulfillScheduleRequest,
   updateFlight,
+  updateFlightWithOperationalEvent,
 } from "./flights.js";
 
 describe("flight repository concurrency boundary", () => {
@@ -67,9 +68,62 @@ describe("flight repository concurrency boundary", () => {
     );
     expect(query.sql).toMatch(/inner join "?audited"?/i);
     expect(query.sql).toContain('"version" = "flights"."version" + 1');
+    expect(query.sql).not.toMatch(/set\s+"flights"\./i);
     // PostgreSQL rolls back the complete statement if the audit CTE fails;
     // there is no fallback update or second mutation call to leave a gap.
   });
+
+  it.each([
+    {
+      kind: "manual_start" as const,
+      patch: {
+        status: "active" as const,
+        outAt: new Date("2026-09-10T08:05:00.000Z"),
+      },
+    },
+    {
+      kind: "manual_finish" as const,
+      patch: {
+        status: "completed" as const,
+        inAt: new Date("2026-09-10T10:05:00.000Z"),
+      },
+    },
+  ])(
+    "rolls back $kind state when its audit or operational event fails",
+    async ({ kind, patch }) => {
+      execute.mockRejectedValueOnce(
+        new Error("synthetic operational event failure"),
+      );
+
+      await expect(
+        updateFlightWithOperationalEvent({
+          tenantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          expectedVersion: 3,
+          actorMembershipId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          action: "flight.progress",
+          auditMeta: { kind },
+          patch,
+          event: {
+            kind,
+            source: "pilot_web",
+            occurredAt: new Date("2026-09-10T10:05:00.000Z"),
+          },
+        }),
+      ).rejects.toThrow("synthetic operational event failure");
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(query.sql).toMatch(/with "?updated"? as \(\s*update "flights"/i);
+      expect(query.sql).toMatch(/insert into "audit_events"/i);
+      expect(query.sql).toMatch(/insert into "flight_operational_events"/i);
+      expect(query.sql).toMatch(/inner join "?audited"? on true/i);
+      expect(query.sql).toMatch(/inner join "?event_recorded"? on true/i);
+      expect(query.sql).toContain('"version" = "flights"."version" + 1');
+      expect(query.sql).not.toMatch(/set\s+"flights"\./i);
+      expect(query.params).toContain(kind);
+    },
+  );
 
   it("uses a composite tenant-safe self-reference for replacements", () => {
     const config = getTableConfig(flights);
@@ -172,6 +226,7 @@ describe("flight repository concurrency boundary", () => {
     );
     expect(query.sql).toMatch(/insert into "flights"/i);
     expect(query.sql).toMatch(/update "schedule_requests"/i);
+    expect(query.sql).not.toMatch(/set\s+"schedule_requests"\./i);
     expect(query.sql).toMatch(/insert into "audit_events"/i);
     expect(query.sql).toContain("'schedule_request.fulfillment_progress'");
     expect(query.sql).toContain("'flight.bulk_create'");

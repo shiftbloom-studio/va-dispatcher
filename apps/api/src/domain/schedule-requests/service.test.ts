@@ -105,6 +105,29 @@ describe("schedule request lifecycle service", () => {
     );
   });
 
+  it.each(["dispatcher", "admin"] as const)(
+    "rejects schedule-request creation by an exact %s role",
+    async (role) => {
+      await expect(
+        createRequest(
+          {
+            tenantId,
+            membershipId: dispatcherMembershipId,
+            role,
+          },
+          {
+            windowStart: storedRequest.windowStart,
+            windowEnd: storedRequest.windowEnd,
+            desiredFlightCount: 1,
+            preferences: storedRequest.preferences,
+          },
+        ),
+      ).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+
+      expect(scheduleRepo.createScheduleRequest).not.toHaveBeenCalled();
+    },
+  );
+
   it("lets the owning pilot edit pending normalized availability with CAS", async () => {
     const updated = await editRequest(pilot, requestId, 1, {
       title: "Revised request",

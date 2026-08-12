@@ -179,11 +179,14 @@ simbriefRoutes.get(
   "/flights/:flightId/simbrief/dispatches",
   zValidator("param", idParamsSchema.pick({ flightId: true })),
   async (c) => {
-    const dispatches = await simbriefService.listDispatches(
+    const result = await simbriefService.listDispatches(
       actor(c),
       c.req.valid("param").flightId,
     );
-    return c.json({ items: dispatches.map(serializeDispatch) });
+    return c.json({
+      items: result.items.map(serializeDispatch),
+      currentDispatchId: result.currentDispatchId,
+    });
   },
 );
 

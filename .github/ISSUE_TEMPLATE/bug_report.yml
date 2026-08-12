@@ -28,7 +28,7 @@ body:
       options:
         - Web application
         - API
-        - Database or migrations
+        - Database or schema
         - Authentication or tenancy
         - ACARS integration
         - Deployment or tooling

@@ -31,7 +31,8 @@ The active Clerk organization slug differs from the URL. Select the vSAS organiz
 - Verify the Clerk organization ID, not only its name or slug.
 - Verify `VSAS_CLERK_ORG_ID` in the API.
 - Inspect the `tenants.clerk_org_id` mapping.
-- Seed or allow trusted vSAS repair; do not auto-provision an arbitrary organization.
+- Sign in through the exact trusted vSAS organization to allow repair; the
+  production seed endpoint deliberately returns not found.
 
 ### “Membership is not active”
 
@@ -39,13 +40,20 @@ The local membership is `invited` or `disabled`. An administrator must review an
 
 ### Wrong role after a Clerk change
 
-Runtime authorization uses the local membership. Run the Clerk member synchronization endpoint as dispatch/admin or update the membership as admin, then verify the conservative role mapping.
+Runtime authorization uses the local membership. Run the paged Clerk directory
+synchronization or update the membership as an Admin, then verify the
+conservative mapping. First provisioning is audited as pilot-only. The sole
+authentication-time exception promotes a verified Clerk organization Admin
+when the tenant has no active application Admin; it does not keep syncing Clerk
+claims on later requests.
 
 ## API and web contract errors
 
 ### `DATABASE_URL is required for authenticated routes`
 
-The health endpoint can still respond without a database. Configure `DATABASE_URL`, apply the schema, and seed the tenant.
+The health endpoint can still respond without a database. Configure
+`DATABASE_URL`, apply canonical `schema.ts` to a new empty database with
+`pnpm db:push`, and authenticate through the trusted Clerk organization.
 
 ### `INVALID_RESPONSE` in the web UI
 
@@ -74,23 +82,35 @@ Direct `curl`, scripts, or clients without browser challenge proof are expected 
 
 ### Offered flight is invisible to a pilot
 
-Check `pilotMembershipId`. Pilots see only assigned flights. The web prevents an unassigned immediate ad-hoc offer, but API callers must preserve that invariant.
+Check `pilotMembershipId`. Pilots see only assigned flights, and the API rejects
+an offered flight without a valid active pilot assignment. Also check whether a
+later reassignment created a new assignment revision that still needs pilot
+confirmation.
 
 ### Request cancellation did not cancel flights
 
-That is the current contract. Request and flight lifecycles do not cascade. Cancel eligible flights separately through dispatcher or pilot actions.
+Cancellation now requires an explicit linked-flight policy. Reload the request,
+then choose either `keep` or `cancel_predeparture`; only eligible linked flights
+are cancelled, and active or terminal flights are preserved.
 
 ### Historical partial request cannot receive more rows
 
-The current dispatcher UI does not append partial proposals. It keeps `partially_fulfilled` records viewable and cancellable.
+Reload the request and check its remaining count and version. Appending is
+allowed only while `partially_fulfilled`, requires the current request version,
+and must use a fresh `Idempotency-Key` for the intended batch.
 
 ### Old flight remains on operations board
 
-The board has a seven-day upper ETD horizon but no lower bound for non-terminal records. Correct the lifecycle status or schedule after verifying the real operation.
+Accepted and briefed rows are shown from 24 hours overdue through seven days
+ahead. Active flights are always included, while completed KPIs use the current
+UTC month. Older accepted or briefed rows belong in history rather than on the
+live board; correct stale lifecycle data only after verifying the operation.
 
 ### Active flight is not grouped on the pilot dashboard
 
-The current pilot dashboard groups offered, upcoming accepted/briefed, and terminal history. `active` is available through the direct assigned flight detail but has no dashboard group yet.
+Reload the dashboard and confirm the flight is still assigned to the current
+pilot. Active flights have their own group; a reassignment, tenant mismatch, or
+stale browser response can make the former pilot's row disappear.
 
 ## Hoppie and ACARS
 
@@ -104,7 +124,12 @@ Usually the tenant ground station is not configured or required configuration in
 
 ### `502 UPSTREAM`
 
-The API reached a provider policy/error path. The safe error details distinguish authentication, callsign lock, rate limit, timeout, unavailable, rejection, or invalid response. The outbound record was not stored; the frontend draft should remain.
+A normal send attempt returns a stored `accepted`, `rejected`, or `ambiguous`
+outcome, including provider rejection and timeout. A `502` therefore usually
+means configuration/provider setup failed before the durable send path, or a
+configuration test failed. Inspect the inbox before retrying; an ambiguous
+outcome may already have reached the aircraft and is never retried
+automatically.
 
 ### Callsign already in use
 
@@ -127,7 +152,10 @@ Do not resend rapidly; avoid duplicates and rate limits.
 
 ### Inbound position did not update a map
 
-There is no telemetry parser or live map. Position/progress are stored as message types and raw text only.
+Hoppie position/progress messages remain ACARS text and do not feed the MSFS
+telemetry track. Check the pilot's simulator device, current lease, sequence,
+and ingest responses separately. The dispatcher currently receives live
+presence and coordinates, but there is no map rendering to update.
 
 ## Legal and privacy pages
 
@@ -165,7 +193,10 @@ pnpm --filter @va-dispatch/web exec playwright install chromium
 
 ### Drizzle command cannot see the database URL
 
-Supply `DATABASE_URL` in the command environment or ensure the approved development environment is loaded. Confirm the target before running any schema mutation.
+Supply `DATABASE_URL` in the command environment or ensure the approved
+development environment is loaded. This pre-production Shiftbloom project
+expects a new empty database for `db:push`; never use a database containing data
+that must be preserved.
 
 ## Reporting a reproducible problem
 

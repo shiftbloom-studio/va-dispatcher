@@ -67,18 +67,15 @@ Configure development-safe legal values as described in [Configuration Reference
 
 ### 3. Apply the schema
 
-Create a disposable development database and apply the checked-in migration
-history:
+Create an empty disposable development database and apply the canonical schema:
 
 ```bash
 DATABASE_URL='postgresql://...' \
-MIGRATION_CONFIRM_DATABASE='exact_database_name' \
-pnpm db:migrate
+pnpm db:push
 ```
 
-Use `pnpm db:push` only for disposable schema exploration. Released or shared
-databases use reviewed migrations; exact pre-migration catalogs follow
-`docs/database-migrations.md` after backup and rehearsal.
+This Shiftbloom project is pre-production. Recreate the database when the
+schema changes; never point `db:push` at data that must be preserved.
 
 ### 4. Start both services
 
@@ -142,28 +139,24 @@ To test Hoppie deliberately, configure a development tenant ground station throu
 
 ## Useful commands
 
-| Command                                   | Purpose                                                |
-| ----------------------------------------- | ------------------------------------------------------ |
-| `pnpm dev`                                | Run API and web in parallel                            |
-| `pnpm dev:api`                            | Run Hono on port 3001                                  |
-| `pnpm dev:web`                            | Run Next.js on port 3000                               |
-| `pnpm typecheck`                          | Type-check all workspaces                              |
-| `pnpm lint`                               | Lint workspaces that expose a lint script              |
-| `pnpm format:check`                       | Check repository formatting                            |
-| `pnpm test`                               | Run unit and component tests                           |
-| `pnpm test:coverage`                      | Run configured full-source coverage gates              |
-| `pnpm build`                              | Build every workspace                                  |
-| `pnpm test:api`                           | Run API tests only                                     |
-| `pnpm test:web`                           | Run web tests only                                     |
-| `pnpm --filter @va-dispatch/web test:e2e` | Run Playwright smoke journeys                          |
-| `pnpm test:e2e:integrated`                | Run two real web/API/PostgreSQL journeys               |
-| `pnpm security:audit`                     | Reject high-severity dependency advisories             |
-| `pnpm db:check`                           | Verify migration snapshots and schema drift            |
-| `pnpm db:push`                            | Reconcile schema directly; disposable development only |
-| `pnpm db:generate`                        | Generate Drizzle migration artifacts                   |
-| `pnpm db:migrate`                         | Apply generated Drizzle migrations                     |
-| `pnpm db:adopt:pr29`                      | Guarded exact released-catalog adoption                |
-| `pnpm db:studio`                          | Open Drizzle Studio                                    |
+| Command                                   | Purpose                                         |
+| ----------------------------------------- | ----------------------------------------------- |
+| `pnpm dev`                                | Run API and web in parallel                     |
+| `pnpm dev:api`                            | Run Hono on port 3001                           |
+| `pnpm dev:web`                            | Run Next.js on port 3000                        |
+| `pnpm typecheck`                          | Type-check all workspaces                       |
+| `pnpm lint`                               | Lint workspaces that expose a lint script       |
+| `pnpm format:check`                       | Check repository formatting                     |
+| `pnpm test`                               | Run unit and component tests                    |
+| `pnpm test:coverage`                      | Run configured full-source coverage gates       |
+| `pnpm build`                              | Build every workspace                           |
+| `pnpm test:api`                           | Run API tests only                              |
+| `pnpm test:web`                           | Run web tests only                              |
+| `pnpm --filter @va-dispatch/web test:e2e` | Run Playwright smoke journeys                   |
+| `pnpm test:e2e:integrated`                | Run two real web/API/PostgreSQL journeys        |
+| `pnpm security:audit`                     | Reject high-severity dependency advisories      |
+| `pnpm db:push`                            | Apply the canonical schema to an empty database |
+| `pnpm db:studio`                          | Open Drizzle Studio                             |
 
 ## Playwright
 

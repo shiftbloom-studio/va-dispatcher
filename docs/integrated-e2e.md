@@ -19,15 +19,14 @@ send/poll/store behavior, and cross-tenant denial.
 
 Use a dedicated local PostgreSQL database whose name contains `e2e` or `test`.
 Never point the harness at a shared development, staging, or production
-database. Both the migration runner and the harness compare the connected
-database name with an explicit confirmation before changing data.
+database. The harness compares the connected database name with an explicit
+confirmation before changing data.
 
 ```bash
 createdb va_dispatch_e2e
 
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/va_dispatch_e2e \
-MIGRATION_CONFIRM_DATABASE=va_dispatch_e2e \
-pnpm db:migrate
+pnpm db:push
 
 E2E_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/va_dispatch_e2e \
 E2E_CONFIRM_DATABASE=va_dispatch_e2e \
@@ -74,7 +73,7 @@ The integrated fixture is intentionally unavailable on a deployed production
 URL. A deployment acceptance pass therefore needs real, authorized test
 accounts and configuration:
 
-- a migrated production database and a healthy private API service;
+- a freshly schema-synced production database and a healthy private API service;
 - `API_INTERNAL_URL` from the Vercel service binding, or the documented
   `API_ORIGIN` fallback, with `/api/*` rewrites reaching that API;
 - valid Clerk keys, the configured vSAS organization, and pilot, dispatcher,

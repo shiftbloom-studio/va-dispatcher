@@ -96,20 +96,15 @@ pnpm --filter @va-dispatch/web test:e2e
 Database scripts are intentionally separate:
 
 ```bash
-pnpm db:generate
-pnpm db:check
-pnpm db:migrate
-pnpm db:adopt:pr29
-pnpm db:signature
 pnpm db:push
 pnpm db:studio
 ```
 
-`db:push`, `db:migrate`, and `db:studio` act on the configured database. Confirm
-the target and obtain authorization before using them. `db:push` is disposable-
-development-only. Released databases use the immutable PR29 baseline, guarded
-legacy adoption where applicable, and additive migrations described in
-`docs/database-migrations.md`. Never infer that a `.env` file is safe.
+`db:push` and `db:studio` act on the configured database. Confirm the target and
+obtain authorization before using them. This Shiftbloom project is
+pre-production: `schema.ts` is canonical, databases are recreated when the
+schema changes, and `db:push` must never target user data that needs preserving.
+Never infer that a `.env` file is safe.
 
 ## Runtime shape and request flow
 
@@ -319,12 +314,12 @@ Keep the standard JSON error envelope and request IDs. Do not expose raw SQL,
 provider errors, secrets, or stack traces. Pagination must use the shared
 helpers and deterministic ordering.
 
-The canonical schema is `apps/api/src/db/schema.ts`. Every schema change requires
-an additive migration and regenerated snapshot after the immutable baseline.
-Run `pnpm db:check`, fresh migration, populated upgrade, and relevant real-
-PostgreSQL contracts. Never edit an applied migration or fold later schema into
-the baseline. Preserve foreign keys, tenant indexes, uniqueness constraints,
-and timestamp semantics.
+The canonical schema is `apps/api/src/db/schema.ts`. Apply schema changes to a
+new empty database with `pnpm db:push`, then run the relevant real-PostgreSQL
+contracts. Never preserve an outdated test catalog by adding legacy-adoption
+machinery. Preserve foreign keys, tenant indexes, uniqueness constraints, and
+timestamp semantics. If this project later carries durable production data,
+stop and agree a new data-evolution policy before changing the schema.
 
 Audit security- and operations-relevant mutations. Audit rows should record
 the authenticated actor, tenant, action, entity, and useful non-secret metadata

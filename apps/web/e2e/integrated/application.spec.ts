@@ -92,7 +92,13 @@ test("pilot signs in, requests a schedule, and completes a dispatched flight", a
   await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
 
   await setIdentity(context, "dispatcher");
-  await apiJson(page, "POST", `/flights/${flightId}/release`, releaseBody);
+  const acceptedDetail = object(
+    await apiJson(page, "GET", `/flights/${flightId}`),
+  );
+  await apiJson(page, "POST", `/flights/${flightId}/release`, {
+    ...releaseBody,
+    expectedVersion: numberField(object(acceptedDetail.flight), "version"),
+  });
 
   await setIdentity(context, "pilot");
   await page.goto(`/vsas/portal/flights/${flightId}`);
@@ -128,6 +134,14 @@ test("dispatcher fulfills a request, publishes a release, plans, and exchanges A
       windowStart: "2099-09-11T08:00:00.000Z",
       windowEnd: "2099-09-11T14:00:00.000Z",
       desiredFlightCount: 1,
+      preferences: {
+        availability: [
+          {
+            startAt: "2099-09-11T08:00:00.000Z",
+            endAt: "2099-09-11T14:00:00.000Z",
+          },
+        ],
+      },
     }),
   );
   const requestId = stringField(object(createdRequest.request), "id");
@@ -138,24 +152,39 @@ test("dispatcher fulfills a request, publishes a release, plans, and exchanges A
   await expect(
     page.getByRole("heading", { name: "Integrated dispatcher duty" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Start review" }).click();
+  await expect(page.getByText("In Review", { exact: true })).toBeVisible();
   await page.getByLabel("Flight number").fill("SK701");
   await page.getByLabel("Departure ICAO").fill("EKCH");
   await page.getByLabel("Arrival ICAO").fill("ENGM");
   await page.getByLabel("ETD (UTC)").fill("2099-09-11T09:00");
   await page.getByLabel("ETA (UTC)").fill("2099-09-11T10:20");
   await page.getByLabel("Aircraft (optional)").fill("A320");
-  await page.getByRole("button", { name: "Offer complete schedule" }).click();
+  await page.getByRole("button", { name: "Offer flight batch" }).click();
   await expect(page.getByText("Fulfilled", { exact: true })).toBeVisible();
 
-  const request = object(
+  const requestDetail = object(
     await apiJson(page, "GET", `/schedule-requests/${requestId}`),
   );
-  const [flight] = objectArray(request.flights);
+  expect(object(requestDetail.fulfillment)).toMatchObject({
+    linkedFlightCount: 1,
+    remainingFlightCount: 0,
+  });
+  const flightPage = object(
+    await apiJson(
+      page,
+      "GET",
+      `/flights?scheduleRequestId=${encodeURIComponent(requestId)}&limit=50`,
+    ),
+  );
+  const [flight] = objectArray(flightPage.items);
   if (!flight) throw new Error("Dispatcher fulfillment created no flight");
   const flightId = stringField(flight, "id");
 
   await setIdentity(context, "pilot");
-  await apiJson(page, "POST", `/flights/${flightId}/accept`);
+  await apiJson(page, "POST", `/flights/${flightId}/accept`, {
+    expectedVersion: numberField(flight, "version"),
+  });
   await setIdentity(context, "dispatcher");
   await page.goto(`/vsas/dispatch/flights/${flightId}`);
   await page.getByRole("button", { name: "Prepare dispatch release" }).click();
@@ -183,24 +212,58 @@ test("dispatcher fulfills a request, publishes a release, plans, and exchanges A
     .getByRole("button", { name: "Close planning workspace" })
     .click();
 
-  await apiJson(page, "PUT", "/simbrief/connection", { userId: "987654" });
-  const createdDispatch = object(
+  const scheduledDetail = object(
+    await apiJson(page, "GET", `/flights/${flightId}`),
+  );
+  const scheduledFlight = object(scheduledDetail.flight);
+  const release = object(scheduledDetail.release);
+  const preparedResponse = object(
     await apiJson(page, "POST", `/flights/${flightId}/simbrief/dispatches`, {
-      dispatcherName: "Integrated Test Dispatcher",
+      expectedFlightVersion: numberField(scheduledFlight, "version"),
+      expectedAssignmentRevision: numberField(
+        scheduledFlight,
+        "assignmentRevision",
+      ),
+      releaseId: stringField(release, "id"),
+      releaseRevision: numberField(release, "revision"),
     }),
   );
-  const dispatch = object(createdDispatch.dispatch);
-  expect(stringField(createdDispatch, "dispatchUrl")).toMatch(
+  const preparedDispatch = object(preparedResponse.dispatch);
+  expect(preparedDispatch).toMatchObject({
+    status: "prepared",
+    dispatcherName: "Integrated Test Dispatcher",
+    dispatcherRemarks: "Integrated dispatcher release",
+  });
+
+  await setIdentity(context, "pilot");
+  await apiJson(page, "PUT", "/simbrief/connection", { userId: "987654" });
+  const generatedResponse = object(
+    await apiJson(
+      page,
+      "POST",
+      `/flights/${flightId}/simbrief/dispatches/${stringField(preparedDispatch, "id")}/generate`,
+    ),
+  );
+  expect(stringField(generatedResponse, "dispatchUrl")).toMatch(
     /^https:\/\/www\.simbrief\.com\//,
   );
+  expect(object(generatedResponse.dispatch)).toMatchObject({
+    status: "pending",
+    generatedByMembershipId: pilotMembershipId,
+  });
   const synced = object(
     await apiJson(
       page,
       "POST",
-      `/flights/${flightId}/simbrief/dispatches/${stringField(dispatch, "id")}/sync`,
+      `/flights/${flightId}/simbrief/dispatches/${stringField(preparedDispatch, "id")}/sync`,
     ),
   );
-  expect(stringField(object(synced.dispatch), "status")).toBe("ready");
+  expect(object(synced.dispatch)).toMatchObject({
+    status: "ready",
+    generatedByMembershipId: pilotMembershipId,
+    dispatcherName: "Integrated Test Dispatcher",
+    dispatcherRemarks: "Integrated dispatcher release",
+  });
 
   const oauth = object(await apiJson(page, "POST", "/simbrief/oauth/start"));
   const state = new URL(
@@ -217,6 +280,7 @@ test("dispatcher fulfills a request, publishes a release, plans, and exchanges A
     username: "synthetic-pilot",
   });
 
+  await setIdentity(context, "dispatcher");
   await page.goto("/vsas/dispatch/acars");
   await expect(
     page.getByRole("heading", { name: "ACARS workspace" }),
@@ -405,6 +469,14 @@ function stringField(value: Record<string, unknown>, field: string): string {
   const candidate = value[field];
   if (typeof candidate !== "string") {
     throw new Error(`Expected ${field} to be a string`);
+  }
+  return candidate;
+}
+
+function numberField(value: Record<string, unknown>, field: string): number {
+  const candidate = value[field];
+  if (typeof candidate !== "number" || !Number.isFinite(candidate)) {
+    throw new Error(`Expected ${field} to be a number`);
   }
   return candidate;
 }

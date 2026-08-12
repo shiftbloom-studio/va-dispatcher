@@ -69,6 +69,7 @@ import {
   completeDispatchCallback,
   disconnectAccount,
   generateDispatch,
+  listDispatches,
   prepareDispatch,
 } from "./service.js";
 
@@ -282,6 +283,51 @@ describe("SimBrief dispatch service", () => {
       ),
     ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mocks.createSimbriefDispatchAtomic).not.toHaveBeenCalled();
+  });
+
+  it("keeps the canonical preparation current after a notes-only flight version change", async () => {
+    const prepared = preparedDispatch();
+    mocks.findFlight.mockResolvedValue({
+      ...flight,
+      version: flight.version + 1,
+      dispatcherNotes: "Gate changed to C12",
+    });
+    mocks.listSimbriefDispatches.mockResolvedValue([prepared]);
+
+    await expect(
+      listDispatches(
+        {
+          tenantId: membership.tenantId,
+          membershipId: membership.id,
+          role: "pilot",
+        },
+        flight.id,
+      ),
+    ).resolves.toEqual({
+      items: [prepared],
+      currentDispatchId: prepared.id,
+    });
+  });
+
+  it("does not mark a preparation current after material flight details change", async () => {
+    const prepared = preparedDispatch();
+    mocks.findFlight.mockResolvedValue({
+      ...flight,
+      version: flight.version + 1,
+      arrIcao: "ESSA",
+    });
+    mocks.listSimbriefDispatches.mockResolvedValue([prepared]);
+
+    await expect(
+      listDispatches(
+        {
+          tenantId: membership.tenantId,
+          membershipId: membership.id,
+          role: "pilot",
+        },
+        flight.id,
+      ),
+    ).resolves.toMatchObject({ currentDispatchId: null });
   });
 
   it("lets only the assigned pilot launch a prepared plan in their account", async () => {

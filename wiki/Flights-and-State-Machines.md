@@ -151,7 +151,7 @@ reuse them only with the same filters. Legacy or malformed cursors are rejected.
 
 Adding boarding, delayed, diverted, or another lifecycle is a cross-layer change. Update:
 
-1. PostgreSQL enum and migration strategy.
+1. PostgreSQL enum and fresh-schema rollout.
 2. Backend transition table and role/ownership rules.
 3. Route validation and OpenAPI.
 4. Web Zod schema and status presentation.

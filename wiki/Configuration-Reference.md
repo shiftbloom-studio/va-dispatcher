@@ -6,32 +6,32 @@ VA Dispatch has separate API and web environments. Vercel service bindings provi
 
 Primary example: `apps/api/.env.example`.
 
-| Variable                                          | Default                          | Required when                              | Purpose and constraints                                                                                |
-| ------------------------------------------------- | -------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `NODE_ENV`                                        | `development`                    | Always                                     | `development`, `test`, or `production`                                                                 |
-| `VERCEL_ENV`                                      | unset                            | Vercel supplies it                         | `development`, `preview`, or `production`; takes precedence when selecting the production ACARS policy |
-| `PORT`                                            | `3001`                           | Local override only                        | Positive integer used by the local Node server                                                         |
-| `CORS_ORIGIN`                                     | `http://localhost:3000`          | Fallback cross-origin deployment           | Comma-separated allowed web origins                                                                    |
-| `APP_ORIGIN`                                      | unset                            | Provider callback browser redirects        | Public web origin; HTTPS in production                                                                 |
-| `DATABASE_URL`                                    | unset                            | Every authenticated or persistent workflow | PostgreSQL connection URL, normally Neon                                                               |
-| `CLERK_SECRET_KEY`                                | unset                            | Real authentication and Clerk member sync  | Server secret; never expose as `NEXT_PUBLIC_*`                                                         |
-| `CLERK_PUBLISHABLE_KEY`                           | unset                            | Deployment integration may provide it      | Parsed by API configuration; browser Clerk uses `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`                    |
-| `AUTH_DEV_BYPASS`                                 | `false`                          | Local header-auth mode                     | Allowed only when `NODE_ENV` is not `production`                                                       |
-| `VSAS_CLERK_ORG_ID`                               | unset                            | Trusted vSAS production mapping            | Clerk organization ID allowed to create or repair the initial `vsas` tenant mapping                    |
-| `ACARS_PROVIDER`                                  | `mock`                           | Declare `hoppie` in production             | `mock` or `hoppie`; production runtime always resolves to Hoppie                                       |
-| `TENANT_SECRETS_KEY`                              | unset                            | Saving or using an encrypted Hoppie logon  | Exactly 32 random bytes, base64-encoded                                                                |
-| `CRON_SECRET`                                     | insecure development placeholder | Production ACARS/privacy cron calls        | Long random bearer secret; replace the default                                                         |
-| `SEED_DEMO_DATA`                                  | `false`                          | None currently                             | Reserved parsed setting; it does not currently seed records automatically                              |
-| `SIMBRIEF_API_KEY`                                | unset                            | SimBrief Dispatch Redirect                 | Application key issued by SimBrief                                                                     |
-| `SIMBRIEF_CALLBACK_URL`                           | unset                            | SimBrief generation                        | Public API callback URL                                                                                |
-| `NAVIGRAPH_CLIENT_ID` / `NAVIGRAPH_CLIENT_SECRET` | unset                            | Navigraph account connection               | OAuth client credentials; server-only                                                                  |
-| `NAVIGRAPH_REDIRECT_URI`                          | unset                            | Navigraph OAuth                            | Exact registered callback URL                                                                          |
-| `BLOB_READ_WRITE_TOKEN`                           | unset                            | Tenant logo upload                         | Vercel Blob server credential                                                                          |
-| `AVIATION_WEATHER_API_ORIGIN`                     | Aviation Weather API             | Dispatch release weather                   | HTTPS provider origin; local integrated tests replace it                                               |
-| `AVIATION_WEATHER_USER_AGENT`                     | project identifier               | Weather requests                           | Operator-identifying user agent                                                                        |
-| `E2E_FIXTURE_MODE`                                | `false`                          | Integrated tests only                      | Requires test environment, fixture secret, and exact disposable database confirmation                  |
-| `E2E_FIXTURE_SECRET`                              | unset                            | Integrated tests only                      | Dedicated high-entropy fixture authority; never reuse `CRON_SECRET`                                    |
-| `E2E_CONFIRM_DATABASE`                            | unset                            | Integrated tests only                      | Exact disposable database name                                                                         |
+| Variable                                          | Default                          | Required when                                          | Purpose and constraints                                                                                |
+| ------------------------------------------------- | -------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `NODE_ENV`                                        | `development`                    | Always                                                 | `development`, `test`, or `production`                                                                 |
+| `VERCEL_ENV`                                      | unset                            | Vercel supplies it                                     | `development`, `preview`, or `production`; takes precedence when selecting the production ACARS policy |
+| `PORT`                                            | `3001`                           | Local override only                                    | Positive integer used by the local Node server                                                         |
+| `CORS_ORIGIN`                                     | `http://localhost:3000`          | Fallback cross-origin deployment                       | Comma-separated allowed web origins                                                                    |
+| `APP_ORIGIN`                                      | unset                            | Provider callback browser redirects                    | Public web origin; HTTPS in production                                                                 |
+| `DATABASE_URL`                                    | unset                            | Every authenticated or persistent workflow             | PostgreSQL connection URL, normally Neon                                                               |
+| `CLERK_SECRET_KEY`                                | unset                            | Real authentication and Clerk member sync              | Server secret; never expose as `NEXT_PUBLIC_*`                                                         |
+| `CLERK_PUBLISHABLE_KEY`                           | unset                            | Deployment integration may provide it                  | Parsed by API configuration; browser Clerk uses `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`                    |
+| `AUTH_DEV_BYPASS`                                 | `false`                          | Local header-auth mode                                 | Allowed only when `NODE_ENV` is not `production`                                                       |
+| `VSAS_CLERK_ORG_ID`                               | unset                            | Trusted vSAS production mapping                        | Clerk organization ID allowed to create or repair the initial `vsas` tenant mapping                    |
+| `ACARS_PROVIDER`                                  | `mock`                           | Declare `hoppie` in production                         | `mock` or `hoppie`; production runtime always resolves to Hoppie                                       |
+| `TENANT_SECRETS_KEY`                              | unset                            | Every production deployment; protected flows elsewhere | Exactly 32 random bytes, base64-encoded; protects tenant credentials and signed/sealed transient state |
+| `CRON_SECRET`                                     | insecure development placeholder | Production ACARS/privacy cron calls                    | Long random bearer secret; replace the default                                                         |
+| `SEED_DEMO_DATA`                                  | `false`                          | None currently                                         | Reserved parsed setting; it does not currently seed records automatically                              |
+| `SIMBRIEF_API_KEY`                                | unset                            | SimBrief Dispatch Redirect                             | Application key issued by SimBrief                                                                     |
+| `SIMBRIEF_CALLBACK_URL`                           | unset                            | SimBrief generation                                    | Public API callback URL                                                                                |
+| `NAVIGRAPH_CLIENT_ID` / `NAVIGRAPH_CLIENT_SECRET` | unset                            | Navigraph account connection                           | OAuth client credentials; server-only                                                                  |
+| `NAVIGRAPH_REDIRECT_URI`                          | unset                            | Navigraph OAuth                                        | Exact registered callback URL                                                                          |
+| `BLOB_READ_WRITE_TOKEN`                           | unset                            | Tenant logo upload                                     | Vercel Blob server credential                                                                          |
+| `AVIATION_WEATHER_API_ORIGIN`                     | Aviation Weather API             | Dispatch release weather                               | HTTPS provider origin; local integrated tests replace it                                               |
+| `AVIATION_WEATHER_USER_AGENT`                     | project identifier               | Weather requests                                       | Operator-identifying user agent                                                                        |
+| `E2E_FIXTURE_MODE`                                | `false`                          | Integrated tests only                                  | Requires test environment, fixture secret, and exact disposable database confirmation                  |
+| `E2E_FIXTURE_SECRET`                              | unset                            | Integrated tests only                                  | Dedicated high-entropy fixture authority; never reuse `CRON_SECRET`                                    |
+| `E2E_CONFIRM_DATABASE`                            | unset                            | Integrated tests only                                  | Exact disposable database name                                                                         |
 
 Generate independent production secrets:
 
@@ -40,7 +40,15 @@ openssl rand -base64 32  # TENANT_SECRETS_KEY
 openssl rand -hex 32     # suitable CRON_SECRET material
 ```
 
-Changing `TENANT_SECRETS_KEY` without re-encrypting stored values makes existing Hoppie credentials unreadable. Plan key rotation as a data migration or remove and re-enter each tenant credential under the new key.
+Changing `TENANT_SECRETS_KEY` without re-encrypting stored values makes existing
+Hoppie credentials unreadable, invalidates issued simulator device tokens, and
+invalidates pending SimBrief callback or Navigraph OAuth state. Plan rotation
+as a controlled key rotation or re-enter credentials, reissue device tokens, and restart
+pending provider flows under the new key.
+
+`schema.ts` is canonical while this Shiftbloom project is pre-production.
+Create an empty database and run `DATABASE_URL=... pnpm db:push` from the exact
+release commit. Never use it against data that must be preserved.
 
 ## Web environment
 
@@ -109,7 +117,9 @@ Clerk organization roles map as follows:
 
 First login always provisions an audited pilot. The stored local membership is
 the runtime role; admin directory sync or the admin control plane may promote
-it. Disabled or invited local memberships cannot access the application.
+it. The sole recovery exception can promote a verified Clerk organization Admin
+when the tenant has no active application Admin. Disabled or invited local
+memberships cannot access the application.
 
 ## Hoppie configuration
 
@@ -131,7 +141,7 @@ The checked-in `vercel.ts` defines:
 - `api` service rooted at `apps/api` with `src/index.ts` entrypoint;
 - a private service binding exposed to web as `API_INTERNAL_URL`;
 - `/api/*` routed to API;
-- all remaining paths routed to web; and
+- all remaining paths routed to web;
 - `/api/v1/internal/cron/acars-poll` every minute; and
 - `/api/v1/internal/cron/privacy-lifecycle` every hour.
 
@@ -141,7 +151,8 @@ A one-minute cron requires an eligible Vercel plan. If the cron is deployed less
 
 Before promoting a deployment:
 
-1. Load `/health` and confirm database presence and effective ACARS provider.
+1. Load `/health`, confirm the database-configured flag and effective ACARS
+   provider, then verify readiness with a synthetic authenticated read.
 2. Sign in through the tenant URL and confirm URL, Clerk organization, and API tenant agree.
 3. Load `/impressum` and `/privacy`; verify real operator details and all links.
 4. Confirm `NEXT_PUBLIC_SOURCE_URL` points to the corresponding source of the deployed version.
@@ -151,3 +162,7 @@ Before promoting a deployment:
 8. Verify the privacy lifecycle cron and approved policy before execution.
 9. Verify SimBrief/Navigraph callback URLs and tenant logo storage without
    exposing credentials.
+10. Publish a synthetic dispatch release and verify its weather-unavailable
+    fallback as well as the successful provider path where permitted.
+11. Issue a synthetic simulator device token, ingest a sequenced sample, verify
+    dispatcher presence/OOOI, then revoke the token.

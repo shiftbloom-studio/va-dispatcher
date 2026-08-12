@@ -135,6 +135,14 @@ describe("API documentation", () => {
     });
   });
 
+  it("documents schedule-request creation as pilot-only", () => {
+    const operation = openApiDocument.paths["/schedule-requests"].post;
+
+    expect(operation["x-required-role"]).toBe("pilot");
+    expect(operation.description).toContain("authenticated pilot");
+    expect(operation.description).toContain("cannot create pilot requests");
+  });
+
   it("documents the opaque versioned flight continuation contract", () => {
     const operation = openApiDocument.paths["/flights"].get;
     const parameters = operation.parameters as unknown as Array<{
