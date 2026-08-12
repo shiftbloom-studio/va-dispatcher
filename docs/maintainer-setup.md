@@ -41,6 +41,30 @@ update support currently ends at pnpm 10, so `.github/dependabot.yml` updates
 GitHub Actions only. Keep the scheduled `pnpm security:audit` job enabled and add
 pnpm package updates to Dependabot when GitHub documents pnpm 11 support.
 
+## Vercel BotID
+
+BotID is enforced on same-origin browser mutations under `/api/v1/*`. The
+client and API explicitly select the same check level so a dashboard default
+cannot create a verification mismatch:
+
+- Deep Analysis protects bulk flight creation, Clerk membership sync, Hoppie
+  configuration tests, and outbound Hoppie messages.
+- Basic protects every other `POST`, `PUT`, `PATCH`, and `DELETE` request.
+- Health checks, read requests, and secret-authenticated `/api/v1/internal/*`
+  operations are intentionally excluded.
+
+Before deploying, enable **Secure Backend Access with OIDC Federation** in the
+Vercel project settings. BotID uses the request-scoped Vercel OIDC token for
+server verification; do not copy that token into a long-lived secret. Deep
+Analysis requires an eligible paid plan and incurs per-check usage, so configure
+spend notifications appropriate for the deployment.
+
+Test protected requests through the deployed web application. Direct production
+requests from `curl` or other clients that did not run the browser challenge are
+expected to receive `403`. Local development passes as human by default. After
+deployment, inspect BotID events in the Vercel Firewall traffic view and verify
+both a Basic route and a Deep Analysis route before promoting the release.
+
 ## Vulnerability intake
 
 After private vulnerability reporting is enabled, confirm that the **Report a
