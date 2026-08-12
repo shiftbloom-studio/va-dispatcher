@@ -94,7 +94,8 @@ NAVIGRAPH_REDIRECT_URI=https://www.va-dispatcher.world/api/v1/simbrief/oauth/cal
 ```
 
 `TENANT_SECRETS_KEY` must also be configured. It encrypts each short-lived PKCE
-verifier; only a SHA-256 hash of OAuth `state` is stored. Start a connection
+verifier and seals the purpose-bound OAuth `state` with authenticated
+encryption; the database stores only its random lookup ID. Start a connection
 with an authenticated request:
 
 ```http
