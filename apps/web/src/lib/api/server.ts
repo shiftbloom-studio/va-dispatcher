@@ -16,8 +16,13 @@ export function serverApi<TSchema extends z.ZodType>(
   path: string,
   token: string,
   schema: TSchema,
+  headers?: HeadersInit,
 ): Promise<z.output<TSchema>> {
-  return requestJson(`${apiOrigin()}/api/v1${path}`, { schema, token });
+  return requestJson(`${apiOrigin()}/api/v1${path}`, {
+    schema,
+    token,
+    headers,
+  });
 }
 
 export function serverPublicApi<TSchema extends z.ZodType>(

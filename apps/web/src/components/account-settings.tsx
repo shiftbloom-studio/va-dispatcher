@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { PageHeading } from "@/components/page-heading";
+import { SimbriefAccount } from "@/components/simbrief-account";
+import { SimulatorDevices } from "@/components/simulator-devices";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/fields";
@@ -18,7 +20,13 @@ const HOPPIE_REGISTRATION_URL =
   "https://www.hoppie.nl/acars/system/register.html";
 const CALLSIGN_PATTERN = /^[A-Z0-9-]+$/;
 
-export function AccountSettings({ slug }: { slug: string }) {
+export function AccountSettings({
+  slug,
+  simbriefRecovery,
+}: {
+  slug: string;
+  simbriefRecovery?: "navigraph-connected";
+}) {
   const api = useApi();
   const me = useQuery({
     queryKey: [slug, "account-settings", "me"],
@@ -57,9 +65,23 @@ export function AccountSettings({ slug }: { slug: string }) {
           ) : null
         }
       />
+      {simbriefRecovery === "navigraph-connected" ? (
+        <p
+          role="status"
+          className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800"
+        >
+          Navigraph returned successfully. Your current connection status is
+          shown below.
+        </p>
+      ) : null}
       <div className="grid gap-6 xl:grid-cols-2">
         <ProfileCard slug={slug} membership={me.data.membership} />
+        <SimbriefAccount slug={slug} />
         <HoppieGuide />
+        <SimulatorDevices
+          slug={slug}
+          canCreate={me.data.membership.role === "pilot"}
+        />
       </div>
     </>
   );

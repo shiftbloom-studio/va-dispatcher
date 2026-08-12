@@ -17,6 +17,7 @@ export async function insertAcarsMessage(input: {
   hoppieRaw?: unknown;
   provider: "mock" | "hoppie";
   providerMessageId?: string | null;
+  deliveryStatus?: AcarsMessage["deliveryStatus"];
   flightId?: string | null;
   createdByMembershipId?: string | null;
   receivedAt?: Date | null;
@@ -35,6 +36,13 @@ export async function insertAcarsMessage(input: {
       hoppieRaw: input.hoppieRaw ?? null,
       provider: input.provider,
       providerMessageId: input.providerMessageId ?? null,
+      deliveryStatus:
+        input.deliveryStatus ??
+        (input.direction === "outbound"
+          ? input.sentAt
+            ? "accepted"
+            : "pending"
+          : null),
       flightId: input.flightId ?? null,
       createdByMembershipId: input.createdByMembershipId ?? null,
       receivedAt: input.receivedAt ?? null,
@@ -42,6 +50,35 @@ export async function insertAcarsMessage(input: {
     })
     .returning();
   return row!;
+}
+
+export async function updateAcarsDelivery(input: {
+  tenantId: string;
+  id: string;
+  status: Exclude<AcarsMessage["deliveryStatus"], null>;
+  providerMessageId?: string | null;
+  hoppieRaw?: unknown;
+  sentAt?: Date | null;
+}): Promise<AcarsMessage | null> {
+  const db = getDb();
+  const [updated] = await db
+    .update(acarsMessages)
+    .set({
+      deliveryStatus: input.status,
+      providerMessageId: input.providerMessageId ?? null,
+      hoppieRaw: input.hoppieRaw ?? null,
+      sentAt: input.sentAt ?? null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(acarsMessages.tenantId, input.tenantId),
+        eq(acarsMessages.id, input.id),
+        eq(acarsMessages.direction, "outbound"),
+      ),
+    )
+    .returning();
+  return updated ?? null;
 }
 
 export async function findAcarsMessage(

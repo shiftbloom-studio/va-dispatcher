@@ -5,7 +5,9 @@ import {
   TENANT_AUTH_APPEARANCE,
   TenantAuthShell,
 } from "@/components/tenant-auth-shell";
+import { E2eAuthForm } from "@/components/e2e-auth-form";
 import { getTenantAuthRoutes } from "@/lib/auth-routes";
+import { e2eIntegratedFixtureEnabled } from "@/lib/e2e-fixture";
 import { getPublicTenantConfig } from "@/lib/public-tenant";
 
 export default async function SignUpPage({
@@ -20,14 +22,18 @@ export default async function SignUpPage({
 
   return (
     <TenantAuthShell tenant={tenant}>
-      <SignUp
-        path={routes.signUp}
-        routing="path"
-        fallbackRedirectUrl={routes.home}
-        signInFallbackRedirectUrl={routes.home}
-        signInUrl={routes.signIn}
-        appearance={TENANT_AUTH_APPEARANCE}
-      />
+      {e2eIntegratedFixtureEnabled() ? (
+        <E2eAuthForm slug={tenant.slug} mode="sign-up" />
+      ) : (
+        <SignUp
+          path={routes.signUp}
+          routing="path"
+          fallbackRedirectUrl={routes.home}
+          signInFallbackRedirectUrl={routes.home}
+          signInUrl={routes.signIn}
+          appearance={TENANT_AUTH_APPEARANCE}
+        />
+      )}
     </TenantAuthShell>
   );
 }

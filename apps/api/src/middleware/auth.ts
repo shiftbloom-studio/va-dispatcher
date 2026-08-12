@@ -4,6 +4,8 @@ import { env } from "../env.js";
 import { AppError } from "../lib/errors.js";
 import {
   findMembership,
+  provisionPilotMembershipWithAudit,
+  recoverMembershipAsTenantAdmin,
   upsertMembership,
 } from "../db/repositories/memberships.js";
 import {
@@ -40,7 +42,7 @@ function bearerToken(authorizationHeader: string | undefined): string | null {
  *
  * Production: Clerk JWT with org claim.
  * Dev bypass: AUTH_DEV_BYPASS=true and headers:
- *   X-Dev-User-Id, X-Dev-Org-Id, X-Dev-Role (optional)
+ *   X-Dev-User-Id, X-Dev-Org-Id, X-Dev-Role, X-Dev-Display-Name (optional)
  */
 export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
   async (context, next) => {
@@ -61,6 +63,8 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
         config.VSAS_CLERK_ORG_ID ??
         "org_vsas_dev";
       const role = mapClerkOrgRole(context.req.header("X-Dev-Role") ?? "admin");
+      const displayName =
+        context.req.header("X-Dev-Display-Name") ?? "Dev User";
 
       const tenant = await findTenantByClerkOrgId(clerkOrgId);
       if (!tenant) {
@@ -75,7 +79,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
         tenantId: tenant.id,
         clerkUserId,
         role,
-        displayName: "Dev User",
+        displayName,
       });
 
       context.set("auth", {
@@ -147,13 +151,31 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     }
 
     let membership = await findMembership(tenant.id, clerkUserId);
+    const clerkRole = mapClerkOrgRole(jwtPayload.org_role ?? jwtPayload.o?.rol);
     if (!membership) {
-      // Auto-provision pilot membership on first login
-      membership = await upsertMembership({
+      // Every new Clerk member starts as a pilot and is atomically audited.
+      // A Clerk organization admin may be promoted
+      // only by the serialized, audited no-active-admin recovery statement.
+      // Dispatcher/admin privilege otherwise requires an audited directory
+      // sync or explicit application-admin change.
+      membership = await provisionPilotMembershipWithAudit({
         tenantId: tenant.id,
         clerkUserId,
-        role: mapClerkOrgRole(jwtPayload.org_role ?? jwtPayload.o?.rol),
       });
+    }
+
+    // Explicit break-glass recovery: a verified Clerk organization admin may
+    // repair their own local membership only when no active app admin exists.
+    // Normal role changes continue through the audited admin control plane.
+    if (
+      clerkRole === "admin" &&
+      (membership.role !== "admin" || membership.status !== "active")
+    ) {
+      const recovered = await recoverMembershipAsTenantAdmin({
+        tenantId: tenant.id,
+        membershipId: membership.id,
+      });
+      if (recovered) membership = recovered;
     }
 
     if (membership.status !== "active") {

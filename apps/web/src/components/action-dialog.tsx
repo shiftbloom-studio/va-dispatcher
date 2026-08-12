@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label, Textarea } from "@/components/ui/fields";
@@ -84,6 +84,7 @@ function ActionDialog({
   onConfirm: (reason: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,11 +119,14 @@ function ActionDialog({
       <span onClick={() => dialog.current?.showModal()}>{trigger}</span>
       <dialog
         ref={dialog}
+        aria-labelledby={titleId}
         className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-[2px] border border-slate-300 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/60"
       >
         <form method="dialog" onSubmit={(event) => event.preventDefault()}>
           <div className="border-b border-slate-100 p-5">
-            <h2 className="font-display text-xl font-semibold">{title}</h2>
+            <h2 id={titleId} className="font-display text-xl font-semibold">
+              {title}
+            </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">{detail}</p>
           </div>
           <div className="p-5">

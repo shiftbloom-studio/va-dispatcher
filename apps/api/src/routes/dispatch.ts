@@ -7,8 +7,8 @@ import { listAcarsMessages } from "../db/repositories/acars.js";
 
 export const dispatchRoutes = new Hono<{ Variables: AppVariables }>();
 
-dispatchRoutes.use("*", requireAuth);
-dispatchRoutes.use("*", requireRole("dispatcher"));
+dispatchRoutes.use("/dispatch/*", requireAuth);
+dispatchRoutes.use("/dispatch/*", requireRole("dispatcher"));
 
 dispatchRoutes.get("/dispatch/board", async (c) => {
   const auth = c.get("auth");
@@ -25,6 +25,7 @@ dispatchRoutes.get("/dispatch/board", async (c) => {
       etd: item.flight.etd.toISOString(),
       eta: item.flight.eta.toISOString(),
       status: item.flight.status,
+      boardLane: item.lane,
       pilotMembershipId: item.flight.pilotMembershipId,
       aircraftType: item.flight.aircraftType,
       dispatcherNotes: item.flight.dispatcherNotes,
@@ -38,11 +39,19 @@ dispatchRoutes.get("/dispatch/board", async (c) => {
       inAt: item.flight.inAt?.toISOString() ?? null,
     })),
     metrics: board.metrics,
+    boardWindow: {
+      generatedAt: board.window.generatedAt.toISOString(),
+      overdueFrom: board.window.overdueFrom.toISOString(),
+      upcomingTo: board.window.upcomingTo.toISOString(),
+      overdueLookbackHours: board.window.overdueLookbackHours,
+      upcomingHorizonDays: board.window.upcomingHorizonDays,
+    },
     scheduleRequestCounts: requestCounts,
   });
 });
 
 dispatchRoutes.get("/dispatch/inbox", async (c) => {
+  c.header("Cache-Control", "private, no-store");
   const auth = c.get("auth");
   const page = await listAcarsMessages({
     tenantId: auth.tenantId,
@@ -58,6 +67,13 @@ dispatchRoutes.get("/dispatch/inbox", async (c) => {
       body: message.body,
       flightId: message.flightId,
       provider: message.provider,
+      deliveryStatus:
+        message.deliveryStatus ??
+        (message.direction === "outbound"
+          ? message.sentAt
+            ? "accepted"
+            : "ambiguous"
+          : null),
       createdAt: message.createdAt.toISOString(),
       receivedAt: message.receivedAt?.toISOString() ?? null,
       sentAt: message.sentAt?.toISOString() ?? null,

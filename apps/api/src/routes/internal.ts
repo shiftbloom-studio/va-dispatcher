@@ -8,6 +8,7 @@ import { upsertTenantBySlug } from "../db/repositories/tenants.js";
 import { upsertMembership } from "../db/repositories/memberships.js";
 import { hasDatabase } from "../db/client.js";
 import { isMockAcarsEnabled } from "../acars/factory.js";
+import { runPrivacyLifecycleCron } from "../domain/privacy/service.js";
 
 export const internalRoutes = new Hono();
 
@@ -36,8 +37,35 @@ internalRoutes.on(["GET", "POST"], "/internal/cron/acars-poll", async (c) => {
   return c.json({ ok: true, ...pollResult });
 });
 
+internalRoutes.on(
+  ["GET", "POST"],
+  "/internal/cron/privacy-lifecycle",
+  zValidator(
+    "query",
+    z.object({
+      maxRuns: z.coerce.number().int().min(1).max(25).default(10),
+    }),
+  ),
+  async (c) => {
+    assertCronAuth(c.req.header("authorization"));
+    if (!hasDatabase()) {
+      return c.json({ ok: false, error: "no database" }, 503);
+    }
+    const result = await runPrivacyLifecycleCron({
+      maxRuns: c.req.valid("query").maxRuns,
+    });
+    return c.json({ ok: true, ...result });
+  },
+);
+
 internalRoutes.post(
   "/internal/seed/vsas",
+  async (c, next) => {
+    if (env().NODE_ENV === "production") {
+      throw new AppError("NOT_FOUND", "Route not found");
+    }
+    await next();
+  },
   zValidator(
     "json",
     z
@@ -49,12 +77,13 @@ internalRoutes.post(
       .optional(),
   ),
   async (c) => {
-    // Allow seed with cron secret or when AUTH_DEV_BYPASS
     const config = env();
+    // Local developer convenience only. Integrated E2E uses a separate,
+    // process-scoped authority that is never shared with the cron credential.
     const authorizationHeader = c.req.header("authorization");
     const isSeedAuthorized =
       authorizationHeader === `Bearer ${config.CRON_SECRET}` ||
-      (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production");
+      config.AUTH_DEV_BYPASS;
     if (!isSeedAuthorized) {
       throw new AppError("UNAUTHORIZED", "Seed not authorized");
     }

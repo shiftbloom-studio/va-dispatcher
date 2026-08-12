@@ -90,6 +90,22 @@ function MessageCard({
         <span className="rounded bg-slate-100 px-2 py-1 font-bold uppercase">
           {message.msgType}
         </span>
+        {!isInbound && message.deliveryStatus ? (
+          <span
+            className={`rounded px-2 py-1 font-bold uppercase ${
+              message.deliveryStatus === "accepted"
+                ? "bg-emerald-100 text-emerald-800"
+                : message.deliveryStatus === "rejected"
+                  ? "bg-red-100 text-red-800"
+                  : "bg-amber-100 text-amber-900"
+            }`}
+          >
+            {message.deliveryStatus === "ambiguous" ||
+            message.deliveryStatus === "pending"
+              ? "outcome unknown"
+              : message.deliveryStatus}
+          </span>
+        ) : null}
         {message.flightId ? (
           <Link
             href={`/${slug}/dispatch/flights/${message.flightId}`}
@@ -363,6 +379,8 @@ function ComposeTelex({
       : "",
   );
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [deliveryWarning, setDeliveryWarning] = useState(false);
+  const [reviewBeforeResend, setReviewBeforeResend] = useState(false);
   const sendMessageMutation = useMutation({
     mutationFn: () =>
       api("/acars/messages", {
@@ -374,16 +392,32 @@ function ComposeTelex({
           flightId: flightId || null,
         }),
       }),
-    onSuccess: async () => {
+    onSuccess: async ({ message }) => {
+      const status = message.deliveryStatus ?? "accepted";
+      const accepted = status === "accepted";
+      const ambiguous = status === "ambiguous" || status === "pending";
+      setDeliveryWarning(!accepted);
+      setReviewBeforeResend(ambiguous);
       setSuccessMessage(
-        provider === "hoppie"
-          ? `Hoppie accepted the telex to ${recipient.trim().toUpperCase()} for store-and-forward. This is not a delivery or read receipt.`
-          : `The development adapter stored the telex to ${recipient.trim().toUpperCase()}. No Hoppie traffic was sent.`,
+        accepted
+          ? provider === "hoppie"
+            ? `Hoppie accepted the telex to ${recipient.trim().toUpperCase()} for store-and-forward. This is not a delivery or read receipt.`
+            : `The development adapter stored the telex to ${recipient.trim().toUpperCase()}. No Hoppie traffic was sent.`
+          : ambiguous
+            ? "The provider outcome is unknown. Check the inbox before resending to avoid a duplicate."
+            : "Hoppie rejected this telex. The draft is retained.",
       );
-      setBody("");
+      if (accepted) setBody("");
       await onSent();
     },
   });
+
+  function clearOutcome() {
+    setSuccessMessage(null);
+    setDeliveryWarning(false);
+    setReviewBeforeResend(false);
+    sendMessageMutation.reset();
+  }
 
   return (
     <Card className="h-fit overflow-hidden 2xl:sticky 2xl:top-22">
@@ -411,7 +445,10 @@ function ComposeTelex({
             maxLength={20}
             className="uppercase"
             value={recipient}
-            onChange={(event) => setRecipient(event.target.value)}
+            onChange={(event) => {
+              setRecipient(event.target.value);
+              clearOutcome();
+            }}
             placeholder="SAS123"
             list="acars-member-callsigns"
           />
@@ -442,7 +479,10 @@ function ComposeTelex({
             required
             maxLength={4000}
             value={body}
-            onChange={(event) => setBody(event.target.value)}
+            onChange={(event) => {
+              setBody(event.target.value);
+              clearOutcome();
+            }}
             placeholder="Free-text telex message…"
           />
         </div>
@@ -452,6 +492,7 @@ function ComposeTelex({
             id="acars-flight"
             value={flightId}
             onChange={(event) => {
+              clearOutcome();
               const nextFlightId = event.target.value;
               setFlightId(nextFlightId);
               const flight = flights.find(
@@ -474,7 +515,11 @@ function ComposeTelex({
         {successMessage ? (
           <p
             role="status"
-            className="rounded-[2px] bg-emerald-50 p-3 text-sm text-emerald-800"
+            className={`rounded-[2px] p-3 text-sm ${
+              deliveryWarning
+                ? "bg-amber-50 text-amber-950"
+                : "bg-emerald-50 text-emerald-800"
+            }`}
           >
             {successMessage}
           </p>
@@ -484,22 +529,27 @@ function ComposeTelex({
             role="alert"
             className="rounded-[2px] bg-red-50 p-3 text-sm text-red-800"
           >
-            {apiErrorMessage(sendMessageMutation.error)} Your draft is retained;
-            retry manually when ready.
+            {apiErrorMessage(sendMessageMutation.error)} Your draft is retained.
+            Check the inbox before resending because the browser may not know
+            whether the request reached VA Dispatch.
           </p>
         ) : null}
         <Button
           type="submit"
           className="w-full"
           disabled={
-            sendMessageMutation.isPending || !recipient.trim() || !body.trim()
+            sendMessageMutation.isPending ||
+            sendMessageMutation.isError ||
+            reviewBeforeResend ||
+            !recipient.trim() ||
+            !body.trim()
           }
         >
           <Send aria-hidden className="size-4" />{" "}
           {sendMessageMutation.isPending
             ? "Sending…"
-            : sendMessageMutation.isError
-              ? "Retry send"
+            : sendMessageMutation.isError || reviewBeforeResend
+              ? "Check inbox before resending"
               : "Send telex"}
         </Button>
       </form>

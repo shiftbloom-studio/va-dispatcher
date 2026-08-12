@@ -72,6 +72,18 @@ const requiredQueryParameter = (
   schema,
 });
 
+const requiredHeaderParameter = (
+  name: string,
+  description: string,
+  schema: OpenApiObject,
+): OpenApiObject => ({
+  name,
+  in: "header",
+  required: true,
+  description,
+  schema,
+});
+
 const paginationParameters = [
   queryParameter(
     "cursor",
@@ -84,6 +96,15 @@ const paginationParameters = [
     maximum: 100,
     default: 25,
   }),
+];
+
+const flightPaginationParameters = [
+  queryParameter(
+    "cursor",
+    "Opaque, versioned continuation token returned as nextCursor by this operation. Pass it unchanged with the same filters; cursors from older versions or other resource lists are rejected.",
+    { type: "string" },
+  ),
+  paginationParameters[1],
 ];
 
 const authenticatedErrors = {
@@ -115,6 +136,82 @@ const clerkOrDevSecurity = [
 ];
 
 const cronSecurity = [{ cronBearerAuth: [] }];
+const simulatorDeviceSecurity = [{ simulatorDeviceBearerAuth: [] }];
+
+function adminPrivacyOperation(
+  summary: string,
+  operationId: string,
+  options?: {
+    parameters?: OpenApiObject[];
+    requestBody?: OpenApiObject;
+  },
+): OpenApiObject {
+  return {
+    tags: ["Privacy"],
+    operationId,
+    summary,
+    description:
+      "Requires an active application administrator. Tenant and actor identity come from the authenticated context. Responses are private and no-store.",
+    "x-required-role": "admin",
+    ...(options?.parameters ? { parameters: options.parameters } : {}),
+    ...(options?.requestBody ? { requestBody: options.requestBody } : {}),
+    responses: {
+      "200": jsonResponse("Privacy workflow result.", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      "201": jsonResponse("Privacy workflow created.", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      "202": jsonResponse("Privacy work queued.", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      ...mutationErrors,
+    },
+  };
+}
+
+function adminPrivacyGet(
+  summary: string,
+  operationId: string,
+  options?: Parameters<typeof adminPrivacyOperation>[2],
+): OpenApiObject {
+  return { get: adminPrivacyOperation(summary, operationId, options) };
+}
+
+function adminPrivacyPost(
+  summary: string,
+  operationId: string,
+  options?: Parameters<typeof adminPrivacyOperation>[2],
+): OpenApiObject {
+  return { post: adminPrivacyOperation(summary, operationId, options) };
+}
+
+function cronPath(
+  summary: string,
+  description: string,
+  operationPrefix: string,
+): OpenApiObject {
+  const operation = (method: "Get" | "Post") => ({
+    tags: ["Internal"],
+    operationId: `${operationPrefix}${method}`,
+    summary,
+    description,
+    security: cronSecurity,
+    responses: {
+      "200": jsonResponse("Bounded lifecycle result.", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      "401": responseRef("Unauthorized"),
+      "500": responseRef("InternalError"),
+      "503": responseRef("ServiceUnavailable"),
+    },
+  });
+  return { get: operation("Get"), post: operation("Post") };
+}
 
 const schemas = {
   Uuid: {
@@ -142,6 +239,136 @@ const schemas = {
   ArbitraryObject: {
     type: "object",
     additionalProperties: true,
+  },
+  PrivacyDeleteRetentionClass: {
+    type: "object",
+    additionalProperties: false,
+    required: ["retentionDays", "action"],
+    properties: {
+      retentionDays: { type: "integer", minimum: 1, maximum: 36_500 },
+      action: { type: "string", enum: ["delete"] },
+    },
+  },
+  PrivacyAnonymizeRetentionClass: {
+    type: "object",
+    additionalProperties: false,
+    required: ["retentionDays", "action"],
+    properties: {
+      retentionDays: { type: "integer", minimum: 1, maximum: 36_500 },
+      action: { type: "string", enum: ["anonymize"] },
+    },
+  },
+  PrivacyExternalRetentionClass: {
+    type: "object",
+    additionalProperties: false,
+    required: ["retentionDays", "action"],
+    properties: {
+      retentionDays: { type: "integer", minimum: 1, maximum: 36_500 },
+      action: { type: "string", enum: ["external"] },
+    },
+  },
+  PrivacyRetentionPolicyConfig: {
+    type: "object",
+    additionalProperties: false,
+    required: ["classes"],
+    properties: {
+      classes: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "memberships",
+          "scheduleRequests",
+          "flights",
+          "telemetry",
+          "simbrief",
+          "acars",
+          "oauth",
+          "audit",
+          "logs",
+          "backups",
+        ],
+        properties: {
+          memberships: schemaRef("PrivacyAnonymizeRetentionClass"),
+          scheduleRequests: schemaRef("PrivacyDeleteRetentionClass"),
+          flights: schemaRef("PrivacyDeleteRetentionClass"),
+          telemetry: schemaRef("PrivacyDeleteRetentionClass"),
+          simbrief: schemaRef("PrivacyDeleteRetentionClass"),
+          acars: schemaRef("PrivacyDeleteRetentionClass"),
+          oauth: schemaRef("PrivacyDeleteRetentionClass"),
+          audit: schemaRef("PrivacyDeleteRetentionClass"),
+          logs: schemaRef("PrivacyExternalRetentionClass"),
+          backups: schemaRef("PrivacyExternalRetentionClass"),
+        },
+      },
+      batchSize: { type: "integer", minimum: 1, maximum: 500 },
+      intervalHours: { type: "integer", minimum: 1, maximum: 8_760 },
+      automaticExecution: { type: "boolean" },
+      minimumDryRunAgeHours: {
+        type: "integer",
+        minimum: 1,
+        maximum: 720,
+      },
+    },
+  },
+  PrivacyRetentionRunInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["mode", "idempotencyKey"],
+    properties: {
+      mode: { type: "string", enum: ["dry_run", "execute"] },
+      idempotencyKey: { type: "string", minLength: 8, maxLength: 120 },
+      dryRunId: schemaRef("Uuid"),
+      confirmation: { type: "string" },
+    },
+  },
+  PrivacySubjectRequestInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "scope"],
+    properties: {
+      kind: {
+        type: "string",
+        enum: [
+          "export",
+          "correction",
+          "restriction",
+          "objection",
+          "anonymization",
+          "erasure",
+        ],
+      },
+      scope: { type: "string", enum: ["member", "tenant"] },
+      subjectMembershipId: schemaRef("NullableUuid"),
+      payload: {
+        type: "object",
+        additionalProperties: true,
+        description:
+          "Kind-specific correction, restriction, objection, or verified-destruction fields. Unknown top-level fields are rejected.",
+      },
+    },
+  },
+  PrivacyLegalHoldInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["scope", "reason"],
+    properties: {
+      subjectMembershipId: schemaRef("NullableUuid"),
+      scope: { type: "string", minLength: 1, maxLength: 120 },
+      reason: { type: "string", minLength: 1, maxLength: 2_000 },
+      expiresAt: schemaRef("NullableDateTime"),
+    },
+  },
+  PrivacyExternalTaskUpdateInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["status", "operatorNote"],
+    properties: {
+      status: {
+        type: "string",
+        enum: ["completed", "not_applicable", "failed"],
+      },
+      operatorNote: { type: "string", minLength: 1, maxLength: 2_000 },
+    },
   },
   AcarsStation: {
     type: "string",
@@ -196,9 +423,16 @@ const schemas = {
     type: "string",
     enum: ["mock", "hoppie"],
   },
+  AcarsDeliveryStatus: {
+    type: "string",
+    enum: ["pending", "accepted", "rejected", "ambiguous"],
+    nullable: true,
+    description:
+      "Outbound provider outcome. Ambiguous means the request may have reached Hoppie and must not be retried blindly; inbound messages use null.",
+  },
   SimbriefDispatchStatus: {
     type: "string",
-    enum: ["pending", "ready"],
+    enum: ["prepared", "pending", "ready"],
   },
   BrandPresence: {
     type: "string",
@@ -220,6 +454,18 @@ const schemas = {
       presence: schemaRef("BrandPresence"),
       logoUrl: { type: "string", format: "uri", nullable: true },
     },
+  },
+  PresenceState: {
+    type: "string",
+    enum: ["online", "stale", "disconnected"],
+  },
+  TelemetryPhase: {
+    type: "string",
+    enum: ["preflight", "taxi_out", "airborne", "taxi_in", "parked"],
+  },
+  OooiEventType: {
+    type: "string",
+    enum: ["out", "off", "on", "in"],
   },
   ErrorCode: {
     type: "string",
@@ -313,6 +559,7 @@ const schemas = {
       "pilotCallsign",
       "status",
       "createdAt",
+      "updatedAt",
     ],
     properties: {
       id: schemaRef("Uuid"),
@@ -327,6 +574,11 @@ const schemas = {
       },
       status: schemaRef("MembershipStatus"),
       createdAt: schemaRef("DateTime"),
+      updatedAt: schemaRef("DateTime"),
+      openFlightCount: { type: "integer", minimum: 0 },
+      activeFlightCount: { type: "integer", minimum: 0 },
+      openScheduleRequestCount: { type: "integer", minimum: 0 },
+      terminalRequestLinkedFlightCount: { type: "integer", minimum: 0 },
     },
   },
   TenantSummary: {
@@ -430,8 +682,10 @@ const schemas = {
       "windowEnd",
       "desiredFlightCount",
       "preferences",
+      "version",
       "status",
       "rejectReason",
+      "cancelReason",
       "createdAt",
       "updatedAt",
     ],
@@ -444,17 +698,46 @@ const schemas = {
       windowEnd: schemaRef("DateTime"),
       desiredFlightCount: { type: "integer", minimum: 1, maximum: 50 },
       preferences: schemaRef("ArbitraryObject"),
+      version: { type: "integer", minimum: 1 },
       status: schemaRef("ScheduleRequestStatus"),
       rejectReason: schemaRef("NullableString"),
+      cancelReason: schemaRef("NullableString"),
       createdAt: schemaRef("DateTime"),
       updatedAt: schemaRef("DateTime"),
     },
+  },
+  AvailabilityInterval: {
+    type: "object",
+    required: ["startAt", "endAt"],
+    properties: {
+      startAt: schemaRef("DateTime"),
+      endAt: {
+        ...schemaRef("DateTime"),
+        description: "Must be later than startAt.",
+      },
+    },
+  },
+  SchedulePreferences: {
+    type: "object",
+    required: ["availability"],
+    properties: {
+      availability: {
+        type: "array",
+        minItems: 1,
+        maxItems: 100,
+        description:
+          "Non-overlapping UTC intervals sorted and normalized by the server. The first start and final end must match the request window.",
+        items: schemaRef("AvailabilityInterval"),
+      },
+    },
+    additionalProperties: true,
   },
   Flight: {
     type: "object",
     required: [
       "id",
       "scheduleRequestId",
+      "replacesFlightId",
       "pilotMembershipId",
       "flightNumber",
       "depIcao",
@@ -462,6 +745,7 @@ const schemas = {
       "etd",
       "eta",
       "aircraftType",
+      "version",
       "status",
       "cancelReason",
       "declinedReason",
@@ -480,6 +764,7 @@ const schemas = {
     properties: {
       id: schemaRef("Uuid"),
       scheduleRequestId: schemaRef("NullableUuid"),
+      replacesFlightId: schemaRef("NullableUuid"),
       pilotMembershipId: schemaRef("NullableUuid"),
       flightNumber: { type: "string", minLength: 2, maxLength: 12 },
       depIcao: {
@@ -497,6 +782,12 @@ const schemas = {
       etd: schemaRef("DateTime"),
       eta: schemaRef("DateTime"),
       aircraftType: schemaRef("NullableString"),
+      version: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "Optimistic-concurrency version. Supply this as expectedVersion for every flight mutation.",
+      },
       status: schemaRef("FlightStatus"),
       cancelReason: schemaRef("NullableString"),
       declinedReason: schemaRef("NullableString"),
@@ -527,6 +818,7 @@ const schemas = {
       "etd",
       "eta",
       "status",
+      "boardLane",
       "pilotMembershipId",
       "aircraftType",
       "assignmentConfirmationRequired",
@@ -540,6 +832,12 @@ const schemas = {
       etd: schemaRef("DateTime"),
       eta: schemaRef("DateTime"),
       status: schemaRef("FlightStatus"),
+      boardLane: {
+        type: "string",
+        enum: ["overdue", "accepted", "briefed", "active", "completed"],
+        description:
+          "Server-classified live-board lane. Overdue means an accepted or briefed flight has passed ETD but remains inside the 24-hour live window.",
+      },
       pilotMembershipId: schemaRef("NullableUuid"),
       aircraftType: schemaRef("NullableString"),
       dispatcherNotes: schemaRef("NullableString"),
@@ -659,6 +957,7 @@ const schemas = {
       "body",
       "flightId",
       "provider",
+      "deliveryStatus",
       "createdAt",
     ],
     properties: {
@@ -674,6 +973,7 @@ const schemas = {
       },
       flightId: schemaRef("NullableUuid"),
       provider: schemaRef("AcarsProvider"),
+      deliveryStatus: schemaRef("AcarsDeliveryStatus"),
       createdAt: schemaRef("DateTime"),
       receivedAt: schemaRef("NullableDateTime"),
       sentAt: schemaRef("NullableDateTime"),
@@ -688,6 +988,7 @@ const schemas = {
       "toStation",
       "body",
       "provider",
+      "deliveryStatus",
       "sentAt",
     ],
     properties: {
@@ -697,6 +998,7 @@ const schemas = {
       toStation: { type: "string" },
       body: { type: "string" },
       provider: schemaRef("AcarsProvider"),
+      deliveryStatus: schemaRef("AcarsDeliveryStatus"),
       sentAt: schemaRef("NullableDateTime"),
     },
   },
@@ -730,9 +1032,17 @@ const schemas = {
     required: [
       "id",
       "flightId",
-      "createdByMembershipId",
+      "preparedByMembershipId",
+      "generatedByMembershipId",
+      "dispatcherName",
+      "dispatcherRemarks",
       "staticId",
       "status",
+      "revision",
+      "flightVersion",
+      "assignmentRevision",
+      "releaseId",
+      "releaseRevision",
       "request",
       "ofp",
       "simbriefRequestId",
@@ -745,9 +1055,44 @@ const schemas = {
     properties: {
       id: schemaRef("Uuid"),
       flightId: schemaRef("Uuid"),
-      createdByMembershipId: schemaRef("NullableUuid"),
+      preparedByMembershipId: schemaRef("NullableUuid"),
+      generatedByMembershipId: schemaRef("NullableUuid"),
+      dispatcherName: {
+        type: "string",
+        description:
+          "Trusted snapshot derived from the authenticated member who prepared this revision.",
+      },
+      dispatcherRemarks: schemaRef("NullableString"),
       staticId: { type: "string", example: "VAD_0123456789abcdef" },
       status: schemaRef("SimbriefDispatchStatus"),
+      revision: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "Immutable per-flight planning revision. Only the canonical highest revision can be launched.",
+      },
+      flightVersion: {
+        type: "integer",
+        minimum: 1,
+        nullable: true,
+        description:
+          "Flight compare-and-set revision captured when this preparation was created. It is audit metadata, not a planning-freshness signal because non-material edits can advance it. Null only for legacy rows.",
+      },
+      assignmentRevision: {
+        type: "integer",
+        minimum: 1,
+        nullable: true,
+        description:
+          "Pilot assignment revision captured when this preparation was created. Null only for legacy rows.",
+      },
+      releaseId: schemaRef("NullableUuid"),
+      releaseRevision: {
+        type: "integer",
+        minimum: 1,
+        nullable: true,
+        description:
+          "Immutable dispatch release revision used as the sole SimBrief planning source.",
+      },
       request: {
         type: "object",
         additionalProperties: { type: "string" },
@@ -777,6 +1122,86 @@ const schemas = {
       flightId: schemaRef("Uuid"),
       status: schemaRef("SimbriefDispatchStatus"),
       generatedAt: schemaRef("NullableDateTime"),
+    },
+  },
+  SimulatorDevice: {
+    type: "object",
+    required: ["id", "name", "status", "lastSeenAt", "revokedAt", "createdAt"],
+    properties: {
+      id: schemaRef("Uuid"),
+      name: { type: "string", minLength: 1, maxLength: 80 },
+      status: { type: "string", enum: ["active", "revoked"] },
+      lastSeenAt: schemaRef("NullableDateTime"),
+      revokedAt: schemaRef("NullableDateTime"),
+      createdAt: schemaRef("DateTime"),
+    },
+  },
+  FlightTelemetry: {
+    type: "object",
+    required: [
+      "flightId",
+      "membershipId",
+      "phase",
+      "latitude",
+      "longitude",
+      "altitudeFeet",
+      "groundSpeedKnots",
+      "headingDegrees",
+      "simulatorTime",
+      "sampleAt",
+      "sequence",
+    ],
+    properties: {
+      flightId: schemaRef("Uuid"),
+      membershipId: schemaRef("Uuid"),
+      phase: schemaRef("TelemetryPhase"),
+      latitude: { type: "number", minimum: -90, maximum: 90 },
+      longitude: { type: "number", minimum: -180, maximum: 180 },
+      altitudeFeet: { type: "integer", minimum: -1500, maximum: 100000 },
+      groundSpeedKnots: { type: "integer", minimum: 0, maximum: 1500 },
+      headingDegrees: { type: "number", minimum: 0, exclusiveMaximum: 360 },
+      simulatorTime: schemaRef("DateTime"),
+      sampleAt: schemaRef("DateTime"),
+      sequence: { type: "integer", minimum: 1 },
+    },
+  },
+  OooiEvent: {
+    type: "object",
+    required: [
+      "id",
+      "eventType",
+      "occurredAt",
+      "source",
+      "actorMembershipId",
+      "deviceId",
+      "reason",
+      "createdAt",
+    ],
+    properties: {
+      id: schemaRef("Uuid"),
+      eventType: schemaRef("OooiEventType"),
+      occurredAt: schemaRef("NullableDateTime"),
+      source: { type: "string", enum: ["telemetry", "manual"] },
+      actorMembershipId: schemaRef("NullableUuid"),
+      deviceId: schemaRef("NullableUuid"),
+      reason: schemaRef("NullableString"),
+      createdAt: schemaRef("DateTime"),
+    },
+  },
+  FlightOooi: {
+    type: "object",
+    required: ["id", "version", "outAt", "offAt", "onAt", "inAt"],
+    properties: {
+      id: schemaRef("Uuid"),
+      version: {
+        type: "integer",
+        minimum: 1,
+        description: "Flight version used for optimistic concurrency.",
+      },
+      outAt: schemaRef("NullableDateTime"),
+      offAt: schemaRef("NullableDateTime"),
+      onAt: schemaRef("NullableDateTime"),
+      inAt: schemaRef("NullableDateTime"),
     },
   },
   UpdateProfileInput: {
@@ -829,6 +1254,7 @@ const schemas = {
   },
   UpdateMemberInput: {
     type: "object",
+    minProperties: 1,
     properties: {
       role: schemaRef("Role"),
       displayName: {
@@ -845,37 +1271,111 @@ const schemas = {
         nullable: true,
       },
       status: schemaRef("MembershipStatus"),
+      reassignToMembershipId: {
+        ...schemaRef("Uuid"),
+        description:
+          "Required when assigned draft/offered/accepted/briefed work or open requests exist and this change makes the member inactive or changes the pilot to a non-pilot role. The replacement must be a different active pilot.",
+      },
     },
   },
   CreateScheduleRequestInput: {
     type: "object",
-    required: ["windowStart", "windowEnd", "desiredFlightCount"],
+    required: ["windowStart", "windowEnd", "desiredFlightCount", "preferences"],
     properties: {
-      title: { type: "string", maxLength: 200, nullable: true },
+      title: { type: "string", maxLength: 120, nullable: true },
       notes: { type: "string", maxLength: 2000, nullable: true },
       windowStart: schemaRef("DateTime"),
       windowEnd: schemaRef("DateTime"),
       desiredFlightCount: { type: "integer", minimum: 1, maximum: 50 },
-      preferences: schemaRef("ArbitraryObject"),
+      preferences: schemaRef("SchedulePreferences"),
     },
   },
-  ReasonInput: {
+  UpdateScheduleRequestInput: {
     type: "object",
+    required: [
+      "expectedVersion",
+      "windowStart",
+      "windowEnd",
+      "desiredFlightCount",
+      "preferences",
+    ],
     properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      title: { type: "string", maxLength: 120, nullable: true },
+      notes: { type: "string", maxLength: 2000, nullable: true },
+      windowStart: schemaRef("DateTime"),
+      windowEnd: schemaRef("DateTime"),
+      desiredFlightCount: { type: "integer", minimum: 1, maximum: 50 },
+      preferences: schemaRef("SchedulePreferences"),
+    },
+  },
+  ExpectedScheduleRequestVersionInput: {
+    type: "object",
+    required: ["expectedVersion"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+    },
+  },
+  RejectScheduleRequestInput: {
+    type: "object",
+    required: ["expectedVersion"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
       reason: { type: "string", maxLength: 500 },
+    },
+  },
+  CancelScheduleRequestInput: {
+    type: "object",
+    required: ["expectedVersion", "linkedFlightAction"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      linkedFlightAction: {
+        type: "string",
+        enum: ["keep", "cancel_predeparture"],
+        description:
+          "keep preserves every linked flight. cancel_predeparture cancels linked draft, offered, accepted, and briefed flights while preserving active and terminal history.",
+      },
+      reason: { type: "string", maxLength: 500 },
+    },
+  },
+  ExpectedFlightVersionInput: {
+    type: "object",
+    required: ["expectedVersion"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+    },
+  },
+  VersionedFlightReasonInput: {
+    type: "object",
+    required: ["expectedVersion"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      reason: { type: "string", maxLength: 500 },
+    },
+  },
+  ReofferFlightInput: {
+    type: "object",
+    required: ["expectedVersion", "reason"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      pilotMembershipId: schemaRef("NullableUuid"),
+      reason: { type: "string", minLength: 1, maxLength: 500 },
     },
   },
   CreateFlightInput: {
     type: "object",
     required: ["flightNumber", "depIcao", "arrIcao", "etd", "eta"],
+    additionalProperties: false,
     properties: {
-      scheduleRequestId: schemaRef("NullableUuid"),
       pilotMembershipId: schemaRef("NullableUuid"),
       flightNumber: { type: "string", minLength: 2, maxLength: 12 },
       depIcao: { type: "string", minLength: 4, maxLength: 4 },
       arrIcao: { type: "string", minLength: 4, maxLength: 4 },
       etd: schemaRef("DateTime"),
-      eta: schemaRef("DateTime"),
+      eta: {
+        ...schemaRef("DateTime"),
+        description: "Must be later than etd.",
+      },
       aircraftType: { type: "string", maxLength: 20, nullable: true },
       status: { type: "string", enum: ["draft", "offered"] },
       dispatcherNotes: {
@@ -893,16 +1393,21 @@ const schemas = {
       depIcao: { type: "string", minLength: 4, maxLength: 4 },
       arrIcao: { type: "string", minLength: 4, maxLength: 4 },
       etd: schemaRef("DateTime"),
-      eta: schemaRef("DateTime"),
+      eta: {
+        ...schemaRef("DateTime"),
+        description:
+          "Must be later than etd and contained with etd inside one detailed request availability interval.",
+      },
       aircraftType: { type: "string", maxLength: 20, nullable: true },
       pilotMembershipId: schemaRef("NullableUuid"),
     },
   },
   BulkCreateFlightsInput: {
     type: "object",
-    required: ["scheduleRequestId", "flights"],
+    required: ["scheduleRequestId", "expectedRequestVersion", "flights"],
     properties: {
       scheduleRequestId: schemaRef("Uuid"),
+      expectedRequestVersion: { type: "integer", minimum: 1 },
       flights: {
         type: "array",
         minItems: 1,
@@ -913,7 +1418,15 @@ const schemas = {
   },
   UpdateFlightInput: {
     type: "object",
+    required: ["expectedVersion"],
     properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      changeReason: {
+        type: "string",
+        maxLength: 500,
+        description:
+          "Required when changing flight number, route, schedule, equipment, or pilot assignment.",
+      },
       flightNumber: { type: "string", minLength: 2, maxLength: 12 },
       depIcao: { type: "string", minLength: 4, maxLength: 4 },
       arrIcao: { type: "string", minLength: 4, maxLength: 4 },
@@ -934,8 +1447,9 @@ const schemas = {
   },
   UpdateFlightStatusInput: {
     type: "object",
-    required: ["status"],
+    required: ["expectedVersion", "status"],
     properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
       status: {
         type: "string",
         enum: ["active", "completed", "cancelled"],
@@ -1021,59 +1535,67 @@ const schemas = {
   },
   CreateSimbriefDispatchInput: {
     type: "object",
+    required: [
+      "expectedFlightVersion",
+      "expectedAssignmentRevision",
+      "releaseId",
+      "releaseRevision",
+    ],
     additionalProperties: false,
     properties: {
-      aircraftType: {
-        type: "string",
-        minLength: 2,
-        maxLength: 64,
-        pattern: "^[A-Za-z0-9_-]+$",
-        description:
-          "ICAO aircraft type or SimBrief airframe Internal ID. Defaults to the flight aircraft type.",
-      },
-      airline: { type: "string", minLength: 1, maxLength: 3 },
-      flightNumber: { type: "string", minLength: 1, maxLength: 12 },
-      callsign: {
-        type: "string",
-        minLength: 2,
-        maxLength: 12,
-        pattern: "^[A-Za-z0-9]+$",
-      },
-      route: { type: "string", maxLength: 2000 },
-      alternate: { type: "string", minLength: 4, maxLength: 4 },
-      flightLevel: {
-        oneOf: [
-          { type: "integer", minimum: 0, maximum: 60000 },
-          { type: "string", pattern: "^(?:FL)?\\d{2,5}$" },
-        ],
-      },
-      registration: { type: "string", minLength: 1, maxLength: 16 },
-      passengers: { type: "integer", minimum: 0, maximum: 1000 },
-      cargo: { type: "number", minimum: 0, maximum: 9999 },
-      captainName: { type: "string", minLength: 1, maxLength: 120 },
-      dispatcherName: { type: "string", minLength: 1, maxLength: 120 },
-      customRemarks: { type: "string", maxLength: 2000 },
-      units: { type: "string", enum: ["KGS", "LBS"], default: "KGS" },
-      planFormat: { type: "string", minLength: 1, maxLength: 32 },
-      costIndex: {
-        oneOf: [
-          { type: "integer", minimum: 0, maximum: 999 },
-          { type: "string", enum: ["AUTO"] },
-        ],
-      },
-      taxiOutMinutes: { type: "integer", minimum: 0, maximum: 180 },
-      taxiInMinutes: { type: "integer", minimum: 0, maximum: 180 },
-      reserveMinutes: { type: "integer", minimum: 0, maximum: 600 },
-      navlog: { type: "boolean" },
-      etops: { type: "boolean" },
-      stepClimbs: { type: "boolean" },
-      runwayAnalysis: { type: "boolean" },
-      notams: { type: "boolean" },
-      firNotams: { type: "boolean" },
-      omitSids: { type: "boolean" },
-      omitStars: { type: "boolean" },
-      maps: { type: "string", enum: ["detail", "simple", "none"] },
-      sidStarPreference: { type: "string", enum: ["R", "C"] },
+      expectedFlightVersion: { type: "integer", minimum: 1 },
+      expectedAssignmentRevision: { type: "integer", minimum: 1 },
+      releaseId: schemaRef("Uuid"),
+      releaseRevision: { type: "integer", minimum: 1 },
+    },
+  },
+  CreateSimulatorDeviceInput: {
+    type: "object",
+    required: ["name"],
+    additionalProperties: false,
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 80 },
+    },
+  },
+  TelemetryIngestInput: {
+    type: "object",
+    required: [
+      "flightId",
+      "sequence",
+      "simulatorTime",
+      "phase",
+      "latitude",
+      "longitude",
+      "altitudeFeet",
+      "groundSpeedKnots",
+      "headingDegrees",
+    ],
+    additionalProperties: false,
+    properties: {
+      flightId: schemaRef("Uuid"),
+      sequence: { type: "integer", minimum: 1, maximum: 2147483647 },
+      simulatorTime: schemaRef("DateTime"),
+      phase: schemaRef("TelemetryPhase"),
+      latitude: { type: "number", minimum: -90, maximum: 90 },
+      longitude: { type: "number", minimum: -180, maximum: 180 },
+      altitudeFeet: { type: "integer", minimum: -1500, maximum: 100000 },
+      groundSpeedKnots: { type: "integer", minimum: 0, maximum: 1500 },
+      headingDegrees: { type: "number", minimum: 0, exclusiveMaximum: 360 },
+    },
+  },
+  OooiCorrectionInput: {
+    type: "object",
+    required: ["expectedVersion", "reason"],
+    additionalProperties: false,
+    description:
+      "Provide at least one OOOI field. A null value clears that timestamp; all resulting timestamps must remain chronological.",
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      outAt: schemaRef("NullableDateTime"),
+      offAt: schemaRef("NullableDateTime"),
+      onAt: schemaRef("NullableDateTime"),
+      inAt: schemaRef("NullableDateTime"),
+      reason: { type: "string", minLength: 1, maxLength: 500 },
     },
   },
   SeedVsasInput: {
@@ -1107,17 +1629,120 @@ const schemas = {
   },
   MemberListResponse: {
     type: "object",
-    required: ["items"],
+    required: ["items", "nextCursor"],
     properties: {
       items: { type: "array", items: schemaRef("Member") },
+      nextCursor: { type: "string", nullable: true },
     },
+  },
+  MemberWorkImpact: {
+    type: "object",
+    required: [
+      "openFlightCount",
+      "activeFlightCount",
+      "openScheduleRequestCount",
+      "terminalRequestLinkedFlightCount",
+    ],
+    properties: {
+      openFlightCount: { type: "integer", minimum: 0 },
+      activeFlightCount: { type: "integer", minimum: 0 },
+      openScheduleRequestCount: { type: "integer", minimum: 0 },
+      terminalRequestLinkedFlightCount: { type: "integer", minimum: 0 },
+    },
+  },
+  MemberUpdateResponse: {
+    allOf: [
+      schemaRef("Member"),
+      {
+        type: "object",
+        required: ["reassignedFlightCount", "reassignedScheduleRequestCount"],
+        properties: {
+          reassignedFlightCount: { type: "integer", minimum: 0 },
+          reassignedScheduleRequestCount: { type: "integer", minimum: 0 },
+        },
+      },
+    ],
   },
   SyncMembersResponse: {
     type: "object",
-    required: ["synced"],
+    required: [
+      "complete",
+      "summaryAuditRecorded",
+      "pages",
+      "seen",
+      "created",
+      "updated",
+      "unchanged",
+      "skipped",
+      "failed",
+      "failures",
+    ],
     properties: {
-      synced: { type: "integer", minimum: 0 },
+      complete: { type: "boolean" },
+      summaryAuditRecorded: {
+        type: "boolean",
+        description:
+          "Whether the final aggregate sync summary audit was recorded. Per-member changes are individually atomic and audited even when this is false.",
+      },
+      pages: { type: "integer", minimum: 0 },
+      seen: { type: "integer", minimum: 0 },
+      created: { type: "integer", minimum: 0 },
+      updated: { type: "integer", minimum: 0 },
+      unchanged: { type: "integer", minimum: 0 },
+      skipped: { type: "integer", minimum: 0 },
+      failed: { type: "integer", minimum: 0 },
+      failures: {
+        type: "array",
+        maxItems: 25,
+        items: {
+          type: "object",
+          required: ["scope", "offset", "code"],
+          properties: {
+            scope: { type: "string", enum: ["page", "membership"] },
+            offset: { type: "integer", minimum: 0 },
+            code: { type: "string" },
+          },
+        },
+      },
       note: { type: "string" },
+    },
+  },
+  AuditEvent: {
+    type: "object",
+    required: [
+      "id",
+      "action",
+      "entityType",
+      "entityId",
+      "meta",
+      "createdAt",
+      "actor",
+    ],
+    properties: {
+      id: schemaRef("Uuid"),
+      action: { type: "string" },
+      entityType: { type: "string" },
+      entityId: { type: "string" },
+      meta: schemaRef("ArbitraryObject"),
+      createdAt: schemaRef("DateTime"),
+      actor: {
+        type: "object",
+        nullable: true,
+        required: ["membershipId", "displayName", "pilotCallsign"],
+        properties: {
+          membershipId: schemaRef("Uuid"),
+          displayName: schemaRef("NullableString"),
+          pilotCallsign: schemaRef("NullableString"),
+        },
+      },
+    },
+  },
+  AuditEventListResponse: {
+    type: "object",
+    required: ["items", "nextCursor"],
+    properties: {
+      items: { type: "array", items: schemaRef("AuditEvent") },
+      nextCursor: { type: "string", nullable: true },
     },
   },
   ScheduleRequestResponse: {
@@ -1135,10 +1760,17 @@ const schemas = {
   },
   ScheduleRequestDetailResponse: {
     type: "object",
-    required: ["request", "flights"],
+    required: ["request", "fulfillment"],
     properties: {
       request: schemaRef("ScheduleRequest"),
-      flights: { type: "array", items: schemaRef("Flight") },
+      fulfillment: {
+        type: "object",
+        required: ["linkedFlightCount", "remainingFlightCount"],
+        properties: {
+          linkedFlightCount: { type: "integer", minimum: 0 },
+          remainingFlightCount: { type: "integer", minimum: 0 },
+        },
+      },
     },
   },
   FlightResponse: {
@@ -1180,9 +1812,37 @@ const schemas = {
   },
   BulkFlightsResponse: {
     type: "object",
-    required: ["flights"],
+    required: ["flights", "fulfillment"],
     properties: {
       flights: { type: "array", items: schemaRef("Flight") },
+      fulfillment: {
+        type: "object",
+        required: [
+          "scheduleRequestId",
+          "requestStatus",
+          "requestVersion",
+          "linkedFlightCount",
+          "remainingFlightCount",
+          "flightIds",
+        ],
+        properties: {
+          scheduleRequestId: schemaRef("Uuid"),
+          requestStatus: {
+            type: "string",
+            enum: ["partially_fulfilled", "fulfilled"],
+          },
+          requestVersion: { type: "integer", minimum: 2 },
+          linkedFlightCount: { type: "integer", minimum: 1 },
+          remainingFlightCount: { type: "integer", minimum: 0 },
+          flightIds: {
+            type: "array",
+            minItems: 1,
+            items: schemaRef("Uuid"),
+            description:
+              "Canonical flight IDs in the exact order created for the original logical submission.",
+          },
+        },
+      },
     },
   },
   SimbriefConnectionResponse: {
@@ -1227,14 +1887,123 @@ const schemas = {
       },
     },
   },
+  SimbriefDispatchListResponse: {
+    type: "object",
+    required: ["items", "currentDispatchId"],
+    properties: {
+      items: { type: "array", items: schemaRef("SimbriefDispatch") },
+      currentDispatchId: {
+        ...schemaRef("NullableUuid"),
+        description:
+          "Newest canonical planning revision when its pilot assignment, material flight inputs, and immutable latest release still match the flight. A notes-only flight version change does not invalidate it.",
+      },
+    },
+  },
   SimbriefCallbackResponse: {
     type: "object",
     required: ["dispatch"],
     properties: { dispatch: schemaRef("SimbriefCallbackDispatch") },
   },
+  SimulatorDeviceResponse: {
+    type: "object",
+    required: ["device"],
+    properties: { device: schemaRef("SimulatorDevice") },
+  },
+  SimulatorDeviceCreatedResponse: {
+    type: "object",
+    required: ["device", "token", "warning"],
+    properties: {
+      device: schemaRef("SimulatorDevice"),
+      token: {
+        type: "string",
+        writeOnly: true,
+        description:
+          "One-time simulator-device bearer token. Store it in the MSFS client; it cannot be recovered later.",
+      },
+      warning: { type: "string" },
+    },
+  },
+  SimulatorDeviceListResponse: {
+    type: "object",
+    required: ["items"],
+    properties: {
+      items: { type: "array", items: schemaRef("SimulatorDevice") },
+    },
+  },
+  TelemetryIngestResponse: {
+    type: "object",
+    required: [
+      "accepted",
+      "flightId",
+      "sequence",
+      "receivedAt",
+      "presence",
+      "oooiEvents",
+    ],
+    properties: {
+      accepted: { type: "boolean", enum: [true] },
+      flightId: schemaRef("Uuid"),
+      sequence: { type: "integer", minimum: 1 },
+      receivedAt: schemaRef("DateTime"),
+      presence: schemaRef("PresenceState"),
+      oooiEvents: { type: "array", items: schemaRef("OooiEvent") },
+    },
+  },
+  FlightTelemetryResponse: {
+    type: "object",
+    required: ["flight", "presence", "current", "track", "oooiEvents"],
+    properties: {
+      flight: schemaRef("FlightOooi"),
+      presence: schemaRef("PresenceState"),
+      current: {
+        allOf: [schemaRef("FlightTelemetry")],
+        nullable: true,
+      },
+      track: { type: "array", items: schemaRef("FlightTelemetry") },
+      oooiEvents: { type: "array", items: schemaRef("OooiEvent") },
+    },
+  },
+  DispatchTelemetryResponse: {
+    type: "object",
+    required: ["items", "summary", "generatedAt"],
+    properties: {
+      items: {
+        type: "array",
+        items: {
+          allOf: [
+            schemaRef("FlightTelemetry"),
+            {
+              type: "object",
+              required: ["presence"],
+              properties: { presence: schemaRef("PresenceState") },
+            },
+          ],
+        },
+      },
+      summary: {
+        type: "object",
+        required: ["onlinePilots", "flyingPilots", "stalePilots", "definition"],
+        properties: {
+          onlinePilots: { type: "integer", minimum: 0 },
+          flyingPilots: { type: "integer", minimum: 0 },
+          stalePilots: { type: "integer", minimum: 0 },
+          definition: { type: "string" },
+        },
+      },
+      generatedAt: schemaRef("DateTime"),
+    },
+  },
+  OooiCorrectionResponse: {
+    type: "object",
+    required: ["flight", "oooiEvents"],
+    properties: {
+      flight: schemaRef("FlightOooi"),
+      oooiEvents: { type: "array", items: schemaRef("OooiEvent") },
+    },
+  },
   DispatchBoardResponse: {
     type: "object",
-    required: ["flights", "metrics", "scheduleRequestCounts"],
+    required: ["flights", "metrics", "boardWindow", "scheduleRequestCounts"],
     properties: {
       flights: { type: "array", items: schemaRef("DispatchFlight") },
       metrics: {
@@ -1294,6 +2063,23 @@ const schemas = {
               definition: { type: "string" },
             },
           },
+        },
+      },
+      boardWindow: {
+        type: "object",
+        required: [
+          "generatedAt",
+          "overdueFrom",
+          "upcomingTo",
+          "overdueLookbackHours",
+          "upcomingHorizonDays",
+        ],
+        properties: {
+          generatedAt: schemaRef("DateTime"),
+          overdueFrom: schemaRef("DateTime"),
+          upcomingTo: schemaRef("DateTime"),
+          overdueLookbackHours: { type: "integer", minimum: 1 },
+          upcomingHorizonDays: { type: "integer", minimum: 1 },
         },
       },
       scheduleRequestCounts: {
@@ -1413,7 +2199,7 @@ export const openApiDocument = {
     title: "VA Dispatch API",
     version: "0.1.0",
     description:
-      "Multi-tenant REST API for Virtual Airline scheduling, live dispatch, flights, SimBrief flight planning, membership administration, and ACARS messaging. All tenant data is resolved from the authenticated Clerk organization; clients never supply a tenant ID.",
+      "Multi-tenant REST API for Virtual Airline scheduling, live dispatch, flights, SimBrief flight planning, simulator telemetry, membership administration, and ACARS messaging. All tenant data is resolved from authenticated Clerk membership or a scoped simulator-device credential; clients never supply a tenant ID.",
     license: {
       name: "AGPL-3.0-or-later",
       url: "https://www.gnu.org/licenses/agpl-3.0.html",
@@ -1446,6 +2232,15 @@ export const openApiDocument = {
     },
     { name: "Members", description: "Tenant membership administration." },
     {
+      name: "Audit",
+      description: "Redacted, tenant-scoped administrative audit history.",
+    },
+    {
+      name: "Privacy",
+      description:
+        "Dual-controlled retention, verified data-subject workflows, legal holds, bounded exports, and provider follow-up.",
+    },
+    {
       name: "Schedule requests",
       description: "Pilot schedule demand and dispatcher review.",
     },
@@ -1457,6 +2252,11 @@ export const openApiDocument = {
       name: "SimBrief",
       description:
         "Navigraph account linking and tenant-scoped SimBrief flight-plan dispatches.",
+    },
+    {
+      name: "Telemetry",
+      description:
+        "Scoped simulator-device credentials, assigned-flight telemetry, presence, and auditable OOOI timestamps.",
     },
     { name: "Dispatch", description: "Dispatcher operational views." },
     { name: "ACARS", description: "Tenant-scoped ACARS messaging." },
@@ -1696,6 +2496,33 @@ export const openApiDocument = {
         summary: "List tenant members",
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
+        parameters: [
+          queryParameter("search", "Search name, callsign, or Clerk user ID.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter(
+            "role",
+            "Filter by application role.",
+            schemaRef("Role"),
+          ),
+          queryParameter(
+            "status",
+            "Filter by membership status.",
+            schemaRef("MembershipStatus"),
+          ),
+          queryParameter(
+            "cursor",
+            "Opaque cursor returned by the previous member page.",
+            { type: "string" },
+          ),
+          queryParameter("limit", "Maximum members to return.", {
+            type: "integer",
+            minimum: 1,
+            maximum: 100,
+            default: 100,
+          }),
+        ],
         responses: {
           "200": jsonResponse(
             "Tenant members.",
@@ -1717,9 +2544,27 @@ export const openApiDocument = {
         responses: {
           "200": jsonResponse(
             "Updated member.",
-            schemaRef("MembershipProfile"),
+            schemaRef("MemberUpdateResponse"),
           ),
           ...mutationErrors,
+        },
+      },
+    },
+    "/members/{id}/impact": {
+      get: {
+        tags: ["Members"],
+        operationId: "getMemberWorkImpact",
+        summary: "Inspect work affected by a member change",
+        description:
+          "Requires the admin role. Active flights block an ineligibility change; outstanding offers and open requests require an explicit active-pilot replacement.",
+        "x-required-role": "admin",
+        parameters: [pathParameter("id", "Membership ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Current operational impact.",
+            schemaRef("MemberWorkImpact"),
+          ),
+          ...resourceErrors,
         },
       },
     },
@@ -1729,8 +2574,8 @@ export const openApiDocument = {
         operationId: "syncMembers",
         summary: "Synchronize members from Clerk",
         description:
-          "Requires the dispatcher role or higher. In local development bypass mode the operation returns without contacting Clerk.",
-        "x-required-role": "dispatcher",
+          "Requires the admin role. Pages the complete Clerk organization directory and reports bounded per-item failures without silently truncating at 100 members. Per-member changes and audits are atomic. If the final aggregate audit fails, the response reports summaryAuditRecorded=false without incorrectly claiming prior changes rolled back. In local development bypass mode the operation returns without contacting Clerk.",
+        "x-required-role": "admin",
         responses: {
           "200": jsonResponse(
             "Synchronization result.",
@@ -1740,11 +2585,124 @@ export const openApiDocument = {
         },
       },
     },
+    "/audit-events": {
+      get: {
+        tags: ["Audit"],
+        operationId: "listAuditEvents",
+        summary: "List redacted tenant audit events",
+        description:
+          "Requires the admin role. Results are ordered newest first and provider payloads, credentials, tokens, and other secret-bearing metadata fields are redacted.",
+        "x-required-role": "admin",
+        parameters: [
+          ...paginationParameters,
+          queryParameter("action", "Filter by exact audit action.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter("entityType", "Filter by exact entity type.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter(
+            "actorMembershipId",
+            "Filter by actor membership.",
+            schemaRef("Uuid"),
+          ),
+          queryParameter("from", "Include events at or after this instant.", {
+            type: "string",
+            format: "date-time",
+          }),
+          queryParameter("to", "Include events at or before this instant.", {
+            type: "string",
+            format: "date-time",
+          }),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "A page of redacted audit events.",
+            schemaRef("AuditEventListResponse"),
+          ),
+          ...authenticatedErrors,
+        },
+      },
+    },
+    "/audit-events/export": {
+      get: {
+        tags: ["Audit"],
+        operationId: "exportAuditEvents",
+        summary: "Export a bounded redacted audit page",
+        description:
+          "Requires the admin role. Returns at most 1,000 events and a next cursor when additional events remain. The response is marked no-store and downloaded as JSON.",
+        "x-required-role": "admin",
+        parameters: [
+          queryParameter("cursor", "Continue a previous bounded export.", {
+            type: "string",
+          }),
+          queryParameter("limit", "Maximum events in this export file.", {
+            type: "integer",
+            minimum: 1,
+            maximum: 1000,
+            default: 500,
+          }),
+          queryParameter("action", "Filter by exact audit action.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter("entityType", "Filter by exact entity type.", {
+            type: "string",
+            maxLength: 120,
+          }),
+          queryParameter(
+            "actorMembershipId",
+            "Filter by actor membership.",
+            schemaRef("Uuid"),
+          ),
+          queryParameter("from", "Include events at or after this instant.", {
+            type: "string",
+            format: "date-time",
+          }),
+          queryParameter("to", "Include events at or before this instant.", {
+            type: "string",
+            format: "date-time",
+          }),
+        ],
+        responses: {
+          "200": {
+            description: "A bounded redacted JSON audit export.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: [
+                    "generatedAt",
+                    "filters",
+                    "itemCount",
+                    "nextCursor",
+                    "items",
+                  ],
+                  properties: {
+                    generatedAt: schemaRef("DateTime"),
+                    filters: schemaRef("ArbitraryObject"),
+                    itemCount: { type: "integer", minimum: 0, maximum: 1000 },
+                    nextCursor: { type: "string", nullable: true },
+                    items: { type: "array", items: schemaRef("AuditEvent") },
+                  },
+                },
+              },
+            },
+          },
+          ...authenticatedErrors,
+        },
+      },
+    },
     "/schedule-requests": {
       post: {
         tags: ["Schedule requests"],
         operationId: "createScheduleRequest",
         summary: "Create a schedule request",
+        description:
+          "Creates an availability request owned by the authenticated pilot. Dispatcher and administrator memberships cannot create pilot requests.",
+        "x-required-role": "pilot",
         requestBody: jsonRequest(schemaRef("CreateScheduleRequestInput")),
         responses: {
           "201": jsonResponse(
@@ -1781,7 +2739,9 @@ export const openApiDocument = {
       get: {
         tags: ["Schedule requests"],
         operationId: "getScheduleRequest",
-        summary: "Get a schedule request and linked flights",
+        summary: "Get a schedule request and fulfillment counts",
+        description:
+          "Returns uncapped fulfillment counts. Retrieve linked flight history through the cursor-paginated GET /flights?scheduleRequestId=... collection.",
         parameters: [pathParameter("id", "Schedule request ID.")],
         responses: {
           "200": jsonResponse(
@@ -1791,6 +2751,22 @@ export const openApiDocument = {
           ...resourceErrors,
         },
       },
+      patch: {
+        tags: ["Schedule requests"],
+        operationId: "updateScheduleRequest",
+        summary: "Edit a pending schedule request",
+        description:
+          "Only the owning pilot may edit. expectedVersion provides optimistic concurrency. Dispatchers do not edit pilot availability; starting review locks the request. Every edit is normalized server-side and rejected when non-cancelled linked flights exist.",
+        parameters: [pathParameter("id", "Schedule request ID.")],
+        requestBody: jsonRequest(schemaRef("UpdateScheduleRequestInput")),
+        responses: {
+          "200": jsonResponse(
+            "Updated schedule request.",
+            schemaRef("ScheduleRequestResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
     },
     "/schedule-requests/{id}/cancel": {
       post: {
@@ -1798,8 +2774,9 @@ export const openApiDocument = {
         operationId: "cancelScheduleRequest",
         summary: "Cancel a schedule request",
         description:
-          "The owning pilot may cancel their request; dispatchers and admins may cancel any tenant request.",
+          "The owning pilot may cancel their request; dispatchers and admins may cancel any tenant request. The caller must explicitly preserve linked flights or transactionally cancel draft, offered, accepted, and briefed records. Active and terminal flight history is always preserved.",
         parameters: [pathParameter("id", "Schedule request ID.")],
+        requestBody: jsonRequest(schemaRef("CancelScheduleRequestInput")),
         responses: {
           "200": jsonResponse(
             "Cancelled schedule request.",
@@ -1817,6 +2794,9 @@ export const openApiDocument = {
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Schedule request ID.")],
+        requestBody: jsonRequest(
+          schemaRef("ExpectedScheduleRequestVersionInput"),
+        ),
         responses: {
           "200": jsonResponse(
             "Schedule request in review.",
@@ -1834,10 +2814,7 @@ export const openApiDocument = {
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Schedule request ID.")],
-        requestBody: optionalJsonRequest(
-          schemaRef("ReasonInput"),
-          "Optional rejection reason.",
-        ),
+        requestBody: jsonRequest(schemaRef("RejectScheduleRequestInput")),
         responses: {
           "200": jsonResponse(
             "Rejected schedule request.",
@@ -1853,7 +2830,7 @@ export const openApiDocument = {
         operationId: "createFlight",
         summary: "Create a flight",
         description:
-          "Requires the dispatcher role or higher. ETA must be later than ETD; the selected pilot must be active in this tenant.",
+          "Creates an ad-hoc flight and requires the dispatcher role or higher. ETA must be after ETD. Offered flights require an active pilot in the current tenant. Schedule-linked offers must use POST /flights/bulk so request state, cumulative capacity, flights, and audits commit atomically.",
         "x-required-role": "dispatcher",
         requestBody: jsonRequest(schemaRef("CreateFlightInput")),
         responses: {
@@ -1866,13 +2843,17 @@ export const openApiDocument = {
         operationId: "listFlights",
         summary: "List visible flights",
         description:
-          "Pilots see only assigned flights; dispatchers and admins see all tenant flights.",
+          "Pilots see only assigned flights; dispatchers and admins see all tenant flights. Results use a stable newest-scheduled-departure-first order with a deterministic tie-breaker.",
         parameters: [
-          ...paginationParameters,
-          queryParameter("status", "Comma-separated flight statuses.", {
-            type: "string",
-            example: "offered,accepted",
-          }),
+          ...flightPaginationParameters,
+          queryParameter(
+            "status",
+            "Comma-separated FlightStatus values. Empty or unknown values are rejected and duplicates are ignored.",
+            {
+              type: "string",
+              example: "offered,accepted",
+            },
+          ),
           queryParameter(
             "fromEtd",
             "Earliest estimated departure time.",
@@ -1903,12 +2884,20 @@ export const openApiDocument = {
         tags: ["Flights"],
         operationId: "bulkCreateFlights",
         summary: "Create offered flights for a schedule request",
-        description: "Requires the dispatcher role or higher.",
+        description:
+          "Requires the dispatcher role or higher and a caller-generated Idempotency-Key. The request must be in review or partially fulfilled, expectedRequestVersion must match, and the batch cannot exceed the cumulative remaining non-cancelled flight count. Request locking serializes competing batches; the durable idempotency result, ordered flight IDs, request status/version, canonical flights, and audits commit atomically. A replay with the same key and canonical payload returns the original ordered result even after the request becomes fulfilled; reusing the key with a different payload returns 409. Every flight is assigned to the requesting active pilot, ETA must be after ETD, and the full flight must fit one normalized detailed availability interval. Pilot assignment overrides to another member are rejected.",
         "x-required-role": "dispatcher",
+        parameters: [
+          requiredHeaderParameter(
+            "Idempotency-Key",
+            "Caller-generated key scoped to the current tenant and schedule request. Reuse only for an exact retry of the same canonical payload.",
+            { type: "string", minLength: 1, maxLength: 200 },
+          ),
+        ],
         requestBody: jsonRequest(schemaRef("BulkCreateFlightsInput")),
         responses: {
           "201": jsonResponse(
-            "Created flights.",
+            "Original durable fulfillment result, whether newly committed or safely replayed.",
             schemaRef("BulkFlightsResponse"),
           ),
           ...mutationErrors,
@@ -1934,7 +2923,7 @@ export const openApiDocument = {
         operationId: "updateFlight",
         summary: "Update a flight",
         description:
-          "Requires dispatcher. Aircraft type is immutable. Pilot or time changes create a new assignment revision; expectedUpdatedAt prevents lost concurrent edits.",
+          "Requires the dispatcher role or higher and expectedVersion. The merged flight must retain ETA after ETD, an active-pilot assignment when operational, and request-owner plus detailed-availability invariants when request-linked. Flight number, route, schedule, equipment, and pilot assignment changes are material: accepted and scheduled flights return to offered for renewed pilot acceptance, pilot/time changes advance the assignment revision, and material active-flight edits are blocked. Dispatcher-notes-only edits remain accepted or scheduled and are audited. Terminal flights are immutable.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
         requestBody: jsonRequest(schemaRef("UpdateFlightInput")),
@@ -1952,6 +2941,7 @@ export const openApiDocument = {
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
+        requestBody: jsonRequest(schemaRef("ExpectedFlightVersionInput")),
         responses: {
           "200": jsonResponse("Offered flight.", schemaRef("FlightResponse")),
           ...mutationErrors,
@@ -1965,6 +2955,7 @@ export const openApiDocument = {
         summary: "Accept an assigned flight",
         description: "Only the assigned pilot can accept the flight.",
         parameters: [pathParameter("id", "Flight ID.")],
+        requestBody: jsonRequest(schemaRef("ExpectedFlightVersionInput")),
         responses: {
           "200": jsonResponse("Accepted flight.", schemaRef("FlightResponse")),
           ...mutationErrors,
@@ -1978,10 +2969,7 @@ export const openApiDocument = {
         summary: "Decline an assigned flight",
         description: "Only the assigned pilot can decline the flight.",
         parameters: [pathParameter("id", "Flight ID.")],
-        requestBody: optionalJsonRequest(
-          schemaRef("ReasonInput"),
-          "Optional decline reason.",
-        ),
+        requestBody: jsonRequest(schemaRef("VersionedFlightReasonInput")),
         responses: {
           "200": jsonResponse("Declined flight.", schemaRef("FlightResponse")),
           ...mutationErrors,
@@ -1996,10 +2984,7 @@ export const openApiDocument = {
         description:
           "Dispatchers and admins may cancel tenant flights. An assigned pilot may cancel only in an allowed lifecycle state.",
         parameters: [pathParameter("id", "Flight ID.")],
-        requestBody: optionalJsonRequest(
-          schemaRef("ReasonInput"),
-          "Optional cancellation reason.",
-        ),
+        requestBody: jsonRequest(schemaRef("VersionedFlightReasonInput")),
         responses: {
           "200": jsonResponse("Cancelled flight.", schemaRef("FlightResponse")),
           ...mutationErrors,
@@ -2019,6 +3004,25 @@ export const openApiDocument = {
         responses: {
           "200": jsonResponse(
             "Updated flight status.",
+            schemaRef("FlightResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/flights/{id}/reoffer": {
+      post: {
+        tags: ["Flights"],
+        operationId: "reofferDeclinedFlight",
+        summary: "Create a replacement offer for a declined flight",
+        description:
+          "Requires the dispatcher role or higher. The declined source remains immutable. A new offered flight links back through replacesFlightId. Request-linked replacements remain assigned to the requesting pilot; ad-hoc replacements may choose another active pilot. Concurrent attempts create at most one replacement; a losing request receives 409 details containing the existing replacement so the client can navigate to it.",
+        "x-required-role": "dispatcher",
+        parameters: [pathParameter("id", "Declined source flight ID.")],
+        requestBody: jsonRequest(schemaRef("ReofferFlightInput")),
+        responses: {
+          "201": jsonResponse(
+            "Created replacement offer.",
             schemaRef("FlightResponse"),
           ),
           ...mutationErrors,
@@ -2172,20 +3176,51 @@ export const openApiDocument = {
       },
     },
     "/flights/{flightId}/simbrief/dispatches": {
+      get: {
+        tags: ["SimBrief"],
+        operationId: "listSimbriefDispatchRevisions",
+        summary: "List SimBrief planning revisions for a flight",
+        parameters: [pathParameter("flightId", "Flight ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Newest-first immutable preparation and OFP history.",
+            schemaRef("SimbriefDispatchListResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
       post: {
         tags: ["SimBrief"],
-        operationId: "createSimbriefDispatch",
-        summary: "Create a SimBrief flight-plan dispatch",
+        operationId: "prepareSimbriefDispatch",
+        summary: "Save a dispatcher planning revision",
         description:
-          "The assigned pilot may create a plan for their own flight; dispatchers and admins may create one for any tenant flight. The creator must have a connected numeric SimBrief Pilot ID. Open the returned signed dispatchUrl directly in a browser so SimBrief can authenticate the person generating the plan.",
+          "Dispatchers and admins atomically prepare the current immutable dispatch release without using a personal SimBrief account. Route, alternate, cruise level, units, and remarks are server-derived from that release; the pilot reviews SimBrief's passenger/freight split before generation. Dispatcher attribution comes from active authenticated context. Stale flight, assignment, or release revisions fail with 409.",
         parameters: [pathParameter("flightId", "Flight ID.")],
-        requestBody: optionalJsonRequest(
-          schemaRef("CreateSimbriefDispatchInput"),
-          "Optional SimBrief planning overrides. Omitted fields are derived from the flight or use SimBrief defaults.",
-        ),
+        requestBody: jsonRequest(schemaRef("CreateSimbriefDispatchInput")),
         responses: {
           "201": jsonResponse(
-            "Created pending dispatch and signed browser URL.",
+            "Created prepared planning revision.",
+            schemaRef("SimbriefDispatchResponse"),
+          ),
+          ...mutationErrors,
+          "422": responseRef("UnprocessableEntity"),
+        },
+      },
+    },
+    "/flights/{flightId}/simbrief/dispatches/{dispatchId}/generate": {
+      post: {
+        tags: ["SimBrief"],
+        operationId: "generatePreparedSimbriefDispatch",
+        summary: "Launch a prepared plan in the assigned pilot's account",
+        description:
+          "Only the assigned pilot may attach their connected numeric Pilot ID and receive the signed SimBrief Dispatch Redirect URL. The API atomically rejects obsolete revisions and revisions whose assignment, route, schedule, or aircraft snapshot no longer matches the flight. Hoppie, Navigraph, or SimBrief provider traffic is never proxied through a browser API client.",
+        parameters: [
+          pathParameter("flightId", "Flight ID."),
+          pathParameter("dispatchId", "Prepared SimBrief revision ID."),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Pending dispatch and signed browser URL.",
             schemaRef("CreateSimbriefDispatchResponse"),
           ),
           ...mutationErrors,
@@ -2268,13 +3303,142 @@ export const openApiDocument = {
         },
       },
     },
+    "/telemetry/ingest": {
+      post: {
+        tags: ["Telemetry"],
+        operationId: "ingestSimulatorTelemetry",
+        summary: "Ingest one assigned-flight simulator sample",
+        description:
+          "Authenticates with a one-time-issued simulator-device token. Samples are sequence checked, rate limited, and accepted only for the device owner's assigned eligible flight. A short single-writer lease prevents multiple devices from racing one flight. Deterministic phase changes may atomically record OOOI timestamps and provenance.",
+        security: simulatorDeviceSecurity,
+        requestBody: jsonRequest(schemaRef("TelemetryIngestInput")),
+        responses: {
+          "200": jsonResponse(
+            "Accepted current state and any OOOI transition recorded by this sample.",
+            schemaRef("TelemetryIngestResponse"),
+          ),
+          "400": responseRef("BadRequest"),
+          "401": responseRef("Unauthorized"),
+          "404": responseRef("NotFound"),
+          "409": responseRef("Conflict"),
+          "429": responseRef("TooManyRequests"),
+          "500": responseRef("InternalError"),
+          "503": responseRef("ServiceUnavailable"),
+        },
+      },
+    },
+    "/telemetry/devices": {
+      get: {
+        tags: ["Telemetry"],
+        operationId: "listSimulatorDevices",
+        summary: "List the current member's simulator devices",
+        responses: {
+          "200": jsonResponse(
+            "Simulator devices without credential material.",
+            schemaRef("SimulatorDeviceListResponse"),
+          ),
+          ...authenticatedErrors,
+        },
+      },
+      post: {
+        tags: ["Telemetry"],
+        operationId: "createSimulatorDevice",
+        summary: "Create a simulator-device credential",
+        description:
+          "Creates a member-scoped device and returns its bearer token exactly once. The API stores only a keyed token verifier.",
+        requestBody: jsonRequest(schemaRef("CreateSimulatorDeviceInput")),
+        responses: {
+          "201": jsonResponse(
+            "Created device and one-time credential.",
+            schemaRef("SimulatorDeviceCreatedResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/telemetry/devices/{id}": {
+      delete: {
+        tags: ["Telemetry"],
+        operationId: "revokeSimulatorDevice",
+        summary: "Revoke one owned simulator device",
+        parameters: [pathParameter("id", "Simulator device ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Revoked device without credential material.",
+            schemaRef("SimulatorDeviceResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/flights/{id}/telemetry": {
+      get: {
+        tags: ["Telemetry"],
+        operationId: "getFlightTelemetry",
+        summary: "Get current presence, retained track, and OOOI provenance",
+        description:
+          "Assigned pilots can read their own flight. Dispatchers and admins can read tenant flights. The optional history is bounded; current presence is computed from the latest server receipt time.",
+        parameters: [
+          pathParameter("id", "Flight ID."),
+          queryParameter(
+            "trackLimit",
+            "Newest retained track samples to return. Use zero for current state only.",
+            { type: "integer", minimum: 0, maximum: 500, default: 100 },
+          ),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Current telemetry, bounded history, and OOOI provenance.",
+            schemaRef("FlightTelemetryResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/flights/{id}/oooi": {
+      patch: {
+        tags: ["Telemetry"],
+        operationId: "correctFlightOooi",
+        summary: "Correct or clear flight OOOI timestamps",
+        description:
+          "Requires the dispatcher role or higher and the current expectedVersion. The versioned timestamp changes, manual provenance events, and audit record are committed atomically after chronological validation.",
+        "x-required-role": "dispatcher",
+        parameters: [pathParameter("id", "Flight ID.")],
+        requestBody: jsonRequest(schemaRef("OooiCorrectionInput")),
+        responses: {
+          "200": jsonResponse(
+            "Corrected timestamps and full provenance history.",
+            schemaRef("OooiCorrectionResponse"),
+          ),
+          ...mutationErrors,
+          "422": responseRef("UnprocessableEntity"),
+        },
+      },
+    },
+    "/dispatch/telemetry": {
+      get: {
+        tags: ["Telemetry"],
+        operationId: "listDispatchTelemetry",
+        summary: "List tenant current telemetry for dispatcher monitoring",
+        description:
+          "Requires the dispatcher role or higher. Returns each retained current sample with a server-computed online, stale, or disconnected presence state plus distinct online, airborne, and stale pilot counts based on each pilot's newest trusted server receipt.",
+        "x-required-role": "dispatcher",
+        responses: {
+          "200": jsonResponse(
+            "Tenant-scoped current telemetry snapshot.",
+            schemaRef("DispatchTelemetryResponse"),
+          ),
+          ...authenticatedErrors,
+        },
+      },
+    },
     "/flights/{id}/release": {
       post: {
         tags: ["Flights"],
         operationId: "publishDispatchRelease",
         summary: "Publish an immutable dispatch release revision",
         description:
-          "Requires dispatcher. Fetches and stores a live AviationWeather.gov snapshot. The initial release moves Accepted to Scheduled (stored internally as briefed).",
+          "Requires dispatcher. Fetches a live AviationWeather.gov snapshot, then atomically inserts the immutable release, advances the flight version, moves an initial Accepted flight to Scheduled (stored internally as briefed), and records its audit. Every replacement release invalidates stale SimBrief preparations.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
         requestBody: jsonRequest(schemaRef("DispatchReleaseInput")),
@@ -2320,11 +3484,12 @@ export const openApiDocument = {
         tags: ["Dispatch"],
         operationId: "getDispatchBoard",
         summary: "Get the live dispatch board",
-        description: "Requires the dispatcher role or higher.",
+        description:
+          "Requires the dispatcher role or higher. Accepted and briefed flights are shown from 24 hours before generation through seven days ahead, with past-ETD records classified into the overdue lane. Offered flights remain in Flight Management. Active flights are unbounded by ETD, and completed flights from the current UTC month remain visible in the Finished lane. Older records remain directly accessible outside the live board.",
         "x-required-role": "dispatcher",
         responses: {
           "200": jsonResponse(
-            "Flights and schedule-request counts.",
+            "Windowed and lane-classified flights with schedule-request counts.",
             schemaRef("DispatchBoardResponse"),
           ),
           ...authenticatedErrors,
@@ -2469,6 +3634,143 @@ export const openApiDocument = {
         },
       },
     },
+    "/internal/cron/privacy-lifecycle": cronPath(
+      "Process bounded privacy lifecycle work",
+      "Schedules due dry runs or approved automatic executions and processes a bounded number of resumable checkpoints. Authenticate with CRON_SECRET.",
+      "runPrivacyLifecycle",
+    ),
+    "/privacy/policies/active": adminPrivacyGet(
+      "Get the active retention policy",
+      "getActivePrivacyPolicy",
+    ),
+    "/privacy/policies": adminPrivacyPost(
+      "Create a retention policy draft",
+      "createPrivacyPolicy",
+      {
+        requestBody: jsonRequest({
+          type: "object",
+          additionalProperties: false,
+          required: ["config"],
+          properties: {
+            config: schemaRef("PrivacyRetentionPolicyConfig"),
+          },
+        }),
+      },
+    ),
+    "/privacy/policies/{id}/approve": adminPrivacyPost(
+      "Approve and activate a retention policy",
+      "approvePrivacyPolicy",
+      { parameters: [pathParameter("id", "Privacy policy ID.")] },
+    ),
+    "/privacy/retention/runs": adminPrivacyPost(
+      "Queue a dry run or confirmed execution",
+      "queuePrivacyRetentionRun",
+      {
+        requestBody: jsonRequest(schemaRef("PrivacyRetentionRunInput")),
+      },
+    ),
+    "/privacy/retention/runs/{id}": adminPrivacyGet(
+      "Get retention-run progress and report",
+      "getPrivacyRetentionRun",
+      { parameters: [pathParameter("id", "Privacy retention-run ID.")] },
+    ),
+    "/privacy/retention/runs/{id}/retry": adminPrivacyPost(
+      "Resume a failed retention checkpoint",
+      "retryPrivacyRetentionRun",
+      { parameters: [pathParameter("id", "Privacy retention-run ID.")] },
+    ),
+    "/privacy/requests": adminPrivacyPost(
+      "Create a verified privacy workflow",
+      "createPrivacyRequest",
+      {
+        requestBody: jsonRequest(schemaRef("PrivacySubjectRequestInput")),
+      },
+    ),
+    "/privacy/requests/{id}": adminPrivacyGet(
+      "Get a privacy workflow and provider tasks",
+      "getPrivacyRequest",
+      { parameters: [pathParameter("id", "Privacy request ID.")] },
+    ),
+    "/privacy/requests/{id}/verify": adminPrivacyPost(
+      "Record subject verification",
+      "verifyPrivacyRequest",
+      { parameters: [pathParameter("id", "Privacy request ID.")] },
+    ),
+    "/privacy/requests/{id}/approve": adminPrivacyPost(
+      "Second-approve destructive processing",
+      "approvePrivacyRequest",
+      { parameters: [pathParameter("id", "Privacy request ID.")] },
+    ),
+    "/privacy/requests/{id}/retry": adminPrivacyPost(
+      "Retry a formerly held destructive workflow",
+      "retryPrivacyRequest",
+      { parameters: [pathParameter("id", "Privacy request ID.")] },
+    ),
+    "/privacy/requests/{id}/process": adminPrivacyPost(
+      "Process an approved privacy workflow",
+      "processPrivacyRequest",
+      {
+        parameters: [pathParameter("id", "Privacy request ID.")],
+        requestBody: optionalJsonRequest(
+          {
+            type: "object",
+            additionalProperties: false,
+            properties: { confirmation: { type: "string" } },
+          },
+          "Exact confirmation is required only for destructive processing.",
+        ),
+      },
+    ),
+    "/privacy/requests/{id}/export": adminPrivacyGet(
+      "Export one bounded verified data page",
+      "exportPrivacyRequestPage",
+      {
+        parameters: [
+          pathParameter("id", "Privacy request ID."),
+          queryParameter(
+            "cursor",
+            "Authenticated opaque cursor returned by the previous export page.",
+            {
+              type: "string",
+              maxLength: 1_000,
+            },
+          ),
+          queryParameter("limit", "Maximum records in this export page.", {
+            type: "integer",
+            minimum: 1,
+            maximum: 500,
+            default: 100,
+          }),
+        ],
+      },
+    ),
+    "/privacy/legal-holds": adminPrivacyPost(
+      "Create a pending legal hold",
+      "createPrivacyLegalHold",
+      {
+        requestBody: jsonRequest(schemaRef("PrivacyLegalHoldInput")),
+      },
+    ),
+    "/privacy/legal-holds/{id}/approve": adminPrivacyPost(
+      "Second-approve a legal hold",
+      "approvePrivacyLegalHold",
+      { parameters: [pathParameter("id", "Privacy legal-hold ID.")] },
+    ),
+    "/privacy/legal-holds/{id}/release": adminPrivacyPost(
+      "Release an active legal hold",
+      "releasePrivacyLegalHold",
+      { parameters: [pathParameter("id", "Privacy legal-hold ID.")] },
+    ),
+    "/privacy/external-tasks/{id}": {
+      patch: adminPrivacyOperation(
+        "Record provider or backup follow-up",
+        "updatePrivacyExternalTask",
+        {
+          parameters: [pathParameter("id", "Privacy external-task ID.")],
+          requestBody: jsonRequest(schemaRef("PrivacyExternalTaskUpdateInput")),
+        },
+      ),
+    },
     "/internal/seed/vsas": {
       post: {
         tags: ["Internal"],
@@ -2529,6 +3831,13 @@ export const openApiDocument = {
         type: "http",
         scheme: "bearer",
         description: "CRON_SECRET for internal deployment operations.",
+      },
+      simulatorDeviceBearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "VA-Dispatch-Simulator-Device",
+        description:
+          "Member-scoped simulator-device token returned once by POST /telemetry/devices. Tokens are revocable and never recoverable from the API.",
       },
     },
     schemas,

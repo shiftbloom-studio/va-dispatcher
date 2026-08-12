@@ -4,13 +4,22 @@ import type { DispatchRelease, Flight } from "../../db/schema.js";
 const mocks = vi.hoisted(() => ({
   writeAudit: vi.fn(),
   findLatestDispatchRelease: vi.fn(),
-  createDispatchRelease: vi.fn(),
+  publishDispatchReleaseAtomic: vi.fn(),
   listDispatchReleaseRevisions: vi.fn(),
   findLatestDispatchReleases: vi.fn(),
   createFlightEvent: vi.fn(),
   listFlightEvents: vi.fn(),
+  createFlight: vi.fn(),
+  fulfillScheduleRequest: vi.fn(),
+  findScheduleFulfillmentAttempt: vi.fn(),
+  replayScheduleFulfillment: vi.fn(),
+  countNonCancelledScheduleRequestFlights: vi.fn(),
   findFlight: vi.fn(),
+  findReplacementFlight: vi.fn(),
   updateFlight: vi.fn(),
+  updateFlightWithOperationalEvent: vi.fn(),
+  createReplacementFlight: vi.fn(),
+  listFlights: vi.fn(),
   listBoardFlights: vi.fn(),
   listMonthMetricFlights: vi.fn(),
   findMembershipById: vi.fn(),
@@ -24,7 +33,7 @@ vi.mock("../../db/repositories/audit.js", () => ({
 }));
 vi.mock("../../db/repositories/dispatch-releases.js", () => ({
   findLatestDispatchRelease: mocks.findLatestDispatchRelease,
-  createDispatchRelease: mocks.createDispatchRelease,
+  publishDispatchReleaseAtomic: mocks.publishDispatchReleaseAtomic,
   listDispatchReleaseRevisions: mocks.listDispatchReleaseRevisions,
   findLatestDispatchReleases: mocks.findLatestDispatchReleases,
 }));
@@ -33,8 +42,25 @@ vi.mock("../../db/repositories/flight-events.js", () => ({
   listFlightEvents: mocks.listFlightEvents,
 }));
 vi.mock("../../db/repositories/flights.js", () => ({
+  dispatchBoardWindow: (now = new Date()) => ({
+    generatedAt: now,
+    overdueFrom: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+    upcomingTo: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+    overdueLookbackHours: 24,
+    upcomingHorizonDays: 7,
+  }),
+  createFlight: mocks.createFlight,
+  fulfillScheduleRequest: mocks.fulfillScheduleRequest,
+  findScheduleFulfillmentAttempt: mocks.findScheduleFulfillmentAttempt,
+  replayScheduleFulfillment: mocks.replayScheduleFulfillment,
+  countNonCancelledScheduleRequestFlights:
+    mocks.countNonCancelledScheduleRequestFlights,
   findFlight: mocks.findFlight,
+  findReplacementFlight: mocks.findReplacementFlight,
   updateFlight: mocks.updateFlight,
+  updateFlightWithOperationalEvent: mocks.updateFlightWithOperationalEvent,
+  createReplacementFlight: mocks.createReplacementFlight,
+  listFlights: mocks.listFlights,
   listBoardFlights: mocks.listBoardFlights,
   listMonthMetricFlights: mocks.listMonthMetricFlights,
 }));
@@ -51,9 +77,15 @@ vi.mock("./weather.js", () => ({
 
 import {
   applyHoppieProgress,
+  bulkCreateFlights,
+  createFlight,
   getDispatchBoard,
   patchFlight,
   publishDispatchRelease,
+  reofferDeclinedFlight,
+  startFlight,
+  finishFlight,
+  transitionFlight,
 } from "./service.js";
 
 const dispatcher = {
@@ -61,6 +93,137 @@ const dispatcher = {
   membershipId: "dispatcher-test",
   role: "dispatcher" as const,
 };
+const actor = dispatcher;
+const pilot = {
+  tenantId: "tenant-test",
+  membershipId: "pilot-test",
+  role: "pilot" as const,
+};
+const flightRepo = mocks;
+const scheduleRepo = mocks;
+const findMembershipById = mocks.findMembershipById;
+const writeAudit = mocks.writeAudit;
+const pilotId = "pilot-test";
+const requestId = "request-test";
+const flightId = "flight-test";
+const idempotencyKey = "offer-batch-2026-09-10-001";
+const request = {
+  id: requestId,
+  tenantId: actor.tenantId,
+  pilotMembershipId: pilotId,
+  title: null,
+  notes: null,
+  windowStart: new Date("2026-09-10T08:00:00.000Z"),
+  windowEnd: new Date("2026-09-10T18:00:00.000Z"),
+  desiredFlightCount: 2,
+  preferences: {
+    availability: [
+      {
+        startAt: "2026-09-10T08:00:00.000Z",
+        endAt: "2026-09-10T12:00:00.000Z",
+      },
+      {
+        startAt: "2026-09-10T14:00:00.000Z",
+        endAt: "2026-09-10T18:00:00.000Z",
+      },
+    ],
+  },
+  version: 1,
+  status: "in_review" as const,
+  rejectReason: null,
+  cancelReason: null,
+  createdAt: new Date("2026-08-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-08-12T00:00:00.000Z"),
+};
+const activePilot = {
+  id: pilotId,
+  tenantId: actor.tenantId,
+  clerkUserId: "user_pilot",
+  role: "pilot" as const,
+  displayName: "Test Pilot",
+  pilotCallsign: null,
+  simbriefUserId: null,
+  simbriefVerifiedAt: null,
+  navigraphSubject: null,
+  navigraphUsername: null,
+  navigraphConnectedAt: null,
+  status: "active" as const,
+  createdAt: new Date("2026-08-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-08-12T00:00:00.000Z"),
+};
+const storedFlight = {
+  id: flightId,
+  tenantId: actor.tenantId,
+  scheduleRequestId: requestId,
+  replacesFlightId: null,
+  pilotMembershipId: pilotId,
+  flightNumber: "SK101",
+  depIcao: "EKCH",
+  arrIcao: "ENGM",
+  etd: new Date("2026-09-10T08:30:00.000Z"),
+  eta: new Date("2026-09-10T10:00:00.000Z"),
+  aircraftType: "A320",
+  version: 1,
+  status: "offered" as const,
+  cancelReason: null,
+  declinedReason: null,
+  dispatcherNotes: null,
+  assignmentRevision: 1,
+  assignmentConfirmedRevision: null,
+  assignmentConfirmedAt: null,
+  outAt: null,
+  offAt: null,
+  onAt: null,
+  inAt: null,
+  createdAt: new Date("2026-08-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-08-12T00:00:00.000Z"),
+};
+const fulfillmentResult = {
+  flights: [storedFlight],
+  fulfillment: {
+    scheduleRequestId: requestId,
+    requestStatus: "partially_fulfilled" as const,
+    requestVersion: 2,
+    linkedFlightCount: 1,
+    remainingFlightCount: 1,
+    flightIds: [flightId],
+  },
+};
+function fulfillmentAttempt(payloadHash: string) {
+  return {
+    id: "ffffffff-ffff-4fff-8fff-fffffffffff0",
+    tenantId: actor.tenantId,
+    scheduleRequestId: requestId,
+    idempotencyKey,
+    payloadHash,
+    flightIds: [flightId],
+    requestStatus: "partially_fulfilled" as const,
+    requestVersion: 2,
+    linkedFlightCount: 1,
+    remainingFlightCount: 1,
+    createdAt: new Date("2026-08-12T00:00:00.000Z"),
+  };
+}
+
+function bulkInput(
+  overrides: Partial<Parameters<typeof bulkCreateFlights>[1]> = {},
+): Parameters<typeof bulkCreateFlights>[1] {
+  return {
+    scheduleRequestId: requestId,
+    idempotencyKey,
+    expectedRequestVersion: 1,
+    flights: [
+      {
+        flightNumber: "SK101",
+        depIcao: "EKCH",
+        arrIcao: "ENGM",
+        etd: new Date("2026-09-10T08:30:00.000Z"),
+        eta: new Date("2026-09-10T10:00:00.000Z"),
+      },
+    ],
+    ...overrides,
+  };
+}
 
 describe("flight planning service", () => {
   beforeEach(() => {
@@ -73,9 +236,17 @@ describe("flight planning service", () => {
       status: "active",
     });
     mocks.updateFlight.mockImplementation(
-      async (_tenantId: string, _flightId: string, patch: Partial<Flight>) => ({
+      async (input: { patch: Partial<Flight> }) => ({
         ...current,
-        ...patch,
+        ...input.patch,
+        version: current.version + 1,
+      }),
+    );
+    mocks.updateFlightWithOperationalEvent.mockImplementation(
+      async (input: { patch: Partial<Flight> }) => ({
+        ...current,
+        ...input.patch,
+        version: current.version + 1,
       }),
     );
     mocks.writeAudit.mockResolvedValue(undefined);
@@ -90,44 +261,51 @@ describe("flight planning service", () => {
   });
 
   it("increments the assignment revision for schedule changes", async () => {
-    const updated = await patchFlight(dispatcher, "flight-test", {
-      etd: new Date("2026-09-01T11:00:00.000Z"),
-      eta: new Date("2026-09-01T12:20:00.000Z"),
-    });
+    const updated = await patchFlight(
+      dispatcher,
+      "flight-test",
+      1,
+      "Schedule adjustment",
+      {
+        etd: new Date("2026-09-01T11:00:00.000Z"),
+        eta: new Date("2026-09-01T12:20:00.000Z"),
+      },
+    );
 
     expect(updated.assignmentRevision).toBe(2);
     expect(mocks.updateFlight).toHaveBeenCalledWith(
-      "tenant-test",
-      "flight-test",
-      expect.objectContaining({ assignmentRevision: 2 }),
-      { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") },
-    );
-    expect(mocks.writeAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        meta: expect.objectContaining({ requiresPilotConfirmation: true }),
+        expectedVersion: 1,
+        patch: expect.objectContaining({
+          assignmentRevision: 2,
+          status: "offered",
+        }),
+        auditMeta: expect.objectContaining({
+          requiresPilotConfirmation: true,
+        }),
       }),
     );
   });
 
-  it("keeps a scheduled flight scheduled for non-time planning edits", async () => {
-    const updated = await patchFlight(dispatcher, "flight-test", {
-      flightNumber: "SK102",
+  it("keeps a scheduled flight scheduled for notes-only edits", async () => {
+    const updated = await patchFlight(dispatcher, "flight-test", 1, undefined, {
+      dispatcherNotes: "Updated operational note",
     });
 
     expect(updated.status).toBe("briefed");
     expect(mocks.updateFlight).toHaveBeenCalledWith(
-      "tenant-test",
-      "flight-test",
-      { flightNumber: "SK102" },
-      { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") },
+      expect.objectContaining({
+        expectedVersion: 1,
+        patch: { dispatcherNotes: "Updated operational note" },
+      }),
     );
   });
 
   it("rejects a stale dispatcher edit instead of overwriting newer planning", async () => {
+    mocks.findFlight.mockResolvedValue(makeFlight({ version: 2 }));
     await expect(
-      patchFlight(dispatcher, "flight-test", {
+      patchFlight(dispatcher, "flight-test", 1, "Route update", {
         flightNumber: "SK102",
-        expectedUpdatedAt: new Date("2026-09-01T09:59:00.000Z"),
       }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mocks.updateFlight).not.toHaveBeenCalled();
@@ -135,16 +313,18 @@ describe("flight planning service", () => {
 
   it("rejects an invalid scheduled time window before persistence", async () => {
     await expect(
-      patchFlight(dispatcher, "flight-test", {
+      patchFlight(dispatcher, "flight-test", 1, "Timing correction", {
         eta: new Date("2026-09-01T09:59:00.000Z"),
       }),
-    ).rejects.toMatchObject({ code: "UNPROCESSABLE" });
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", status: 400 });
     expect(mocks.updateFlight).not.toHaveBeenCalled();
   });
 
   it("does not leave an operational flight without an assigned pilot", async () => {
     await expect(
-      patchFlight(dispatcher, "flight-test", { pilotMembershipId: null }),
+      patchFlight(dispatcher, "flight-test", 1, "Crew removal", {
+        pilotMembershipId: null,
+      }),
     ).rejects.toMatchObject({ code: "UNPROCESSABLE" });
     expect(mocks.updateFlight).not.toHaveBeenCalled();
   });
@@ -153,64 +333,67 @@ describe("flight planning service", () => {
     const accepted = makeFlight({ status: "accepted" });
     const release = makeRelease();
     mocks.findFlight.mockResolvedValue(accepted);
-    mocks.findLatestDispatchRelease.mockResolvedValue(null);
-    mocks.createDispatchRelease.mockResolvedValue(release);
-    mocks.updateFlight.mockResolvedValue({ ...accepted, status: "briefed" });
+    mocks.publishDispatchReleaseAtomic.mockResolvedValue({
+      flight: { ...accepted, status: "briefed", version: 2 },
+      release,
+    });
 
     const result = await publishDispatchRelease(
       dispatcher,
       accepted.id,
+      accepted.version,
       releaseDraft(),
     );
 
     expect(result.flight.status).toBe("briefed");
     expect(result.release.revision).toBe(1);
-    expect(mocks.createDispatchRelease).toHaveBeenCalledWith(
+    expect(mocks.publishDispatchReleaseAtomic).toHaveBeenCalledWith(
       expect.objectContaining({
-        revision: 1,
+        expectedFlightVersion: accepted.version,
         operationalRoute: "NEXEN Z711 MONAK",
       }),
     );
-    expect(mocks.updateFlight).toHaveBeenCalledWith(
-      "tenant-test",
-      accepted.id,
-      { status: "briefed" },
-      { expectedUpdatedAt: accepted.updatedAt },
-    );
+    expect(mocks.updateFlight).not.toHaveBeenCalled();
+    expect(mocks.writeAudit).not.toHaveBeenCalled();
   });
 
-  it("repairs an Accepted flight whose immutable release already exists", async () => {
-    const accepted = makeFlight({ status: "accepted" });
-    const release = makeRelease();
-    mocks.findFlight.mockResolvedValue(accepted);
-    mocks.findLatestDispatchRelease.mockResolvedValue(release);
-    mocks.updateFlight.mockResolvedValue({ ...accepted, status: "briefed" });
+  it("increments the flight revision for every replacement release", async () => {
+    const briefed = makeFlight({ status: "briefed", version: 4 });
+    const release = { ...makeRelease(), revision: 2 };
+    mocks.findFlight.mockResolvedValue(briefed);
+    mocks.publishDispatchReleaseAtomic.mockResolvedValue({
+      flight: { ...briefed, version: 5 },
+      release,
+    });
 
     const result = await publishDispatchRelease(
       dispatcher,
-      accepted.id,
+      briefed.id,
+      briefed.version,
       releaseDraft(),
     );
 
     expect(result).toMatchObject({
       flight: { status: "briefed" },
-      release: { id: release.id, revision: 1 },
+      release: { id: release.id, revision: 2 },
     });
-    expect(mocks.createDispatchRelease).not.toHaveBeenCalled();
-    expect(mocks.writeAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "flight.release_schedule_recover" }),
+    expect(mocks.publishDispatchReleaseAtomic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedFlightVersion: 4,
+      }),
     );
+    expect(result.flight.version).toBe(5);
   });
 
   it("rejects a release whose block fuel does not equal its breakdown", async () => {
     const draft = releaseDraft();
     await expect(
-      publishDispatchRelease(dispatcher, "flight-test", {
+      publishDispatchRelease(dispatcher, "flight-test", 1, {
         ...draft,
         blockFuel: draft.blockFuel + 1,
       }),
     ).rejects.toMatchObject({ code: "UNPROCESSABLE" });
-    expect(mocks.createDispatchRelease).not.toHaveBeenCalled();
+    expect(mocks.publishDispatchReleaseAtomic).not.toHaveBeenCalled();
   });
 
   it("uses FLT INIT to confirm assignment without treating it as departure", async () => {
@@ -235,13 +418,133 @@ describe("flight planning service", () => {
 
     expect(result?.status).toBe("briefed");
     expect(mocks.updateFlight).toHaveBeenCalledWith(
-      "tenant-test",
-      scheduled.id,
-      {
-        assignmentConfirmedRevision: 2,
-        assignmentConfirmedAt: new Date("2026-09-01T10:05:00.000Z"),
-      },
+      expect.objectContaining({
+        tenantId: "tenant-test",
+        id: scheduled.id,
+        expectedVersion: scheduled.version,
+        action: "flight.progress",
+        patch: {
+          assignmentConfirmedRevision: 2,
+          assignmentConfirmedAt: new Date("2026-09-01T10:05:00.000Z"),
+        },
+      }),
     );
+  });
+
+  it("starts a flight with its audit and manual event in one CAS command", async () => {
+    const scheduled = makeFlight({ version: 4 });
+    const occurredAt = new Date("2026-09-01T10:05:00.000Z");
+    mocks.findFlight.mockResolvedValue(scheduled);
+    mocks.findLatestDispatchRelease.mockResolvedValue(makeRelease());
+    mocks.updateFlightWithOperationalEvent.mockResolvedValue({
+      ...scheduled,
+      status: "active",
+      version: 5,
+      outAt: occurredAt,
+    });
+
+    const result = await startFlight(
+      pilot,
+      scheduled.id,
+      occurredAt,
+      scheduled.version,
+    );
+
+    expect(result).toMatchObject({ status: "active", version: 5 });
+    expect(mocks.updateFlightWithOperationalEvent).toHaveBeenCalledWith({
+      tenantId: pilot.tenantId,
+      id: scheduled.id,
+      expectedVersion: 4,
+      actorMembershipId: pilot.membershipId,
+      action: "flight.progress",
+      patch: {
+        status: "active",
+        outAt: occurredAt,
+        assignmentConfirmedRevision: scheduled.assignmentRevision,
+        assignmentConfirmedAt: occurredAt,
+      },
+      auditMeta: {
+        kind: "manual_start",
+        source: "pilot_web",
+        fromStatus: "briefed",
+        toStatus: "active",
+        fromVersion: 4,
+        toVersion: 5,
+      },
+      event: {
+        kind: "manual_start",
+        source: "pilot_web",
+        occurredAt,
+        meta: { fromStatus: "briefed", toStatus: "active" },
+      },
+    });
+    expect(mocks.createFlightEvent).not.toHaveBeenCalled();
+    expect(mocks.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("finishes a flight with its audit and manual event in one CAS command", async () => {
+    const active = makeFlight({ status: "active", version: 7 });
+    const occurredAt = new Date("2026-09-01T12:05:00.000Z");
+    mocks.findFlight.mockResolvedValue(active);
+    mocks.updateFlightWithOperationalEvent.mockResolvedValue({
+      ...active,
+      status: "completed",
+      version: 8,
+      inAt: occurredAt,
+    });
+
+    const result = await finishFlight(
+      pilot,
+      active.id,
+      occurredAt,
+      active.version,
+    );
+
+    expect(result).toMatchObject({ status: "completed", version: 8 });
+    expect(mocks.updateFlightWithOperationalEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: pilot.tenantId,
+        id: active.id,
+        expectedVersion: 7,
+        actorMembershipId: pilot.membershipId,
+        patch: { status: "completed", inAt: occurredAt },
+        auditMeta: expect.objectContaining({
+          kind: "manual_finish",
+          fromVersion: 7,
+          toVersion: 8,
+        }),
+        event: {
+          kind: "manual_finish",
+          source: "pilot_web",
+          occurredAt,
+          meta: { fromStatus: "active", toStatus: "completed" },
+        },
+      }),
+    );
+    expect(mocks.createFlightEvent).not.toHaveBeenCalled();
+    expect(mocks.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("returns the concurrent progress winner after a CAS loss", async () => {
+    const scheduled = makeFlight({ version: 2 });
+    const winner = makeFlight({
+      status: "active",
+      version: 3,
+      outAt: new Date("2026-09-01T10:05:00.000Z"),
+    });
+    mocks.findFlight
+      .mockResolvedValueOnce(scheduled)
+      .mockResolvedValueOnce(winner);
+    mocks.findLatestDispatchRelease.mockResolvedValue(makeRelease());
+    mocks.updateFlightWithOperationalEvent.mockResolvedValue(null);
+
+    await expect(
+      startFlight(pilot, scheduled.id, new Date(), scheduled.version),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { latest: { status: "active", version: 3 } },
+    });
+    expect(mocks.updateFlightWithOperationalEvent).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -289,12 +592,706 @@ describe("dispatch KPI calculations", () => {
   });
 });
 
+describe("flight server invariants", () => {
+  const scheduleRequest = {
+    id: "request-test",
+    tenantId: "tenant-test",
+    pilotMembershipId: "pilot-test",
+    title: null,
+    notes: null,
+    windowStart: new Date("2026-09-10T08:00:00.000Z"),
+    windowEnd: new Date("2026-09-10T18:00:00.000Z"),
+    desiredFlightCount: 2,
+    preferences: {
+      availability: [
+        {
+          startAt: "2026-09-10T08:00:00.000Z",
+          endAt: "2026-09-10T12:00:00.000Z",
+        },
+        {
+          startAt: "2026-09-10T14:00:00.000Z",
+          endAt: "2026-09-10T18:00:00.000Z",
+        },
+      ],
+    },
+    status: "in_review" as const,
+    rejectReason: null,
+    createdAt: new Date("2026-08-12T00:00:00.000Z"),
+    updatedAt: new Date("2026-08-12T00:00:00.000Z"),
+  };
+
+  function input(
+    overrides: Partial<Parameters<typeof createFlight>[1]> = {},
+  ): Parameters<typeof createFlight>[1] {
+    return {
+      flightNumber: "SK101",
+      depIcao: "EKCH",
+      arrIcao: "ENGM",
+      etd: new Date("2026-09-10T08:30:00.000Z"),
+      eta: new Date("2026-09-10T10:00:00.000Z"),
+      status: "offered",
+      pilotMembershipId: "pilot-test",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findMembershipById.mockResolvedValue(activePilot);
+    scheduleRepo.findScheduleRequest.mockResolvedValue(request);
+    flightRepo.countNonCancelledScheduleRequestFlights.mockResolvedValue(0);
+    flightRepo.createFlight.mockResolvedValue(storedFlight);
+    flightRepo.findScheduleFulfillmentAttempt.mockResolvedValue(null);
+    flightRepo.fulfillScheduleRequest.mockResolvedValue(fulfillmentResult);
+    flightRepo.replayScheduleFulfillment.mockResolvedValue(fulfillmentResult);
+    flightRepo.findFlight.mockResolvedValue(storedFlight);
+    flightRepo.findReplacementFlight.mockResolvedValue(null);
+    flightRepo.updateFlight.mockResolvedValue(storedFlight);
+    flightRepo.createReplacementFlight.mockResolvedValue({
+      ...storedFlight,
+      id: "replacement-flight",
+      replacesFlightId: flightId,
+      version: 1,
+    });
+  });
+
+  it("rejects ETA at or before ETD before inserting", async () => {
+    await expect(
+      createFlight(
+        dispatcher,
+        input({ eta: new Date("2026-09-10T08:30:00.000Z") }),
+      ),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", status: 400 });
+    expect(mocks.createFlight).not.toHaveBeenCalled();
+  });
+
+  it("requires an assigned active pilot for an offered flight", async () => {
+    await expect(
+      createFlight(actor, input({ pilotMembershipId: null })),
+    ).rejects.toMatchObject({ code: "UNPROCESSABLE", status: 422 });
+    expect(mocks.createFlight).not.toHaveBeenCalled();
+  });
+
+  it("does not accept a membership outside the tenant", async () => {
+    mocks.findMembershipById.mockResolvedValue(null);
+    await expect(createFlight(dispatcher, input())).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+    });
+    expect(mocks.findMembershipById).toHaveBeenCalledWith(
+      "tenant-test",
+      "pilot-test",
+    );
+    expect(mocks.createFlight).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: "disabled", role: "pilot" },
+    { status: "active", role: "dispatcher" },
+  ] as const)(
+    "rejects a $status $role assignment",
+    async ({ status, role }) => {
+      mocks.findMembershipById.mockResolvedValue({
+        id: "pilot-test",
+        tenantId: "tenant-test",
+        status,
+        role,
+      });
+      await expect(createFlight(dispatcher, input())).rejects.toMatchObject({
+        code: "UNPROCESSABLE",
+        status: 422,
+      });
+      expect(mocks.createFlight).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an assignment override on a request-linked batch", async () => {
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        idempotencyKey,
+        expectedRequestVersion: 1,
+        flights: [
+          {
+            ...input(),
+            pilotMembershipId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "UNPROCESSABLE", status: 422 });
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+  });
+
+  it("creates single flights as explicitly ad-hoc records", async () => {
+    await createFlight(actor, input());
+    expect(flightRepo.createFlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorMembershipId: actor.membershipId,
+        scheduleRequestId: null,
+        pilotMembershipId: pilotId,
+      }),
+    );
+  });
+
+  it("rejects a request-linked batch flight spanning the gap between slots", async () => {
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        idempotencyKey,
+        expectedRequestVersion: 1,
+        flights: [
+          {
+            ...input(),
+            etd: new Date("2026-09-10T11:30:00.000Z"),
+            eta: new Date("2026-09-10T14:30:00.000Z"),
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "UNPROCESSABLE", status: 422 });
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+  });
+
+  it("validates every bulk flight before inserting the batch", async () => {
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        idempotencyKey,
+        expectedRequestVersion: 1,
+        flights: [
+          {
+            flightNumber: "SK101",
+            depIcao: "EKCH",
+            arrIcao: "ENGM",
+            etd: new Date("2026-09-10T08:30:00.000Z"),
+            eta: new Date("2026-09-10T10:00:00.000Z"),
+          },
+          {
+            flightNumber: "SK102",
+            depIcao: "ENGM",
+            arrIcao: "EKCH",
+            etd: new Date("2026-09-10T14:00:00.000Z"),
+            eta: new Date("2026-09-10T14:00:00.000Z"),
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", status: 400 });
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+  });
+
+  it("appends only the cumulative remainder of a partially fulfilled request", async () => {
+    scheduleRepo.findScheduleRequest.mockResolvedValueOnce({
+      ...request,
+      desiredFlightCount: 3,
+      version: 4,
+      status: "partially_fulfilled",
+    });
+    flightRepo.fulfillScheduleRequest.mockResolvedValueOnce(fulfillmentResult);
+
+    await bulkCreateFlights(actor, {
+      scheduleRequestId: requestId,
+      idempotencyKey,
+      expectedRequestVersion: 4,
+      flights: [
+        {
+          flightNumber: "SK103",
+          depIcao: "EKCH",
+          arrIcao: "ENGM",
+          etd: new Date("2026-09-10T08:30:00.000Z"),
+          eta: new Date("2026-09-10T10:00:00.000Z"),
+        },
+      ],
+    });
+
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedRequestVersion: 4,
+        expectedRequestStatus: "partially_fulfilled",
+        actorMembershipId: actor.membershipId,
+        flights: [expect.objectContaining({ flightNumber: "SK103" })],
+      }),
+    );
+  });
+
+  it("rejects a follow-up batch that exceeds cumulative remaining capacity", async () => {
+    scheduleRepo.findScheduleRequest.mockResolvedValueOnce({
+      ...request,
+      desiredFlightCount: 2,
+      status: "partially_fulfilled",
+    });
+    flightRepo.fulfillScheduleRequest.mockResolvedValueOnce(null);
+    flightRepo.countNonCancelledScheduleRequestFlights.mockResolvedValueOnce(1);
+
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        idempotencyKey,
+        expectedRequestVersion: 1,
+        flights: [
+          {
+            flightNumber: "SK103",
+            depIcao: "EKCH",
+            arrIcao: "ENGM",
+            etd: new Date("2026-09-10T08:30:00.000Z"),
+            eta: new Date("2026-09-10T10:00:00.000Z"),
+          },
+          {
+            flightNumber: "SK104",
+            depIcao: "EKCH",
+            arrIcao: "ENGM",
+            etd: new Date("2026-09-10T10:15:00.000Z"),
+            eta: new Date("2026-09-10T11:30:00.000Z"),
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+      details: { existingFlightCount: 1, remainingFlightCount: 1 },
+    });
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects fulfillment while the request is pending or terminal", async () => {
+    scheduleRepo.findScheduleRequest.mockResolvedValueOnce({
+      ...request,
+      status: "pending",
+    });
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        idempotencyKey,
+        expectedRequestVersion: 1,
+        flights: [],
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+
+    scheduleRepo.findScheduleRequest.mockResolvedValueOnce({
+      ...request,
+      status: "cancelled",
+    });
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        idempotencyKey,
+        expectedRequestVersion: 1,
+        flights: [],
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+  });
+
+  it("replays the original ordered result before checking a now-terminal request", async () => {
+    const input = bulkInput();
+    await bulkCreateFlights(actor, input);
+    const payloadHash = flightRepo.fulfillScheduleRequest.mock.calls[0]![0]
+      .payloadHash as string;
+    flightRepo.findScheduleFulfillmentAttempt.mockResolvedValue(
+      fulfillmentAttempt(payloadHash),
+    );
+    scheduleRepo.findScheduleRequest.mockResolvedValue({
+      ...request,
+      version: 2,
+      status: "fulfilled",
+    });
+
+    await expect(bulkCreateFlights(actor, input)).resolves.toEqual(
+      fulfillmentResult,
+    );
+
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledTimes(1);
+    expect(scheduleRepo.findScheduleRequest).toHaveBeenCalledTimes(1);
+    expect(flightRepo.replayScheduleFulfillment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flightIds: [flightId],
+        requestStatus: "partially_fulfilled",
+        requestVersion: 2,
+      }),
+    );
+  });
+
+  it("rejects reuse of an idempotency key with a different canonical payload", async () => {
+    flightRepo.findScheduleFulfillmentAttempt.mockResolvedValue(
+      fulfillmentAttempt("0".repeat(64)),
+    );
+
+    await expect(bulkCreateFlights(actor, bulkInput())).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+      message:
+        "Idempotency-Key was already used with a different fulfillment payload",
+      details: {
+        scheduleRequestId: requestId,
+        requestStatus: "partially_fulfilled",
+        requestVersion: 2,
+      },
+    });
+
+    expect(scheduleRepo.findScheduleRequest).not.toHaveBeenCalled();
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+    expect(flightRepo.replayScheduleFulfillment).not.toHaveBeenCalled();
+  });
+
+  it("returns the winning result when a same-key concurrent submission loses the row lock", async () => {
+    flightRepo.fulfillScheduleRequest.mockResolvedValueOnce(null);
+    flightRepo.findScheduleFulfillmentAttempt
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          fulfillmentAttempt(
+            flightRepo.fulfillScheduleRequest.mock.calls[0]![0]
+              .payloadHash as string,
+          ),
+        ),
+      );
+
+    await expect(bulkCreateFlights(actor, bulkInput())).resolves.toEqual(
+      fulfillmentResult,
+    );
+
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledTimes(1);
+    expect(flightRepo.replayScheduleFulfillment).toHaveBeenCalledTimes(1);
+    expect(
+      flightRepo.countNonCancelledScheduleRequestFlights,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("canonicalizes fulfillment payload fields before hashing and inserting", async () => {
+    await bulkCreateFlights(
+      actor,
+      bulkInput({
+        flights: [
+          {
+            flightNumber: " sk101 ",
+            depIcao: " ekch ",
+            arrIcao: " engm ",
+            aircraftType: " a320 ",
+            etd: new Date("2026-09-10T08:30:00.000Z"),
+            eta: new Date("2026-09-10T10:00:00.000Z"),
+          },
+        ],
+      }),
+    );
+
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey,
+        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        flights: [
+          expect.objectContaining({
+            flightNumber: "SK101",
+            depIcao: "EKCH",
+            arrIcao: "ENGM",
+            aircraftType: "A320",
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("validates patch times against the merged record", async () => {
+    await expect(
+      patchFlight(actor, flightId, 1, "Correct invalid timing", {
+        etd: new Date("2026-09-10T11:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", status: 400 });
+    expect(mocks.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("returns the latest safe representation for a stale dispatcher edit", async () => {
+    flightRepo.findFlight
+      .mockResolvedValueOnce(storedFlight)
+      .mockResolvedValueOnce({
+        ...storedFlight,
+        dispatcherNotes: "Changed elsewhere",
+        version: 2,
+      });
+    flightRepo.updateFlight.mockResolvedValueOnce(null);
+
+    await expect(
+      patchFlight(actor, flightId, 1, undefined, {
+        dispatcherNotes: "My edit",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+      details: {
+        latest: {
+          id: flightId,
+          dispatcherNotes: "Changed elsewhere",
+          version: 2,
+        },
+      },
+    });
+  });
+
+  it("invalidates acceptance after a material equipment edit", async () => {
+    const accepted = { ...storedFlight, status: "accepted" as const };
+    flightRepo.findFlight.mockResolvedValueOnce(accepted);
+    flightRepo.updateFlight.mockResolvedValueOnce({
+      ...accepted,
+      aircraftType: "A321",
+      status: "offered",
+      version: 2,
+    });
+
+    await patchFlight(actor, flightId, 1, "Aircraft substitution", {
+      aircraftType: "A321",
+    });
+
+    expect(flightRepo.updateFlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "flight.patch",
+        actorMembershipId: actor.membershipId,
+        expectedVersion: 1,
+        patch: { aircraftType: "A321", status: "offered" },
+        auditMeta: expect.objectContaining({
+          oldAssignment: pilotId,
+          newAssignment: pilotId,
+          oldStatus: "accepted",
+          newStatus: "offered",
+          acceptanceInvalidated: true,
+        }),
+      }),
+    );
+  });
+
+  it("keeps accepted status for a dispatcher-notes-only edit", async () => {
+    const accepted = { ...storedFlight, status: "accepted" as const };
+    flightRepo.findFlight.mockResolvedValueOnce(accepted);
+    flightRepo.updateFlight.mockResolvedValueOnce({
+      ...accepted,
+      dispatcherNotes: "Revised operational briefing",
+      version: 2,
+    });
+
+    await patchFlight(actor, flightId, 1, undefined, {
+      dispatcherNotes: "Revised operational briefing",
+    });
+
+    expect(flightRepo.updateFlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patch: { dispatcherNotes: "Revised operational briefing" },
+        auditMeta: expect.objectContaining({
+          changedFields: ["dispatcherNotes"],
+          oldStatus: "accepted",
+          newStatus: "accepted",
+          acceptanceInvalidated: false,
+        }),
+      }),
+    );
+  });
+
+  it("requires an audited reason for material edits", async () => {
+    await expect(
+      patchFlight(actor, flightId, 1, undefined, {
+        flightNumber: "SK202",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", status: 400 });
+    expect(flightRepo.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("reassigns an accepted ad-hoc flight only as a renewed offer", async () => {
+    const newPilotId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    const accepted = {
+      ...storedFlight,
+      scheduleRequestId: null,
+      status: "accepted" as const,
+    };
+    flightRepo.findFlight.mockResolvedValueOnce(accepted);
+    findMembershipById.mockResolvedValueOnce({
+      ...activePilot,
+      id: newPilotId,
+      clerkUserId: "user_new_pilot",
+    });
+    flightRepo.updateFlight.mockResolvedValueOnce({
+      ...accepted,
+      pilotMembershipId: newPilotId,
+      status: "offered",
+      version: 2,
+    });
+
+    await patchFlight(actor, flightId, 1, "Crew reassignment", {
+      pilotMembershipId: newPilotId,
+    });
+
+    expect(flightRepo.updateFlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedVersion: 1,
+        patch: expect.objectContaining({
+          pilotMembershipId: newPilotId,
+          status: "offered",
+          assignmentRevision: 2,
+        }),
+        auditMeta: expect.objectContaining({
+          oldAssignment: pilotId,
+          newAssignment: newPilotId,
+          oldStatus: "accepted",
+          newStatus: "offered",
+        }),
+      }),
+    );
+  });
+
+  it("blocks material edits after activation", async () => {
+    flightRepo.findFlight.mockResolvedValueOnce({
+      ...storedFlight,
+      status: "active",
+    });
+    await expect(
+      patchFlight(actor, flightId, 1, "Aircraft substitution", {
+        aircraftType: "A321",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+    expect(flightRepo.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("keeps every terminal status immutable", async () => {
+    flightRepo.findFlight.mockResolvedValueOnce({
+      ...storedFlight,
+      status: "declined",
+    });
+    await expect(
+      patchFlight(actor, flightId, 1, undefined, {
+        dispatcherNotes: "rewrite",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+    expect(flightRepo.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale pilot response before changing state", async () => {
+    await expect(
+      transitionFlight(
+        {
+          tenantId: actor.tenantId,
+          membershipId: pilotId,
+          role: "pilot",
+        },
+        flightId,
+        "accepted",
+        { expectedVersion: 2 },
+      ),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { latest: { id: flightId, version: 1 } },
+    });
+    expect(flightRepo.updateFlight).not.toHaveBeenCalled();
+  });
+
+  it("persists a pilot response and its audit through one repository call", async () => {
+    flightRepo.updateFlight.mockResolvedValueOnce({
+      ...storedFlight,
+      status: "accepted",
+      version: 2,
+    });
+
+    await transitionFlight(
+      {
+        tenantId: actor.tenantId,
+        membershipId: pilotId,
+        role: "pilot",
+      },
+      flightId,
+      "accepted",
+      { expectedVersion: 1 },
+    );
+
+    expect(flightRepo.updateFlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: actor.tenantId,
+        id: flightId,
+        expectedVersion: 1,
+        actorMembershipId: pilotId,
+        action: "flight.accepted",
+        patch: expect.objectContaining({
+          status: "accepted",
+          assignmentConfirmedRevision: 1,
+        }),
+        auditMeta: { from: "offered", to: "accepted", reason: undefined },
+      }),
+    );
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it("creates a history-linked replacement instead of rewriting a decline", async () => {
+    const declined = { ...storedFlight, status: "declined" as const };
+    flightRepo.findFlight.mockResolvedValueOnce(declined);
+
+    const replacement = await reofferDeclinedFlight(actor, flightId, {
+      expectedVersion: 1,
+      reason: "Pilot availability restored",
+    });
+
+    expect(replacement.replacesFlightId).toBe(flightId);
+    expect(flightRepo.updateFlight).not.toHaveBeenCalled();
+    expect(flightRepo.createReplacementFlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceFlightId: flightId,
+        expectedVersion: 1,
+        oldPilotMembershipId: pilotId,
+        pilotMembershipId: pilotId,
+        reason: "Pilot availability restored",
+      }),
+    );
+  });
+
+  it("does not reassign a request-linked replacement", async () => {
+    flightRepo.findFlight.mockResolvedValueOnce({
+      ...storedFlight,
+      status: "declined",
+    });
+    await expect(
+      reofferDeclinedFlight(actor, flightId, {
+        expectedVersion: 1,
+        pilotMembershipId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        reason: "Different pilot requested",
+      }),
+    ).rejects.toMatchObject({ code: "UNPROCESSABLE", status: 422 });
+    expect(flightRepo.createReplacementFlight).not.toHaveBeenCalled();
+  });
+
+  it("returns the winning replacement when a concurrent re-offer loses", async () => {
+    const declined = { ...storedFlight, status: "declined" as const };
+    const winningReplacement = {
+      ...storedFlight,
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      replacesFlightId: flightId,
+      status: "offered" as const,
+    };
+    flightRepo.findFlight.mockResolvedValueOnce(declined);
+    flightRepo.createReplacementFlight.mockResolvedValueOnce(null);
+    flightRepo.findReplacementFlight.mockResolvedValueOnce(winningReplacement);
+
+    await expect(
+      reofferDeclinedFlight(actor, flightId, {
+        expectedVersion: 1,
+        reason: "Concurrent retry",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+      details: {
+        latest: { id: flightId, status: "declined", version: 1 },
+        replacement: {
+          id: winningReplacement.id,
+          replacesFlightId: flightId,
+          status: "offered",
+        },
+      },
+    });
+    expect(flightRepo.findReplacementFlight).toHaveBeenCalledWith(
+      actor.tenantId,
+      flightId,
+    );
+  });
+});
+
 function makeFlight(overrides: Partial<Flight> = {}): Flight {
   const now = new Date("2026-09-01T10:00:00.000Z");
   return {
     id: "flight-test",
     tenantId: "tenant-test",
     scheduleRequestId: null,
+    replacesFlightId: null,
     pilotMembershipId: "pilot-test",
     flightNumber: "SK101",
     depIcao: "EKCH",
@@ -302,6 +1299,7 @@ function makeFlight(overrides: Partial<Flight> = {}): Flight {
     etd: now,
     eta: new Date("2026-09-01T11:20:00.000Z"),
     aircraftType: "A320",
+    version: 1,
     status: "briefed",
     cancelReason: null,
     declinedReason: null,
@@ -313,6 +1311,10 @@ function makeFlight(overrides: Partial<Flight> = {}): Flight {
     offAt: null,
     onAt: null,
     inAt: null,
+    outManualOverride: false,
+    offManualOverride: false,
+    onManualOverride: false,
+    inManualOverride: false,
     createdAt: now,
     updatedAt: now,
     ...overrides,

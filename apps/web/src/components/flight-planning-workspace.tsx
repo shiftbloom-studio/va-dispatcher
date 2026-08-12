@@ -7,7 +7,6 @@ import {
   ClipboardCheck,
   CloudSun,
   History,
-  LockKeyhole,
   PlaneTakeoff,
   Save,
   UserRoundSearch,
@@ -216,12 +215,14 @@ function QuickEditCard({
   const [flightNumber, setFlightNumber] = useState(flight.flightNumber);
   const [depIcao, setDepIcao] = useState(flight.depIcao);
   const [arrIcao, setArrIcao] = useState(flight.arrIcao);
+  const [aircraftType, setAircraftType] = useState(flight.aircraftType ?? "");
   const [etd, setEtd] = useState(isoToUtcInput(flight.etd));
   const [eta, setEta] = useState(isoToUtcInput(flight.eta));
   const [pilotQuery, setPilotQuery] = useState(
     initialPilot ? pilotOptionLabel(initialPilot) : "",
   );
   const [notes, setNotes] = useState(flight.dispatcherNotes ?? "");
+  const [changeReason, setChangeReason] = useState("");
   const [warningAccepted, setWarningAccepted] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const pilotMap = useMemo(
@@ -239,9 +240,15 @@ function QuickEditCard({
   const changedTime =
     etd !== isoToUtcInput(flight.etd) || eta !== isoToUtcInput(flight.eta);
   const changedPilot = selectedPilotId !== flight.pilotMembershipId;
+  const materialChanged =
+    flightNumber.trim().toUpperCase() !== flight.flightNumber ||
+    depIcao.trim().toUpperCase() !== flight.depIcao ||
+    arrIcao.trim().toUpperCase() !== flight.arrIcao ||
+    aircraftType.trim().toUpperCase() !== (flight.aircraftType ?? "") ||
+    changedTime ||
+    changedPilot;
   const needsReconfirmation =
-    (changedTime || changedPilot) &&
-    ["accepted", "briefed", "active"].includes(flight.status);
+    materialChanged && ["accepted", "briefed"].includes(flight.status);
   const editable = !["completed", "cancelled"].includes(flight.status);
 
   const save = useMutation({
@@ -250,14 +257,16 @@ function QuickEditCard({
         method: "PATCH",
         schema: flightResponseSchema,
         ...jsonBody({
+          expectedVersion: flight.version,
+          changeReason: materialChanged ? changeReason.trim() : undefined,
           flightNumber: flightNumber.trim().toUpperCase(),
           depIcao: depIcao.trim().toUpperCase(),
           arrIcao: arrIcao.trim().toUpperCase(),
           etd: utcInputToIso(etd),
           eta: utcInputToIso(eta),
+          aircraftType: aircraftType.trim().toUpperCase() || null,
           pilotMembershipId: selectedPilotId,
           dispatcherNotes: notes.trim() || null,
-          expectedUpdatedAt: flight.updatedAt,
         }),
       }),
     onSuccess: async (data) => {
@@ -280,6 +289,10 @@ function QuickEditCard({
     event.preventDefault();
     setNotice(null);
     if (pilotSelectionInvalid) return;
+    if (materialChanged && !changeReason.trim()) {
+      setNotice("A change reason is required for material planning changes.");
+      return;
+    }
     if (needsReconfirmation && !warningAccepted) {
       setWarningAccepted(true);
       return;
@@ -291,7 +304,7 @@ function QuickEditCard({
     <Card className="overflow-hidden">
       <CardHeader
         title="Assignment and schedule"
-        description="Fast planning fields. Aircraft type is locked after creation."
+        description="Material assignment, route, schedule, or equipment changes require a reason and renewed pilot acceptance."
         action={
           <UserRoundSearch aria-hidden className="size-5 text-slate-500" />
         }
@@ -311,19 +324,14 @@ function QuickEditCard({
         </div>
         <div>
           <Label htmlFor="planning-aircraft">Aircraft type</Label>
-          <div className="relative">
-            <Input
-              id="planning-aircraft"
-              value={flight.aircraftType ?? "TBA"}
-              readOnly
-              aria-readonly="true"
-              className="pr-10 text-slate-600"
-            />
-            <LockKeyhole
-              aria-hidden
-              className="absolute right-3 top-3.5 size-4 text-slate-400"
-            />
-          </div>
+          <Input
+            id="planning-aircraft"
+            value={aircraftType}
+            disabled={!editable}
+            maxLength={20}
+            onChange={(event) => setAircraftType(event.target.value)}
+            className="uppercase"
+          />
         </div>
         <div>
           <Label htmlFor="planning-departure">Departure ICAO</Label>
@@ -414,15 +422,26 @@ function QuickEditCard({
             onChange={(event) => setNotes(event.target.value)}
           />
         </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="planning-change-reason">
+            Change reason (required for material changes)
+          </Label>
+          <Textarea
+            id="planning-change-reason"
+            maxLength={500}
+            value={changeReason}
+            disabled={!editable}
+            onChange={(event) => setChangeReason(event.target.value)}
+          />
+        </div>
 
         {warningAccepted ? (
           <div className="flex gap-3 border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 sm:col-span-2">
             <AlertTriangle aria-hidden className="mt-0.5 size-5 shrink-0" />
             <p>
-              Changing the scheduled time or assigned pilot creates a new
-              assignment revision and visibly requests pilot confirmation. The
-              flight remains in {statusLaneName(flight.status)} and can still be
-              started. Select save again to proceed.
+              This material change returns the flight to Offered and requires
+              renewed pilot acceptance. Pilot or time changes also advance the
+              assignment revision. Select save again to proceed.
             </p>
           </div>
         ) : null}
@@ -482,6 +501,7 @@ function OperationalFallbackCard({
       api(`/flights/${flight.id}/${action}`, {
         method: "POST",
         schema: flightResponseSchema,
+        ...jsonBody({ expectedVersion: flight.version }),
       }),
     onSuccess: async () => {
       await Promise.all([
@@ -632,6 +652,7 @@ function ReleaseEditor({
         method: "POST",
         schema: dispatchReleaseResponseSchema,
         ...jsonBody({
+          expectedVersion: flight.version,
           operationalRoute: fields.operationalRoute,
           sid: fields.sid.trim() || null,
           star: fields.star.trim() || null,
@@ -1139,13 +1160,6 @@ function fuelTotal(fields: ReleaseFields): number {
 function pilotOptionLabel(pilot: Member): string {
   const callsign = pilot.pilotCallsign ?? "NO CALLSIGN";
   return `${callsign} — ${pilot.displayName ?? callsign}`;
-}
-
-function statusLaneName(status: string): string {
-  if (status === "accepted") return "To schedule";
-  if (status === "briefed") return "Scheduled";
-  if (status === "active") return "Active";
-  return status;
 }
 
 function weatherText(value: unknown): string {

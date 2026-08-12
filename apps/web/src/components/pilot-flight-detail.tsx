@@ -18,6 +18,8 @@ import { useState } from "react";
 import { ReasonAction } from "@/components/action-dialog";
 import { DispatchReleaseSnapshot } from "@/components/flight-planning-workspace";
 import { PageHeading } from "@/components/page-heading";
+import { SimbriefWorkspace } from "@/components/simbrief-workspace";
+import { FlightTelemetryStatus } from "@/components/flight-telemetry-status";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -35,9 +37,11 @@ type PilotDecision = "accept" | "decline" | "cancel";
 export function PilotFlightDetail({
   slug,
   flightId,
+  simbriefRecovery,
 }: {
   slug: string;
   flightId: string;
+  simbriefRecovery?: "ready";
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -67,9 +71,10 @@ export function PilotFlightDetail({
       api(`/flights/${flightId}/${action}`, {
         method: "POST",
         schema: flightResponseSchema,
-        ...(action === "accept"
-          ? {}
-          : jsonBody({ reason: reason || undefined })),
+        ...jsonBody({
+          expectedVersion: detail.data?.flight.version,
+          reason: action === "accept" ? undefined : reason || undefined,
+        }),
       }),
     onSuccess: (_data, input) =>
       refresh(
@@ -83,6 +88,7 @@ export function PilotFlightDetail({
       api(`/flights/${flightId}/confirm-assignment`, {
         method: "POST",
         schema: flightResponseSchema,
+        ...jsonBody({ expectedVersion: detail.data?.flight.version }),
       }),
     onSuccess: () => refresh("Current assignment revision confirmed."),
   });
@@ -91,6 +97,7 @@ export function PilotFlightDetail({
       api(`/flights/${flightId}/${action}`, {
         method: "POST",
         schema: flightResponseSchema,
+        ...jsonBody({ expectedVersion: detail.data?.flight.version }),
       }),
     onSuccess: (_data, action) =>
       refresh(
@@ -166,6 +173,15 @@ export function PilotFlightDetail({
           </div>
         </div>
       ) : null}
+      {simbriefRecovery === "ready" ? (
+        <p
+          role="status"
+          className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800"
+        >
+          SimBrief returned successfully. The latest imported OFP is shown
+          below; if import is still pending, use Sync / retry import.
+        </p>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-5">
@@ -222,7 +238,6 @@ export function PilotFlightDetail({
               </div>
             ) : null}
           </Card>
-
           {detail.data.release ? (
             <Card className="overflow-hidden">
               <CardHeader
@@ -238,6 +253,13 @@ export function PilotFlightDetail({
               started from the portal until dispatch schedules it.
             </div>
           )}
+
+          <SimbriefWorkspace
+            slug={slug}
+            flight={flight}
+            release={detail.data.release}
+            mode="pilot"
+          />
 
           {detail.data.events.length ? (
             <Card className="overflow-hidden">
@@ -260,6 +282,7 @@ export function PilotFlightDetail({
               </ol>
             </Card>
           ) : null}
+          <FlightTelemetryStatus slug={slug} flightId={flightId} mode="pilot" />
         </div>
 
         <Card className="h-fit overflow-hidden xl:sticky xl:top-22">

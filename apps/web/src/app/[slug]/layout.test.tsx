@@ -13,7 +13,8 @@ describe("tenant Clerk routing", () => {
   });
 
   it("routes auth and pending session tasks through the current tenant", async () => {
-    vi.stubEnv("NEXT_PUBLIC_E2E_AUTH_BYPASS", "false");
+    vi.stubEnv("NEXT_PUBLIC_E2E_FIXTURE_MODE", "false");
+    vi.stubEnv("NEXT_PUBLIC_E2E_ROUTE_FIXTURE_MODE", "false");
 
     const layout = await TenantLayout({
       children: <div />,

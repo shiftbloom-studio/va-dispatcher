@@ -10,9 +10,11 @@ import {
   Pencil,
   Play,
   Radio,
+  RotateCcw,
   Send,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -22,6 +24,8 @@ import {
   FlightPlanningDialog,
 } from "@/components/flight-planning-workspace";
 import { PageHeading } from "@/components/page-heading";
+import { SimbriefWorkspace } from "@/components/simbrief-workspace";
+import { FlightTelemetryStatus } from "@/components/flight-telemetry-status";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -98,11 +102,16 @@ export function DispatcherFlightDetail({
         return api(`/flights/${flightId}/offer`, {
           method: "POST",
           schema: flightResponseSchema,
+          ...jsonBody({ expectedVersion: flight.data?.flight.version }),
         });
       return api(`/flights/${flightId}/status`, {
         method: "POST",
         schema: flightResponseSchema,
-        ...jsonBody({ status: target, reason: reason || undefined }),
+        ...jsonBody({
+          expectedVersion: flight.data?.flight.version,
+          status: target,
+          reason: reason || undefined,
+        }),
       });
     },
     onSuccess: () =>
@@ -252,14 +261,30 @@ export function DispatcherFlightDetail({
             />
           ) : null}
           {flight.data.release ? (
-            <Card className="overflow-hidden">
-              <CardHeader
-                title="Current dispatch release"
-                description="The latest immutable release revision for this flight."
+            <>
+              <Card className="overflow-hidden">
+                <CardHeader
+                  title="Current dispatch release"
+                  description="The latest immutable release revision for this flight."
+                />
+                <DispatchReleaseSnapshot release={flight.data.release} />
+              </Card>
+              <SimbriefWorkspace
+                slug={slug}
+                flight={currentFlight}
+                release={flight.data.release}
+                mode="dispatcher"
               />
-              <DispatchReleaseSnapshot release={flight.data.release} />
-            </Card>
+            </>
           ) : null}
+          <FlightTelemetryStatus
+            slug={slug}
+            flightId={flightId}
+            mode="dispatcher"
+            onOooiUpdated={() =>
+              refreshFlightData("OOOI timestamps refreshed from the server.")
+            }
+          />
         </div>
 
         <Card className="h-fit overflow-hidden">
@@ -272,20 +297,10 @@ export function DispatcherFlightDetail({
               <Button
                 variant="secondary"
                 className="w-full"
-                onClick={() => {
-                  if (
-                    ["accepted", "briefed", "active"].includes(
-                      currentFlight.status,
-                    )
-                  ) {
-                    setPlanning(true);
-                  } else {
-                    setEditing((value) => !value);
-                  }
-                }}
+                onClick={() => setEditing((value) => !value)}
               >
                 <Pencil aria-hidden className="size-4" />{" "}
-                {editing ? "Close editor" : "Open planning workspace"}
+                {editing ? "Close editor" : "Edit flight"}
               </Button>
             ) : null}
             {actions.includes("offer") ? (
@@ -375,8 +390,127 @@ export function DispatcherFlightDetail({
           }}
         />
       ) : null}
+      {currentFlight.status === "declined" ? (
+        <div className="mt-6 max-w-xl">
+          <ReplacementOffer
+            slug={slug}
+            flight={currentFlight}
+            members={members.data.items}
+          />
+        </div>
+      ) : null}
     </>
   );
+}
+
+function ReplacementOffer({
+  slug,
+  flight,
+  members,
+}: {
+  slug: string;
+  flight: Flight;
+  members: Member[];
+}) {
+  const api = useApi();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const activePilots = members.filter(
+    (member) => member.role === "pilot" && member.status === "active",
+  );
+  const [pilotMembershipId, setPilotMembershipId] = useState(
+    flight.pilotMembershipId ?? "",
+  );
+  const mutation = useMutation({
+    mutationFn: async (reason: string) => {
+      if (!reason) throw new Error("A replacement reason is required.");
+      try {
+        return await api(`/flights/${flight.id}/reoffer`, {
+          method: "POST",
+          schema: flightResponseSchema,
+          ...jsonBody({
+            expectedVersion: flight.version,
+            pilotMembershipId,
+            reason,
+          }),
+        });
+      } catch (error) {
+        const existingReplacementId = replacementIdFromConflict(error);
+        if (!existingReplacementId) throw error;
+        return { existingReplacementId };
+      }
+    },
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [slug, "dispatch", "flights"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "dispatch", "board"],
+        }),
+      ]);
+      const replacementId =
+        "existingReplacementId" in result
+          ? result.existingReplacementId
+          : result.flight.id;
+      router.push(`/${slug}/dispatch/flights/${replacementId}`);
+    },
+  });
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader
+        title="Replacement offer"
+        description="The declined record stays immutable. This creates a new, linked offer that the affected pilot must accept."
+      />
+      <div className="space-y-4 p-5">
+        <div>
+          <Label htmlFor="replacement-pilot">Pilot</Label>
+          <Select
+            id="replacement-pilot"
+            value={pilotMembershipId}
+            disabled={Boolean(flight.scheduleRequestId)}
+            onChange={(event) => setPilotMembershipId(event.target.value)}
+          >
+            {activePilots.map((member) => (
+              <option key={member.id} value={member.id}>
+                {memberLabel(member)}
+              </option>
+            ))}
+          </Select>
+          {flight.scheduleRequestId ? (
+            <p className="mt-1 text-xs text-slate-600">
+              Request-linked replacements remain with the requesting pilot.
+            </p>
+          ) : null}
+        </div>
+        <ReasonAction
+          trigger={
+            <Button className="w-full" disabled={!pilotMembershipId}>
+              <RotateCcw aria-hidden className="size-4" /> Create replacement
+              offer
+            </Button>
+          }
+          title="Create a replacement offer?"
+          detail="A new offered flight will link to this declined record. The source will not be edited or deleted."
+          label="Replacement reason (required)"
+          confirmLabel="Create replacement offer"
+          onConfirm={async (reason) => {
+            await mutation.mutateAsync(reason);
+          }}
+        />
+      </div>
+    </Card>
+  );
+}
+
+function replacementIdFromConflict(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  if (!error.details || typeof error.details !== "object") return null;
+  const replacement = Reflect.get(error.details, "replacement");
+  if (!replacement || typeof replacement !== "object") return null;
+  const id = Reflect.get(replacement, "id");
+  return typeof id === "string" && id.length > 0 ? id : null;
 }
 
 function FlightEditor({
@@ -402,14 +536,16 @@ function FlightEditor({
         method: "PATCH",
         schema: flightResponseSchema,
         ...jsonBody({
+          expectedVersion: flight.version,
+          changeReason: values.changeReason?.trim() || undefined,
           pilotMembershipId: values.pilotMembershipId || null,
           flightNumber: values.flightNumber.trim().toUpperCase(),
           depIcao: values.depIcao.trim().toUpperCase(),
           arrIcao: values.arrIcao.trim().toUpperCase(),
           etd: utcInputToIso(values.etd),
           eta: utcInputToIso(values.eta),
+          aircraftType: values.aircraftType?.trim().toUpperCase() || null,
           dispatcherNotes: values.dispatcherNotes?.trim() || null,
-          expectedUpdatedAt: flight.updatedAt,
         }),
       }),
     onSuccess: async () => {
@@ -434,7 +570,7 @@ function FlightEditor({
     <Card className="overflow-hidden">
       <CardHeader
         title="Edit flight details"
-        description="Terminal flights cannot be edited. Times remain UTC / Zulu; aircraft type is immutable after creation."
+        description="Terminal flights cannot be edited. Material assignment, route, schedule, or equipment changes require a reason and renewed pilot acceptance."
       />
       <form
         onSubmit={form.handleSubmit(submit)}
@@ -496,8 +632,6 @@ function FlightEditor({
             id="edit-aircraft"
             className="uppercase"
             maxLength={20}
-            readOnly
-            aria-readonly="true"
             {...form.register("aircraftType")}
           />
         </div>
@@ -526,6 +660,18 @@ function FlightEditor({
             maxLength={2000}
             {...form.register("dispatcherNotes")}
           />
+        </div>
+        <div className="md:col-span-2 xl:col-span-3">
+          <Label htmlFor="edit-change-reason">
+            Change reason (required for material changes)
+          </Label>
+          <Textarea
+            id="edit-change-reason"
+            maxLength={500}
+            placeholder="Explain changes to the pilot, route, schedule, or equipment…"
+            {...form.register("changeReason")}
+          />
+          <FieldError>{form.formState.errors.changeReason?.message}</FieldError>
         </div>
         {mutation.isError &&
         !(
@@ -561,5 +707,6 @@ function valuesFromFlight(flight: Flight): FlightEditFormValues {
     eta: isoToUtcInput(flight.eta),
     aircraftType: flight.aircraftType || "",
     dispatcherNotes: flight.dispatcherNotes || "",
+    changeReason: "",
   };
 }

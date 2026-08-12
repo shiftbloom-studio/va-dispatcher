@@ -9,6 +9,8 @@ const envSchema = z.object({
   VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
   PORT: z.coerce.number().int().positive().default(3001),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  /** Public web origin used for provider callback completion redirects. */
+  APP_ORIGIN: z.string().url().optional(),
   DATABASE_URL: z.string().min(1).optional(),
   CLERK_SECRET_KEY: z.string().min(1).optional(),
   CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
@@ -47,6 +49,13 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  /** Dedicated integrated-E2E process mode. Never enabled in production. */
+  E2E_FIXTURE_MODE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  E2E_FIXTURE_SECRET: z.string().min(32).optional(),
+  E2E_CONFIRM_DATABASE: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -61,12 +70,34 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       .join("; ");
     throw new Error(`Invalid environment: ${validationMessage}`);
   }
-  validateProductionEnvironment(parsed.data);
+  validateRuntimeEnvironment(parsed.data);
   cachedEnv = parsed.data;
   return parsed.data;
 }
 
-function validateProductionEnvironment(config: Env): void {
+function validateRuntimeEnvironment(config: Env): void {
+  if (config.E2E_FIXTURE_MODE) {
+    if (config.NODE_ENV === "production") {
+      throw new Error(
+        "Invalid production environment: E2E fixture mode is forbidden",
+      );
+    }
+    const missing = [
+      ["E2E_FIXTURE_SECRET", config.E2E_FIXTURE_SECRET],
+      ["E2E_CONFIRM_DATABASE", config.E2E_CONFIRM_DATABASE],
+    ].flatMap(([name, value]) => (value ? [] : [name]));
+    if (missing.length) {
+      throw new Error(
+        `Invalid E2E fixture environment: missing ${missing.join(", ")}`,
+      );
+    }
+    if (!config.AUTH_DEV_BYPASS) {
+      throw new Error(
+        "Invalid E2E fixture environment: AUTH_DEV_BYPASS must be enabled",
+      );
+    }
+  }
+
   if (config.NODE_ENV !== "production") return;
 
   const missing = [
@@ -74,7 +105,6 @@ function validateProductionEnvironment(config: Env): void {
     ["CLERK_SECRET_KEY", config.CLERK_SECRET_KEY],
     ["TENANT_SECRETS_KEY", config.TENANT_SECRETS_KEY],
   ].flatMap(([name, value]) => (value ? [] : [name]));
-
   if (missing.length) {
     throw new Error(
       `Invalid production environment: missing ${missing.join(", ")}`,
@@ -83,6 +113,11 @@ function validateProductionEnvironment(config: Env): void {
   if (config.CRON_SECRET === DEFAULT_CRON_SECRET) {
     throw new Error(
       "Invalid production environment: CRON_SECRET must not use the development default",
+    );
+  }
+  if (config.AUTH_DEV_BYPASS) {
+    throw new Error(
+      "Invalid production environment: AUTH_DEV_BYPASS is forbidden",
     );
   }
 }

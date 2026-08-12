@@ -101,6 +101,64 @@ describe("API documentation", () => {
     expect(documentedOperations).toEqual(runtimeOperations);
   });
 
+  it("documents the durable bulk-fulfillment idempotency contract", () => {
+    const operation = openApiDocument.paths["/flights/bulk"].post;
+    const parameters = operation.parameters;
+
+    expect(parameters).toContainEqual(
+      expect.objectContaining({
+        in: "header",
+        name: "Idempotency-Key",
+        required: true,
+      }),
+    );
+    expect(operation.responses["201"]).toMatchObject({
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/BulkFlightsResponse" },
+        },
+      },
+    });
+    expect(
+      openApiDocument.components.schemas.BulkFlightsResponse,
+    ).toMatchObject({
+      required: ["flights", "fulfillment"],
+      properties: {
+        fulfillment: {
+          required: expect.arrayContaining([
+            "requestStatus",
+            "requestVersion",
+            "flightIds",
+          ]),
+        },
+      },
+    });
+  });
+
+  it("documents schedule-request creation as pilot-only", () => {
+    const operation = openApiDocument.paths["/schedule-requests"].post;
+
+    expect(operation["x-required-role"]).toBe("pilot");
+    expect(operation.description).toContain("authenticated pilot");
+    expect(operation.description).toContain("cannot create pilot requests");
+  });
+
+  it("documents the opaque versioned flight continuation contract", () => {
+    const operation = openApiDocument.paths["/flights"].get;
+    const parameters = operation.parameters as unknown as Array<{
+      name: string;
+      description: string;
+    }>;
+    const cursor = parameters.find((parameter) => parameter.name === "cursor");
+    const status = parameters.find((parameter) => parameter.name === "status");
+
+    expect(operation.description).toContain("deterministic tie-breaker");
+    expect(cursor?.description).toContain("Opaque, versioned");
+    expect(cursor?.description).toContain("same filters");
+    expect(cursor?.description).toContain("older versions");
+    expect(status?.description).toContain("unknown values are rejected");
+  });
+
   it("has resolvable references and unique, described operations", () => {
     const operationIds: string[] = [];
 

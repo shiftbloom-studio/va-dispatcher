@@ -13,6 +13,7 @@ import {
   listAcarsMessages,
   enqueueMockAcars,
   linkAcarsMessageToFlight,
+  updateAcarsDelivery,
 } from "../../db/repositories/acars.js";
 import { writeAudit } from "../../db/repositories/audit.js";
 import {
@@ -34,6 +35,7 @@ import {
   applyHoppieProgress,
   assignmentNeedsConfirmation,
 } from "../flights/service.js";
+import { assertOptionalProcessingAllowed } from "../privacy/service.js";
 
 export async function sendTelex(input: {
   tenantId: string;
@@ -43,17 +45,48 @@ export async function sendTelex(input: {
   flightId?: string | null;
 }) {
   const tenant = await requireTenant(input.tenantId);
+  await assertOptionalProcessingAllowed({
+    tenantId: input.tenantId,
+    membershipId: input.membershipId,
+    purpose: "acars",
+  });
   if (input.flightId) {
     const flight = await findFlight(input.tenantId, input.flightId);
     if (!flight) {
       throw new AppError("NOT_FOUND", "Flight not found");
     }
+    if (flight.pilotMembershipId) {
+      await assertOptionalProcessingAllowed({
+        tenantId: input.tenantId,
+        membershipId: flight.pilotMembershipId,
+        purpose: "acars",
+      });
+    }
   }
   const fromStation = tenant.hoppieStation ?? tenant.slug.toUpperCase();
   let provider: AcarsProvider;
-  let sendResult: SendResult;
   try {
     provider = createAcarsProvider(tenant);
+  } catch (error) {
+    throw publicProviderError(error);
+  }
+
+  const pending = await insertAcarsMessage({
+    tenantId: input.tenantId,
+    direction: "outbound",
+    msgType: "telex",
+    fromStation,
+    toStation: input.to.toUpperCase(),
+    body: input.body,
+    provider: provider.name,
+    deliveryStatus: "pending",
+    flightId: input.flightId ?? null,
+    createdByMembershipId: input.membershipId,
+  });
+
+  let sendResult: SendResult | null = null;
+  let deliveryStatus: "accepted" | "rejected" | "ambiguous";
+  try {
     sendResult = await provider.sendTelex({
       from: fromStation,
       to: input.to.toUpperCase(),
@@ -65,24 +98,25 @@ export async function sendTelex(input: {
         "The ACARS provider rejected the message.",
       );
     }
+    deliveryStatus = "accepted";
   } catch (error) {
-    throw publicProviderError(error);
+    deliveryStatus = isAmbiguousDeliveryError(error) ? "ambiguous" : "rejected";
   }
 
-  const message = await insertAcarsMessage({
+  const message = await updateAcarsDelivery({
     tenantId: input.tenantId,
-    direction: "outbound",
-    msgType: "telex",
-    fromStation,
-    toStation: input.to.toUpperCase(),
-    body: input.body,
-    hoppieRaw: sendResult.raw,
-    provider: provider.name,
-    providerMessageId: sendResult.providerMessageId ?? null,
-    flightId: input.flightId ?? null,
-    createdByMembershipId: input.membershipId,
-    sentAt: new Date(),
+    id: pending.id,
+    status: deliveryStatus,
+    providerMessageId: sendResult?.providerMessageId ?? null,
+    hoppieRaw: deliveryStatus === "accepted" ? sendResult?.raw : null,
+    sentAt: deliveryStatus === "accepted" ? new Date() : null,
   });
+  if (!message) {
+    throw new AppError(
+      "INTERNAL",
+      "The ACARS outcome could not be recorded; check the inbox before resending",
+    );
+  }
 
   await writeAudit({
     tenantId: input.tenantId,
@@ -90,10 +124,15 @@ export async function sendTelex(input: {
     action: "acars.send_telex",
     entityType: "acars_message",
     entityId: message.id,
-    meta: { to: input.to, provider: provider.name },
+    meta: { to: input.to, provider: provider.name, deliveryStatus },
   });
 
   return message;
+}
+
+function isAmbiguousDeliveryError(error: unknown): boolean {
+  if (!(error instanceof AcarsProviderError)) return true;
+  return ["timeout", "unavailable", "invalid_response"].includes(error.code);
 }
 
 export async function listMessages(input: {
@@ -272,6 +311,16 @@ async function processOperationalInteraction(
     message.fromStation.toUpperCase(),
   );
   if (!membership || membership.status !== "active") return;
+  try {
+    await assertOptionalProcessingAllowed({
+      tenantId: tenant.id,
+      membershipId: membership.id,
+      purpose: "acars",
+    });
+  } catch (error) {
+    if (error instanceof AppError && error.code === "FORBIDDEN") return;
+    throw error;
+  }
   const receivedAt = message.receivedAt ?? message.createdAt;
   const candidates = await listTrackableFlightsForPilot({
     tenantId: tenant.id,

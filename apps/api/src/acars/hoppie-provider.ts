@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   AcarsMsgType,
   AcarsProvider,
@@ -19,6 +21,7 @@ import { AcarsProviderError } from "./types.js";
  * encrypted Hoppie ground-station logon.
  */
 const DEFAULT_BASE_URL = "https://www.hoppie.nl/acars/system/connect.html";
+const INBOUND_DEDUPE_WINDOW_MS = 15 * 60 * 1_000;
 
 export class HoppieAcarsProvider implements AcarsProvider {
   readonly name = "hoppie" as const;
@@ -177,6 +180,7 @@ export function assertHoppieSuccess(text: string): string {
 export function parseHoppiePollResponse(
   text: string,
   defaultTo: string,
+  receivedAt = new Date(),
 ): InboundMessage[] {
   const trimmed = text.trim();
   if (!trimmed || /^error/i.test(trimmed)) {
@@ -191,20 +195,36 @@ export function parseHoppiePollResponse(
   const messageBlockPattern =
     /\{([A-Z0-9-]+)\s+([a-z]+)\s+\{([\s\S]*?)\}\s*\}/gi;
   let match: RegExpExecArray | null;
-  let messageIndex = 0;
   while ((match = messageBlockPattern.exec(payload)) !== null) {
     const fromStation = match[1] ?? "UNKNOWN";
     const rawMessageType = (match[2] ?? "other").toLowerCase();
     const body = match[3] ?? "";
+    const canonicalMessage = JSON.stringify({
+      from: fromStation.toUpperCase(),
+      to: defaultTo.toUpperCase(),
+      type: rawMessageType,
+      body: body.replace(/\r\n?/g, "\n").trim(),
+    });
+    const dedupeWindow = Math.floor(
+      receivedAt.getTime() / INBOUND_DEDUPE_WINDOW_MS,
+    );
     messages.push({
-      providerMessageId: `hoppie-poll-${Date.now()}-${messageIndex++}`,
+      providerMessageId: `hoppie-sha256-${dedupeWindow}-${createHash("sha256")
+        .update(canonicalMessage)
+        .digest("hex")}`,
       from: fromStation,
       to: defaultTo,
       type: mapHoppieType(rawMessageType),
       body,
       raw: match[0],
-      receivedAt: new Date(),
+      receivedAt,
     });
+  }
+  if (messages.length === 0) {
+    throw new AcarsProviderError(
+      "invalid_response",
+      "Hoppie returned an invalid poll response.",
+    );
   }
   return messages;
 }

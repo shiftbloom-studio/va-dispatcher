@@ -6,6 +6,10 @@
 
 Multi-tenant Virtual Airline Live Dispatch & ACARS tool.
 
+For the full product guide, architecture, API reference, operating runbooks,
+and current limitations, see the
+[project Wiki](https://github.com/shiftbloom-studio/va-dispatcher/wiki).
+
 - **One tenant = one Virtual Airline** (first: **vSAS**)
 - **API**: Hono + TypeScript on Vercel Services (`apps/api`)
 - **Web**: Next.js pilot portal + dispatcher suite (`apps/web`)
@@ -32,7 +36,7 @@ cp .env.example apps/api/.env
 # configure apps/web/.env.local from apps/web/.env.example
 # fill DATABASE_URL, CLERK_SECRET_KEY, etc.
 
-pnpm db:push          # apply schema to Neon
+DATABASE_URL='postgresql://...' pnpm db:push
 pnpm dev              # web :3000 + API :3001
 ```
 
@@ -47,6 +51,9 @@ all required `LEGAL_*` values from `apps/web/.env.example` before production;
 production requests fail closed rather than publish placeholder operator data.
 See [`docs/privacy-compliance.md`](docs/privacy-compliance.md) for the deployment
 and operating checklist.
+Guarded retention, export, legal-hold, and verified request procedures are in
+[`docs/privacy-operations.md`](docs/privacy-operations.md); the software does
+not by itself certify GDPR compliance.
 
 Clerk Organizations must be enabled, organization slugs must be enabled, and the vSAS Clerk organization slug must be `vsas`. Set `VSAS_CLERK_ORG_ID` to that organization's Clerk ID. The API provisions or repairs the initial vSAS tenant from this trusted value on first authenticated access, then verifies the URL slug, active Clerk organization slug, and API `/me` tenant before loading operational data.
 
@@ -110,25 +117,35 @@ vercel integration add neon
 vercel integration add clerk
 vercel env pull apps/api/.env.local --yes
 # copy DATABASE_URL + CLERK_* into apps/api/.env for local
-pnpm db:push
+DATABASE_URL='postgresql://...' pnpm db:push
 vercel deploy
 ```
 
 ## Scripts
 
-| Script                                    | Description                       |
-| ----------------------------------------- | --------------------------------- |
-| `pnpm dev:api`                            | Run API locally                   |
-| `pnpm dev:web`                            | Run the Next.js app locally       |
-| `pnpm dev`                                | Run API and web together          |
-| `pnpm test:api`                           | API unit and isolation tests      |
-| `pnpm test:web`                           | Frontend unit and component tests |
-| `pnpm test:coverage`                      | Full-source tests and coverage    |
-| `pnpm security:audit`                     | High-severity dependency audit    |
-| `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests |
-| `pnpm db:generate`                        | Drizzle migrations                |
-| `pnpm db:push`                            | Push schema to DB                 |
-| `pnpm typecheck`                          | TypeScript check                  |
+| Script                                    | Description                                    |
+| ----------------------------------------- | ---------------------------------------------- |
+| `pnpm dev:api`                            | Run API locally                                |
+| `pnpm dev:web`                            | Run the Next.js app locally                    |
+| `pnpm dev`                                | Run API and web together                       |
+| `pnpm test:api`                           | API unit and isolation tests                   |
+| `pnpm test:web`                           | Frontend unit and component tests              |
+| `pnpm test:coverage`                      | Full-source tests and coverage                 |
+| `pnpm security:audit`                     | High-severity dependency audit                 |
+| `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests              |
+| `pnpm test:e2e:integrated`                | Real web/API/PostgreSQL journeys               |
+| `pnpm db:push`                            | Apply the canonical schema to a fresh database |
+| `pnpm typecheck`                          | TypeScript check                               |
+
+This Shiftbloom project is pre-production and uses `schema.ts` as its canonical
+database definition. Recreate an empty database and run `db:push`; never point
+that command at a database containing user data. If the product later becomes
+long-lived production software, define a new data-evolution policy first.
+
+The integrated browser suite requires a separately confirmed disposable
+PostgreSQL database. See
+[`docs/integrated-e2e.md`](docs/integrated-e2e.md) for its guarded local command,
+provider isolation, and deployed-browser acceptance checklist.
 
 ## Contributing
 

@@ -27,6 +27,3 @@ coverage
 playwright-report
 test-results
 blob-report
-
-# drizzle
-drizzle/meta
