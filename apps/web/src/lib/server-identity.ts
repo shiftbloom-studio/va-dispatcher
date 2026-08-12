@@ -43,6 +43,9 @@ function e2eIdentity(slug: string, role: Role): IdentityResult {
     tenant: {
       ...me.tenant!,
       hasHoppieLogon: false,
+      acarsProvider: "mock",
+      hoppiePollingEnabled: false,
+      hoppieLastTestedAt: null,
       settings: {},
     },
   };

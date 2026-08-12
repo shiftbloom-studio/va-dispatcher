@@ -1,10 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../client.js";
-import {
-  memberships,
-  type MemberRole,
-  type Membership,
-} from "../schema.js";
+import { memberships, type MemberRole, type Membership } from "../schema.js";
 
 export async function findMembership(
   tenantId: string,
@@ -33,6 +29,24 @@ export async function findMembershipById(
     .select()
     .from(memberships)
     .where(and(eq(memberships.tenantId, tenantId), eq(memberships.id, id)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function findMembershipByCallsign(
+  tenantId: string,
+  pilotCallsign: string,
+): Promise<Membership | null> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.tenantId, tenantId),
+        eq(memberships.pilotCallsign, pilotCallsign),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }

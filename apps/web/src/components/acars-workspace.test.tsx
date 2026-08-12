@@ -36,6 +36,19 @@ describe("ACARS compose", () => {
         return Promise.resolve({ items: [], nextCursor: null });
       if (path === "/flights?limit=100")
         return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/members") return Promise.resolve({ items: [] });
+      if (path === "/tenant")
+        return Promise.resolve({
+          id: "tenant-vsas",
+          slug: "vsas",
+          name: "Virtual SAS",
+          hoppieStation: "SAS",
+          hasHoppieLogon: true,
+          acarsProvider: "hoppie",
+          hoppiePollingEnabled: true,
+          hoppieLastTestedAt: "2026-08-12T00:00:00.000Z",
+          settings: {},
+        });
       if (path === "/acars/messages" && options.method === "POST") {
         attempts += 1;
         return attempts === 1
@@ -79,9 +92,107 @@ describe("ACARS compose", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Message")).toHaveValue(""),
     );
-    expect(screen.getByText("Telex sent to SAS101.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Hoppie accepted the telex to SAS101/),
+    ).toBeInTheDocument();
     expect(
       apiMock.mock.calls.filter(([path]) => path === "/acars/messages"),
     ).toHaveLength(2);
+  });
+
+  it("uses the linked pilot's saved callsign as the recipient", async () => {
+    apiMock.mockImplementation((path: string, options: { method?: string }) => {
+      if (path === "/dispatch/inbox")
+        return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/flights?limit=100")
+        return Promise.resolve({
+          items: [
+            {
+              id: "flight-1",
+              scheduleRequestId: null,
+              pilotMembershipId: "pilot-1",
+              flightNumber: "SK123",
+              depIcao: "EKCH",
+              arrIcao: "ESSA",
+              etd: "2026-08-12T12:00:00.000Z",
+              eta: "2026-08-12T13:00:00.000Z",
+              aircraftType: "A320",
+              status: "offered",
+              cancelReason: null,
+              declinedReason: null,
+              dispatcherNotes: null,
+              outAt: null,
+              offAt: null,
+              onAt: null,
+              inAt: null,
+              createdAt: "2026-08-12T00:00:00.000Z",
+              updatedAt: "2026-08-12T00:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        });
+      if (path === "/members")
+        return Promise.resolve({
+          items: [
+            {
+              id: "pilot-1",
+              role: "pilot",
+              displayName: "Test Pilot",
+              pilotCallsign: "SAS777",
+              status: "active",
+            },
+          ],
+        });
+      if (path === "/tenant")
+        return Promise.resolve({
+          id: "tenant-vsas",
+          slug: "vsas",
+          name: "Virtual SAS",
+          hoppieStation: "SAS",
+          hasHoppieLogon: true,
+          acarsProvider: "hoppie",
+          hoppiePollingEnabled: true,
+          hoppieLastTestedAt: "2026-08-12T00:00:00.000Z",
+          settings: {},
+        });
+      if (path === "/acars/messages" && options.method === "POST")
+        return Promise.resolve({
+          message: {
+            id: "message-1",
+            direction: "outbound",
+            fromStation: "SAS",
+            toStation: "SAS777",
+            body: "GATE 12",
+            provider: "hoppie",
+          },
+        });
+      throw new Error(`Unexpected API call: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AcarsWorkspace slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await screen.findByText("No ACARS messages");
+    await user.selectOptions(
+      screen.getByLabelText("Linked flight (optional)"),
+      "flight-1",
+    );
+    expect(screen.getByLabelText("Recipient station")).toHaveValue("SAS777");
+    await user.type(screen.getByLabelText("Message"), "GATE 12");
+    await user.click(screen.getByRole("button", { name: "Send telex" }));
+
+    await screen.findByText(/Hoppie accepted the telex to SAS777/);
+    const sendCall = apiMock.mock.calls.find(
+      ([path, options]) =>
+        path === "/acars/messages" && options.method === "POST",
+    );
+    expect(JSON.parse(sendCall?.[1].body ?? "{}")).toMatchObject({
+      to: "SAS777",
+      flightId: "flight-1",
+    });
   });
 });
