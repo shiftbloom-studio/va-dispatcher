@@ -125,6 +125,23 @@ describe("tenant Hoppie configuration", () => {
     expect(response.status).toBe(403);
   });
 
+  it("forbids a dispatcher from changing the organization credential", async () => {
+    state.role = "dispatcher";
+
+    const response = await app.request("/tenant/acars-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hoppieStation: "SAS",
+        hoppieLogon: "secret",
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(state.ping).not.toHaveBeenCalled();
+    expect(state.updateTenant).not.toHaveBeenCalled();
+  });
+
   it("tests a new credential before saving its encrypted value", async () => {
     state.role = "admin";
 

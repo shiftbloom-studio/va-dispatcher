@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  FlaskConical,
   Link2,
   RefreshCw,
   Send,
@@ -24,6 +25,7 @@ import {
   acarsMessageResponseSchema,
   flightPageSchema,
   membersSchema,
+  simulateAcarsResponseSchema,
   tenantDetailSchema,
   type AcarsMessage,
   type Member,
@@ -101,7 +103,13 @@ function MessageCard({
   );
 }
 
-export function AcarsWorkspace({ slug }: { slug: string }) {
+export function AcarsWorkspace({
+  slug,
+  canManageOrganization = false,
+}: {
+  slug: string;
+  canManageOrganization?: boolean;
+}) {
   const api = useApi();
   const router = useRouter();
   const search = useSearchParams();
@@ -136,6 +144,8 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
     queryFn: () => api("/tenant", { schema: tenantDetailSchema }),
     staleTime: 30_000,
   });
+  const acarsReady =
+    tenant.data?.acarsProvider === "mock" || tenant.data?.hasHoppieLogon;
 
   function selectStation(next: string | null) {
     const params = new URLSearchParams(search.toString());
@@ -175,13 +185,19 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
       <PageHeading
         eyebrow="Dispatcher suite"
         title="ACARS workspace"
-        description="Dispatcher-only station conversations and free-text telex traffic via Hoppie's ACARS network. Times are UTC / Zulu."
+        description="Dispatcher-only station conversations and free-text telex traffic. Production uses Hoppie's ACARS network; development uses the isolated mock adapter. Times are UTC / Zulu."
         action={
           <Link
-            href={`/${slug}/settings`}
+            href={
+              canManageOrganization
+                ? `/${slug}/settings/organization`
+                : `/${slug}/settings`
+            }
             className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
           >
-            ACARS settings
+            {canManageOrganization
+              ? "Organization ACARS settings"
+              : "My ACARS settings"}
           </Link>
         }
       />
@@ -261,31 +277,49 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
             </div>
           </Card>
         </div>
-        {tenant.data.hasHoppieLogon ? (
-          <ComposeTelex
-            key={station ?? "new-message"}
-            flights={flights.data.items}
-            members={members.data.items}
-            defaultRecipient={station ?? ""}
-            onSent={async () => {
-              await Promise.all([
-                queryClient.invalidateQueries({ queryKey: [slug, "acars"] }),
-                inbox.refetch(),
-              ]);
-            }}
-          />
-        ) : (
-          <HoppieSetupRequired slug={slug} />
-        )}
+        <div className="space-y-6">
+          {acarsReady ? (
+            <ComposeTelex
+              key={station ?? "new-message"}
+              flights={flights.data.items}
+              members={members.data.items}
+              defaultRecipient={station ?? ""}
+              provider={tenant.data.acarsProvider}
+              onSent={async () => {
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: [slug, "acars"] }),
+                  inbox.refetch(),
+                ]);
+              }}
+            />
+          ) : (
+            <HoppieSetupRequired
+              slug={slug}
+              canManageOrganization={canManageOrganization}
+            />
+          )}
+          {tenant.data.acarsProvider === "mock" ? (
+            <MockInboundSimulator
+              onQueued={async () => {
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: [slug, "acars"] }),
+                  inbox.refetch(),
+                ]);
+              }}
+            />
+          ) : null}
+        </div>
       </div>
       <p className="mt-4 text-xs text-slate-500">
         Inbox and open station conversations refresh every 10 seconds while
         visible and online.{" "}
-        {tenant.data.hasHoppieLogon
-          ? tenant.data.hoppiePollingEnabled
-            ? "The ground station checks Hoppie for inbound messages on its scheduled poll, normally once per minute. "
-            : "Scheduled inbound Hoppie polling is currently unavailable. "
-          : "Connect the Virtual Airline's Hoppie ground station to enable live traffic. "}
+        {tenant.data.acarsProvider === "mock"
+          ? "The isolated development adapter stores simulated messages immediately and never contacts Hoppie. "
+          : tenant.data.hasHoppieLogon
+            ? tenant.data.hoppiePollingEnabled
+              ? "The ground station checks Hoppie for inbound messages on its scheduled poll, normally once per minute. "
+              : "Scheduled inbound Hoppie polling is currently unavailable. "
+            : "Connect the Virtual Airline's Hoppie ground station to enable live traffic. "}
         Failed sends are never retried automatically.
       </p>
     </>
@@ -296,6 +330,7 @@ function ComposeTelex({
   flights,
   members,
   defaultRecipient,
+  provider,
   onSent,
 }: {
   flights: Array<{
@@ -307,6 +342,7 @@ function ComposeTelex({
   }>;
   members: Member[];
   defaultRecipient: string;
+  provider: "mock" | "hoppie";
   onSent: () => Promise<void>;
 }) {
   const api = useApi();
@@ -327,7 +363,9 @@ function ComposeTelex({
       }),
     onSuccess: async () => {
       setSuccess(
-        `Hoppie accepted the telex to ${recipient.trim().toUpperCase()} for store-and-forward. This is not a delivery or read receipt.`,
+        provider === "hoppie"
+          ? `Hoppie accepted the telex to ${recipient.trim().toUpperCase()} for store-and-forward. This is not a delivery or read receipt.`
+          : `The development adapter stored the telex to ${recipient.trim().toUpperCase()}. No Hoppie traffic was sent.`,
       );
       setBody("");
       await onSent();
@@ -338,7 +376,11 @@ function ComposeTelex({
     <Card className="h-fit overflow-hidden 2xl:sticky 2xl:top-22">
       <CardHeader
         title="Compose telex"
-        description="A successful response means Hoppie accepted and stored this outbound message."
+        description={
+          provider === "hoppie"
+            ? "A successful response means Hoppie accepted and stored this outbound message."
+            : "Development mock transport; no external ACARS traffic is sent."
+        }
       />
       <form
         onSubmit={(event) => {
@@ -450,7 +492,121 @@ function ComposeTelex({
   );
 }
 
-function HoppieSetupRequired({ slug }: { slug: string }) {
+function MockInboundSimulator({ onQueued }: { onQueued: () => Promise<void> }) {
+  const api = useApi();
+  const [from, setFrom] = useState("");
+  const [body, setBody] = useState("");
+  const [msgType, setMsgType] = useState("telex");
+  const [success, setSuccess] = useState<string | null>(null);
+  const simulate = useMutation({
+    mutationFn: () =>
+      api("/acars/simulate", {
+        method: "POST",
+        schema: simulateAcarsResponseSchema,
+        ...jsonBody({
+          from: from.trim().toUpperCase(),
+          body,
+          msgType,
+        }),
+      }),
+    onSuccess: async (data) => {
+      setSuccess(
+        `The simulated inbound message to ${data.to} is stored and will appear after the inbox refresh.`,
+      );
+      setBody("");
+      await onQueued();
+    },
+  });
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader
+        title="Development inbound simulator"
+        description="Available only with the isolated mock adapter. It never contacts Hoppie."
+      />
+      <form
+        className="space-y-4 p-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setSuccess(null);
+          if (from.trim() && body.trim()) simulate.mutate();
+        }}
+      >
+        <div>
+          <Label htmlFor="mock-acars-from">Simulated sender</Label>
+          <Input
+            id="mock-acars-from"
+            required
+            maxLength={20}
+            className="uppercase"
+            value={from}
+            onChange={(event) => setFrom(event.target.value)}
+            placeholder="SAS123"
+          />
+        </div>
+        <div>
+          <Label htmlFor="mock-acars-type">Message type</Label>
+          <Select
+            id="mock-acars-type"
+            value={msgType}
+            onChange={(event) => setMsgType(event.target.value)}
+          >
+            <option value="telex">Telex</option>
+            <option value="progress">Progress</option>
+            <option value="position">Position</option>
+            <option value="cpdlc">CPDLC</option>
+            <option value="other">Other</option>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="mock-acars-body">Simulated message</Label>
+          <Textarea
+            id="mock-acars-body"
+            required
+            maxLength={4000}
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="REQUESTING GATE ASSIGNMENT"
+          />
+        </div>
+        {success ? (
+          <p
+            role="status"
+            className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800"
+          >
+            {success}
+          </p>
+        ) : null}
+        {simulate.isError ? (
+          <p
+            role="alert"
+            className="rounded-lg bg-red-50 p-3 text-sm text-red-800"
+          >
+            {apiErrorMessage(simulate.error)} Your simulated message is
+            retained; retry manually when ready.
+          </p>
+        ) : null}
+        <Button
+          type="submit"
+          variant="secondary"
+          className="w-full"
+          disabled={simulate.isPending || !from.trim() || !body.trim()}
+        >
+          <FlaskConical aria-hidden className="size-4" />
+          {simulate.isPending ? "Simulating…" : "Simulate inbound"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+function HoppieSetupRequired({
+  slug,
+  canManageOrganization,
+}: {
+  slug: string;
+  canManageOrganization: boolean;
+}) {
   return (
     <Card className="h-fit overflow-hidden 2xl:sticky 2xl:top-22">
       <CardHeader
@@ -463,12 +619,19 @@ function HoppieSetupRequired({ slug }: { slug: string }) {
           ground-station callsign and logon before dispatchers can send or
           receive live messages.
         </p>
-        <Link
-          href={`/${slug}/settings`}
-          className="inline-flex min-h-11 items-center rounded-lg bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        >
-          Open ACARS settings
-        </Link>
+        {canManageOrganization ? (
+          <Link
+            href={`/${slug}/settings/organization`}
+            className="inline-flex min-h-11 items-center rounded-lg bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          >
+            Open organization settings
+          </Link>
+        ) : (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-950">
+            Ask an organization administrator to connect and test the shared
+            ground station.
+          </p>
+        )}
       </div>
     </Card>
   );
