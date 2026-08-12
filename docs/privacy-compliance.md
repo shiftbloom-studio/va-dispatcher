@@ -76,6 +76,10 @@ this feature must not be presented as optional analytics consent.
 - Rights: data export and deletion procedures must include device records,
   current telemetry, track points, and OOOI provenance. Revoking a device stops
   future ingestion but does not silently erase required operational history.
+  Provenance foreign keys restrict direct member/device deletion. An approved
+  erasure first nulls the event's actor/device reference, retaining the
+  operational event without the identity link, and then completes deletion
+  under the privacy runbook.
 - Safety: simulator data may be delayed, inaccurate, replayed, disconnected, or
   manually corrected. It is not a real-world aviation safety service.
 

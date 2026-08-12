@@ -78,7 +78,10 @@ export function AccountSettings({
         <ProfileCard slug={slug} membership={me.data.membership} />
         <SimbriefAccount slug={slug} />
         <HoppieGuide />
-        <SimulatorDevices slug={slug} />
+        <SimulatorDevices
+          slug={slug}
+          canCreate={me.data.membership.role === "pilot"}
+        />
       </div>
     </>
   );

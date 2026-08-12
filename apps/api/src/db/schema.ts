@@ -817,10 +817,10 @@ export const flightOooiEvents = pgTable(
     source: oooiSourceEnum("source").notNull(),
     actorMembershipId: uuid("actor_membership_id").references(
       () => memberships.id,
-      { onDelete: "set null" },
+      { onDelete: "restrict" },
     ),
     deviceId: uuid("device_id").references(() => simulatorDevices.id, {
-      onDelete: "set null",
+      onDelete: "restrict",
     }),
     reason: text("reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -842,12 +842,12 @@ export const flightOooiEvents = pgTable(
       columns: [t.tenantId, t.actorMembershipId],
       foreignColumns: [memberships.tenantId, memberships.id],
       name: "flight_oooi_events_tenant_actor_fk",
-    }),
+    }).onDelete("restrict"),
     foreignKey({
       columns: [t.tenantId, t.deviceId],
       foreignColumns: [simulatorDevices.tenantId, simulatorDevices.id],
       name: "flight_oooi_events_tenant_device_fk",
-    }),
+    }).onDelete("restrict"),
   ],
 );
 

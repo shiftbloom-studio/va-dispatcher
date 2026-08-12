@@ -46,13 +46,16 @@ const simbriefConnection = {
     },
   },
 };
+let currentMe = me;
 
 describe("personal account settings", () => {
   beforeEach(() => {
+    currentMe = me;
     apiMock.mockReset();
     apiMock.mockImplementation(
       (path: string, options: { method?: string; body?: string }) => {
-        if (path === "/me" && !options.method) return Promise.resolve(me);
+        if (path === "/me" && !options.method)
+          return Promise.resolve(currentMe);
         if (path === "/simbrief/connection" && !options.method)
           return Promise.resolve(simbriefConnection);
         if (path === "/telemetry/devices" && !options.method)
@@ -172,6 +175,10 @@ describe("personal account settings", () => {
   });
 
   it("shows a simulator token exactly after creating a named device", async () => {
+    currentMe = {
+      ...me,
+      membership: { ...me.membership, role: "pilot" },
+    };
     const user = userEvent.setup();
     render(
       <TestQueryProvider>
@@ -194,5 +201,20 @@ describe("personal account settings", () => {
       name: "Home cockpit",
     });
     expect(screen.getByText(/precise aircraft position/i)).toBeVisible();
+  });
+
+  it("keeps cleanup visible but does not issue devices to non-pilots", async () => {
+    render(
+      <TestQueryProvider>
+        <AccountSettings slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        /new simulator credentials are available only to pilots/i,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Device name")).not.toBeInTheDocument();
   });
 });

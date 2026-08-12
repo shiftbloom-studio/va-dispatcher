@@ -108,6 +108,7 @@ describe("telemetry routes", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(mocks.ingestTelemetry).toHaveBeenCalledWith(
       expect.stringContaining("Bearer v1."),
       expect.objectContaining({
@@ -147,13 +148,32 @@ describe("telemetry routes", () => {
   it("shows a device token once without returning its stored authenticator", async () => {
     const response = await app.request("/telemetry/devices", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Test-Role": "pilot",
+      },
       body: JSON.stringify({ name: "Home cockpit" }),
     });
     const body = (await response.json()) as Record<string, unknown>;
     expect(response.status).toBe(201);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(body.token).toMatch(/^v1\./);
     expect(JSON.stringify(body)).not.toContain("tokenMac");
+  });
+
+  it("denies device issuance to dispatch roles but keeps cleanup reads available", async () => {
+    const denied = await app.request("/telemetry/devices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Dispatch workstation" }),
+    });
+    expect(denied.status).toBe(403);
+    expect(denied.headers.get("cache-control")).toBe("no-store");
+    expect(mocks.createDevice).not.toHaveBeenCalled();
+
+    const cleanup = await app.request("/telemetry/devices");
+    expect(cleanup.status).toBe(200);
+    expect(cleanup.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("exposes tenant-scoped live telemetry only to dispatch roles", async () => {
@@ -164,8 +184,18 @@ describe("telemetry routes", () => {
 
     const dispatcher = await app.request("/dispatch/telemetry");
     expect(dispatcher.status).toBe(200);
+    expect(dispatcher.headers.get("cache-control")).toBe("private, no-store");
     await expect(dispatcher.json()).resolves.toMatchObject({
       items: [{ flightId, presence: "online", phase: "airborne" }],
+    });
+  });
+
+  it("marks precise flight telemetry responses private and non-cacheable", async () => {
+    const response = await app.request(`/flights/${flightId}/telemetry`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toMatchObject({
+      current: { flightId, latitude: 55.618, longitude: 12.656 },
     });
   });
 });

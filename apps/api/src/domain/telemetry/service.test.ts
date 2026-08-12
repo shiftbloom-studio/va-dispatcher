@@ -28,6 +28,7 @@ import { loadEnv, resetEnvCache } from "../../env.js";
 import { createTokenMac } from "../../lib/crypto.js";
 import {
   correctOooi,
+  createDevice,
   getFlightTelemetry,
   ingestTelemetry,
   listLiveTelemetry,
@@ -157,6 +158,16 @@ describe("telemetry service", () => {
       status: "revoked",
       revokedAt: now,
     });
+  });
+
+  it("issues new simulator credentials only to pilots", async () => {
+    await expect(
+      createDevice(
+        { tenantId, membershipId, role: "dispatcher" },
+        "Dispatch workstation",
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(mocks.createSimulatorDeviceAtomic).not.toHaveBeenCalled();
   });
 
   it("authenticates and delegates ingestion, current/track, OOOI, provenance, and lease to one atomic write", async () => {

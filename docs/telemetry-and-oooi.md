@@ -8,12 +8,15 @@ service.
 ## Device and flight pairing
 
 A member creates a named connection in **My settings**. The API returns a
-device bearer token exactly once and stores only a keyed authenticator. The
-token is bound to the authenticated tenant and membership and can report only
-an `accepted`, `briefed`, or `active` flight assigned to an active pilot
-membership. The locked ingestion statement rechecks assignment, flight state,
-pilot role, and membership status, so a concurrent reassignment, completion,
-or suspension cannot admit one final sample using stale service-layer state.
+device bearer token exactly once and stores only a keyed authenticator. A token
+can be issued only while the member has the pilot role. Listing and revoking
+previously issued devices remain available after a role change for safe
+cleanup. The token is bound to the authenticated tenant and membership and can
+report only an `accepted`, `briefed`, or `active` flight assigned to an active
+pilot membership. The locked ingestion statement rechecks assignment, flight
+state, pilot role, and membership status, so a concurrent reassignment,
+completion, or suspension cannot admit one final sample using stale
+service-layer state.
 
 Each flight has one live writer lease and each device can hold one live flight
 lease. A lease is renewed by accepted samples and expires after two minutes.
@@ -112,6 +115,22 @@ read tenant flights and the tenant monitoring snapshot. All lookup, mutation,
 lease, current-state, track, OOOI, and audit predicates remain tenant scoped.
 Composite foreign keys additionally enforce tenant coherence across each
 flight, membership, device, current, lease, track, and provenance edge.
+
+### Provenance preservation and erasure
+
+OOOI provenance is append-only operational evidence. Member and device foreign
+keys therefore use `ON DELETE RESTRICT`; direct deletion cannot silently erase
+who or which client supplied an event. An approved erasure workflow must first
+anonymize the relevant provenance references by setting
+`actor_membership_id` and/or `device_id` to `NULL`, while retaining the event,
+tenant, flight, source, occurrence, reason, and creation time. It may then
+delete the member or device under the rest of the privacy runbook. PostgreSQL
+contract tests prove both the restriction and the explicit anonymization path.
+
+Every API response containing precise telemetry, device metadata, or a
+one-time bearer token is non-cacheable. Authenticated reads use
+`Cache-Control: private, no-store`; device ingestion and successful credential
+issuance use `Cache-Control: no-store`.
 
 ## Local verification
 
