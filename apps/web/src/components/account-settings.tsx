@@ -58,28 +58,33 @@ export function AccountSettings({ slug }: { slug: string }) {
         }
       />
       <div className="grid gap-6 xl:grid-cols-2">
-        <ProfileCard slug={slug} me={me.data} />
+        <ProfileCard slug={slug} membership={me.data.membership} />
         <HoppieGuide />
       </div>
     </>
   );
 }
 
-function ProfileCard({ slug, me }: { slug: string; me: Me }) {
-  const membership = me.membership!;
+function ProfileCard({
+  slug,
+  membership,
+}: {
+  slug: string;
+  membership: NonNullable<Me["membership"]>;
+}) {
   const api = useApi();
   const queryClient = useQueryClient();
   const [displayName, setDisplayName] = useState(membership.displayName ?? "");
   const [pilotCallsign, setPilotCallsign] = useState(
     membership.pilotCallsign ?? "",
   );
-  const [success, setSuccess] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const normalizedCallsign = pilotCallsign.trim().toUpperCase();
   const callsignValid =
     !normalizedCallsign ||
     (normalizedCallsign.length <= 20 &&
       CALLSIGN_PATTERN.test(normalizedCallsign));
-  const save = useMutation({
+  const saveProfileMutation = useMutation({
     mutationFn: () =>
       api("/me", {
         method: "PATCH",
@@ -96,7 +101,7 @@ function ProfileCard({ slug, me }: { slug: string; me: Me }) {
           current ? { ...current, membership: data.membership } : current,
       );
       setPilotCallsign(data.membership.pilotCallsign ?? "");
-      setSuccess("Your account settings were saved.");
+      setSuccessMessage("Your account settings were saved.");
     },
   });
 
@@ -110,8 +115,8 @@ function ProfileCard({ slug, me }: { slug: string; me: Me }) {
         className="space-y-5 p-5"
         onSubmit={(event) => {
           event.preventDefault();
-          setSuccess(null);
-          if (callsignValid) save.mutate();
+          setSuccessMessage(null);
+          if (callsignValid) saveProfileMutation.mutate();
         }}
       >
         <div>
@@ -155,19 +160,22 @@ function ProfileCard({ slug, me }: { slug: string; me: Me }) {
             personal logon code.
           </p>
         </div>
-        {success ? (
+        {successMessage ? (
           <p role="status" className="text-sm font-medium text-emerald-700">
-            {success}
+            {successMessage}
           </p>
         ) : null}
-        {save.isError ? (
+        {saveProfileMutation.isError ? (
           <p role="alert" className="text-sm font-medium text-red-700">
-            {apiErrorMessage(save.error)}
+            {apiErrorMessage(saveProfileMutation.error)}
           </p>
         ) : null}
-        <Button type="submit" disabled={save.isPending || !callsignValid}>
+        <Button
+          type="submit"
+          disabled={saveProfileMutation.isPending || !callsignValid}
+        >
           <Save aria-hidden className="size-4" />
-          {save.isPending ? "Saving…" : "Save profile"}
+          {saveProfileMutation.isPending ? "Saving…" : "Save profile"}
         </Button>
       </form>
     </Card>

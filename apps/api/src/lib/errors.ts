@@ -49,6 +49,6 @@ function statusForCode(code: ErrorCode): number {
   }
 }
 
-export function isAppError(err: unknown): err is AppError {
-  return err instanceof AppError;
+export function isAppError(error: unknown): error is AppError {
+  return error instanceof AppError;
 }

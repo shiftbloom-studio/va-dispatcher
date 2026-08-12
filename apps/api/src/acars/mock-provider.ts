@@ -12,7 +12,7 @@ export class MockAcarsProvider implements AcarsProvider {
   readonly name = "mock" as const;
 
   constructor(
-    private readonly opts: {
+    private readonly options: {
       tenantId: string;
       groundStation: string;
       echoReplies?: boolean;
@@ -24,9 +24,9 @@ export class MockAcarsProvider implements AcarsProvider {
     to: string;
     body: string;
   }): Promise<SendResult> {
-    if (this.opts.echoReplies) {
+    if (this.options.echoReplies) {
       await enqueueMockAcars({
-        tenantId: this.opts.tenantId,
+        tenantId: this.options.tenantId,
         toStation: input.from,
         fromStation: input.to,
         msgType: "telex",
@@ -41,14 +41,17 @@ export class MockAcarsProvider implements AcarsProvider {
   }
 
   async poll(input: { station: string }): Promise<InboundMessage[]> {
-    const rows = await drainMockAcarsQueue(this.opts.tenantId, input.station);
-    return rows.map((r) => ({
-      providerMessageId: r.id,
-      from: r.fromStation,
-      to: r.toStation,
-      type: r.msgType,
-      body: r.body,
-      raw: { mock: true, queueId: r.id },
+    const queuedMessages = await drainMockAcarsQueue(
+      this.options.tenantId,
+      input.station,
+    );
+    return queuedMessages.map((message) => ({
+      providerMessageId: message.id,
+      from: message.fromStation,
+      to: message.toStation,
+      type: message.msgType,
+      body: message.body,
+      raw: { mock: true, queueId: message.id },
       receivedAt: new Date(),
     }));
   }

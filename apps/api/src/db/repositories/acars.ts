@@ -1,10 +1,6 @@
 import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 import { getDb } from "../client.js";
-import {
-  acarsMessages,
-  mockAcarsQueue,
-  type AcarsMessage,
-} from "../schema.js";
+import { acarsMessages, mockAcarsQueue, type AcarsMessage } from "../schema.js";
 import {
   decodeCursor,
   encodeCursor,
@@ -56,9 +52,7 @@ export async function findAcarsMessage(
   const rows = await db
     .select()
     .from(acarsMessages)
-    .where(
-      and(eq(acarsMessages.tenantId, tenantId), eq(acarsMessages.id, id)),
-    )
+    .where(and(eq(acarsMessages.tenantId, tenantId), eq(acarsMessages.id, id)))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -88,13 +82,13 @@ export async function listAcarsMessages(input: {
     );
   }
   if (input.cursor) {
-    const c = decodeCursor(input.cursor);
+    const cursor = decodeCursor(input.cursor);
     conditions.push(
       or(
-        lt(acarsMessages.createdAt, new Date(c.createdAt)),
+        lt(acarsMessages.createdAt, new Date(cursor.createdAt)),
         and(
-          eq(acarsMessages.createdAt, new Date(c.createdAt)),
-          lt(acarsMessages.id, c.id),
+          eq(acarsMessages.createdAt, new Date(cursor.createdAt)),
+          lt(acarsMessages.id, cursor.id),
         ),
       )!,
     );
@@ -109,12 +103,12 @@ export async function listAcarsMessages(input: {
 
   const hasMore = rows.length > input.limit;
   const items = hasMore ? rows.slice(0, input.limit) : rows;
-  const last = items[items.length - 1];
+  const lastItem = items.at(-1);
   const nextCursor =
-    hasMore && last
+    hasMore && lastItem
       ? encodeCursor({
-          createdAt: last.createdAt.toISOString(),
-          id: last.id,
+          createdAt: lastItem.createdAt.toISOString(),
+          id: lastItem.id,
         })
       : null;
 
@@ -151,7 +145,7 @@ export async function drainMockAcarsQueue(
   }>
 > {
   const db = getDb();
-  const pending = await db
+  const pendingMessages = await db
     .select()
     .from(mockAcarsQueue)
     .where(
@@ -164,21 +158,21 @@ export async function drainMockAcarsQueue(
     .orderBy(mockAcarsQueue.createdAt)
     .limit(50);
 
-  if (pending.length === 0) return [];
+  if (pendingMessages.length === 0) return [];
 
-  const now = new Date();
-  for (const row of pending) {
+  const deliveredAt = new Date();
+  for (const message of pendingMessages) {
     await db
       .update(mockAcarsQueue)
-      .set({ delivered: now })
-      .where(eq(mockAcarsQueue.id, row.id));
+      .set({ delivered: deliveredAt })
+      .where(eq(mockAcarsQueue.id, message.id));
   }
 
-  return pending.map((p) => ({
-    id: p.id,
-    fromStation: p.fromStation,
-    toStation: p.toStation,
-    msgType: p.msgType,
-    body: p.body,
+  return pendingMessages.map((message) => ({
+    id: message.id,
+    fromStation: message.fromStation,
+    toStation: message.toStation,
+    msgType: message.msgType,
+    body: message.body,
   }));
 }

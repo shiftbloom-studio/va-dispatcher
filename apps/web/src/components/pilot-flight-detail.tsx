@@ -58,7 +58,7 @@ export function PilotFlightDetail({
     },
   });
 
-  async function act(action: PilotAction, reason?: string) {
+  async function performAction(action: PilotAction, reason?: string) {
     setNotice(null);
     try {
       await transition.mutateAsync({ action, reason });
@@ -82,8 +82,8 @@ export function PilotFlightDetail({
       />
     );
 
-  const item = flight.data.flight;
-  const actions = flightActions("pilot", item.status);
+  const currentFlight = flight.data.flight;
+  const actions = flightActions("pilot", currentFlight.status);
 
   return (
     <>
@@ -95,9 +95,9 @@ export function PilotFlightDetail({
       </Link>
       <PageHeading
         eyebrow="Flight workspace"
-        title={item.flightNumber}
-        description={`${item.depIcao} to ${item.arrIcao} · all times UTC / Zulu`}
-        action={<StatusBadge status={item.status} />}
+        title={currentFlight.flightNumber}
+        description={`${currentFlight.depIcao} to ${currentFlight.arrIcao} · all times UTC / Zulu`}
+        action={<StatusBadge status={currentFlight.status} />}
       />
       {notice ? (
         <p
@@ -117,10 +117,10 @@ export function PilotFlightDetail({
                   Departure
                 </p>
                 <p className="mt-1 font-display text-5xl font-semibold">
-                  {item.depIcao}
+                  {currentFlight.depIcao}
                 </p>
                 <p className="mt-2 text-sm text-slate-300">
-                  {formatUtc(item.etd)}
+                  {formatUtc(currentFlight.etd)}
                 </p>
               </div>
               <div className="flex min-w-16 flex-1 items-center gap-3 text-slate-500">
@@ -133,10 +133,10 @@ export function PilotFlightDetail({
                   Arrival
                 </p>
                 <p className="mt-1 font-display text-5xl font-semibold">
-                  {item.arrIcao}
+                  {currentFlight.arrIcao}
                 </p>
                 <p className="mt-2 text-sm text-slate-300">
-                  {formatUtc(item.eta)}
+                  {formatUtc(currentFlight.eta)}
                 </p>
               </div>
             </div>
@@ -147,7 +147,7 @@ export function PilotFlightDetail({
                 Aircraft
               </dt>
               <dd className="mt-1 font-semibold text-slate-950">
-                {item.aircraftType || "TBA"}
+                {currentFlight.aircraftType || "TBA"}
               </dd>
             </div>
             <div className="bg-white p-5">
@@ -155,7 +155,7 @@ export function PilotFlightDetail({
                 Flight
               </dt>
               <dd className="mt-1 font-semibold text-slate-950">
-                {item.flightNumber}
+                {currentFlight.flightNumber}
               </dd>
             </div>
             <div className="bg-white p-5">
@@ -163,17 +163,17 @@ export function PilotFlightDetail({
                 Updated
               </dt>
               <dd className="mt-1 font-semibold text-slate-950">
-                {formatUtc(item.updatedAt)}
+                {formatUtc(currentFlight.updatedAt)}
               </dd>
             </div>
           </dl>
-          {item.dispatcherNotes ? (
+          {currentFlight.dispatcherNotes ? (
             <div className="border-t border-slate-100 p-5">
               <h2 className="font-display text-lg font-semibold">
                 Dispatcher notes
               </h2>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                {item.dispatcherNotes}
+                {currentFlight.dispatcherNotes}
               </p>
             </div>
           ) : null}
@@ -193,7 +193,9 @@ export function PilotFlightDetail({
               <Button
                 className="w-full"
                 disabled={transition.isPending}
-                onClick={() => void act("accept").catch(() => undefined)}
+                onClick={() =>
+                  void performAction("accept").catch(() => undefined)
+                }
               >
                 <Check aria-hidden className="size-4" /> Accept flight
               </Button>
@@ -209,7 +211,7 @@ export function PilotFlightDetail({
                 detail="Dispatch will see the decision immediately. You can add an optional reason."
                 confirmLabel="Decline flight"
                 danger
-                onConfirm={(reason) => act("decline", reason)}
+                onConfirm={(reason) => performAction("decline", reason)}
               />
             ) : null}
             {actions.includes("cancel") ? (
@@ -223,7 +225,7 @@ export function PilotFlightDetail({
                 detail="This ends your participation in the accepted or briefed flight. Add context for dispatch if useful."
                 confirmLabel="Cancel flight"
                 danger
-                onConfirm={(reason) => act("cancel", reason)}
+                onConfirm={(reason) => performAction("cancel", reason)}
               />
             ) : null}
             {transition.isError &&
