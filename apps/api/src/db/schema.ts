@@ -57,6 +57,11 @@ export const acarsMsgTypeEnum = pgEnum("acars_msg_type", [
 
 export const acarsProviderEnum = pgEnum("acars_provider", ["mock", "hoppie"]);
 
+export const simbriefDispatchStatusEnum = pgEnum("simbrief_dispatch_status", [
+  "pending",
+  "ready",
+]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -99,6 +104,15 @@ export const memberships = pgTable(
     role: memberRoleEnum("role").notNull().default("pilot"),
     displayName: text("display_name"),
     pilotCallsign: text("pilot_callsign"),
+    simbriefUserId: text("simbrief_user_id"),
+    simbriefVerifiedAt: timestamp("simbrief_verified_at", {
+      withTimezone: true,
+    }),
+    navigraphSubject: text("navigraph_subject"),
+    navigraphUsername: text("navigraph_username"),
+    navigraphConnectedAt: timestamp("navigraph_connected_at", {
+      withTimezone: true,
+    }),
     status: memberStatusEnum("status").notNull().default("active"),
     ...timestamps,
   },
@@ -107,6 +121,14 @@ export const memberships = pgTable(
     uniqueIndex("memberships_tenant_callsign_uidx").on(
       t.tenantId,
       t.pilotCallsign,
+    ),
+    uniqueIndex("memberships_tenant_simbrief_user_uidx").on(
+      t.tenantId,
+      t.simbriefUserId,
+    ),
+    uniqueIndex("memberships_tenant_navigraph_subject_uidx").on(
+      t.tenantId,
+      t.navigraphSubject,
     ),
     index("memberships_tenant_idx").on(t.tenantId),
   ],
@@ -180,6 +202,88 @@ export const flights = pgTable(
     index("flights_tenant_etd_idx").on(t.tenantId, t.etd),
     index("flights_tenant_pilot_idx").on(t.tenantId, t.pilotMembershipId),
     index("flights_schedule_request_idx").on(t.scheduleRequestId),
+  ],
+);
+
+/**
+ * Short-lived server-side state for Navigraph Authorization Code + PKCE.
+ *
+ * The browser-visible state is stored only as a SHA-256 hash. The PKCE
+ * verifier is encrypted at rest and each transaction is atomically consumed
+ * before the authorization code is exchanged.
+ */
+export const navigraphOauthTransactions = pgTable(
+  "navigraph_oauth_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    stateHash: text("state_hash").notNull(),
+    codeVerifierEnc: text("code_verifier_enc").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("navigraph_oauth_transactions_state_uidx").on(t.stateHash),
+    index("navigraph_oauth_transactions_expiry_idx").on(t.expiresAt),
+    index("navigraph_oauth_transactions_member_idx").on(
+      t.tenantId,
+      t.membershipId,
+    ),
+  ],
+);
+
+/**
+ * A server-signed SimBrief Dispatch Redirect attempt and its resulting OFP.
+ *
+ * The API key and callback token are never persisted. Only a SHA-256 callback
+ * token hash is stored so a leaked database cannot be used to complete a
+ * pending dispatch. The actor's SimBrief user ID is snapshotted because the
+ * member may later disconnect or change accounts.
+ */
+export const simbriefDispatches = pgTable(
+  "simbrief_dispatches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    flightId: uuid("flight_id")
+      .notNull()
+      .references(() => flights.id, { onDelete: "cascade" }),
+    createdByMembershipId: uuid("created_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    simbriefUserId: text("simbrief_user_id").notNull(),
+    staticId: text("static_id").notNull(),
+    callbackTokenHash: text("callback_token_hash"),
+    status: simbriefDispatchStatusEnum("status").notNull().default("pending"),
+    request: jsonb("request")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
+    ofp: jsonb("ofp").$type<Record<string, unknown>>(),
+    simbriefRequestId: text("simbrief_request_id"),
+    generatedAt: timestamp("generated_at", { withTimezone: true }),
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("simbrief_dispatches_static_id_uidx").on(t.staticId),
+    index("simbrief_dispatches_tenant_flight_created_idx").on(
+      t.tenantId,
+      t.flightId,
+      t.createdAt,
+    ),
   ],
 );
 
@@ -275,8 +379,13 @@ export type Tenant = typeof tenants.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type ScheduleRequest = typeof scheduleRequests.$inferSelect;
 export type Flight = typeof flights.$inferSelect;
+export type NavigraphOauthTransaction =
+  typeof navigraphOauthTransactions.$inferSelect;
+export type SimbriefDispatch = typeof simbriefDispatches.$inferSelect;
 export type AcarsMessage = typeof acarsMessages.$inferSelect;
 export type MemberRole = (typeof memberRoleEnum.enumValues)[number];
 export type FlightStatus = (typeof flightStatusEnum.enumValues)[number];
 export type ScheduleRequestStatus =
   (typeof scheduleRequestStatusEnum.enumValues)[number];
+export type SimbriefDispatchStatus =
+  (typeof simbriefDispatchStatusEnum.enumValues)[number];
