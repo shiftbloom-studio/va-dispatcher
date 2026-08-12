@@ -1,0 +1,112 @@
+import type { Metadata } from "next";
+import { connection } from "next/server";
+
+import { LegalPageShell, LegalSection } from "@/components/legal-page-shell";
+import { loadLegalConfig } from "@/lib/legal";
+
+export const metadata: Metadata = {
+  title: "Impressum",
+  description: "Legal provider information for vSAS Live Operations.",
+};
+
+export default async function ImpressumPage() {
+  await connection();
+  const config = loadLegalConfig();
+
+  return (
+    <LegalPageShell
+      title="Impressum"
+      description="Provider information for this digital service pursuant to Section 5 of the German Digital Services Act (DDG)."
+      config={config}
+    >
+      <LegalSection title="Service provider">
+        <address className="not-italic">
+          <strong className="text-slate-950">{config.operatorName}</strong>
+          <br />
+          {config.addressLines.map((line) => (
+            <span key={line}>
+              {line}
+              <br />
+            </span>
+          ))}
+        </address>
+        {config.representative ? (
+          <p>
+            Represented by: <strong>{config.representative}</strong>
+          </p>
+        ) : null}
+      </LegalSection>
+
+      <LegalSection title="Contact">
+        <p>
+          Email:{" "}
+          <a
+            href={`mailto:${config.email}`}
+            className="font-semibold text-slate-950 underline underline-offset-4"
+          >
+            {config.email}
+          </a>
+          {config.phone ? (
+            <>
+              <br />
+              Phone:{" "}
+              <a
+                href={`tel:${config.phone.replace(/[^+\d]/g, "")}`}
+                className="font-semibold text-slate-950 underline underline-offset-4"
+              >
+                {config.phone}
+              </a>
+            </>
+          ) : null}
+        </p>
+      </LegalSection>
+
+      {config.registerName || config.registerNumber ? (
+        <LegalSection title="Register entry">
+          <p>
+            Register: {config.registerName ?? "—"}
+            <br />
+            Registration number: {config.registerNumber ?? "—"}
+          </p>
+        </LegalSection>
+      ) : null}
+
+      {config.vatId ? (
+        <LegalSection title="VAT identification number">
+          <p>
+            VAT identification number pursuant to Section 27a of the German VAT
+            Act: {config.vatId}
+          </p>
+        </LegalSection>
+      ) : null}
+
+      {config.editoriallyResponsibleName ? (
+        <LegalSection title="Editorial responsibility">
+          <p>
+            Responsible for journalistic-editorial content pursuant to Section
+            18(2) MStV:
+          </p>
+          <address className="not-italic">
+            <strong className="text-slate-950">
+              {config.editoriallyResponsibleName}
+            </strong>
+            {config.editoriallyResponsibleAddressLines.map((line) => (
+              <span key={line}>
+                <br />
+                {line}
+              </span>
+            ))}
+          </address>
+        </LegalSection>
+      ) : null}
+
+      <LegalSection title="Service scope">
+        <p>
+          vSAS Live Operations is a virtual-airline scheduling, dispatch, and
+          simulated ACARS service. It does not provide real-world aviation,
+          airline, or air-traffic-control services.
+        </p>
+      </LegalSection>
+    </LegalPageShell>
+  );
+}

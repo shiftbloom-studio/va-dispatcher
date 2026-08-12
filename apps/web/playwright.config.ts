@@ -30,6 +30,12 @@ export default defineConfig({
           CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY ?? "sk_test_example",
           E2E_AUTH_BYPASS: "true",
           NEXT_PUBLIC_E2E_AUTH_BYPASS: "true",
+          LEGAL_OPERATOR_NAME: "Example Aviation e.V.",
+          LEGAL_OPERATOR_ADDRESS: "Example Street 1|10115 Berlin|Germany",
+          LEGAL_OPERATOR_EMAIL: "legal@example.test",
+          LEGAL_PRIVACY_EMAIL: "privacy@example.test",
+          LEGAL_SUPERVISORY_AUTHORITY_NAME: "Example authority",
+          LEGAL_SUPERVISORY_AUTHORITY_URL: "https://authority.example.test",
         },
       },
 });
