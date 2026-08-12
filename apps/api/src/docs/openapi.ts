@@ -450,6 +450,32 @@ const schemas = {
       updatedAt: schemaRef("DateTime"),
     },
   },
+  AvailabilityInterval: {
+    type: "object",
+    required: ["startAt", "endAt"],
+    properties: {
+      startAt: schemaRef("DateTime"),
+      endAt: {
+        ...schemaRef("DateTime"),
+        description: "Must be later than startAt.",
+      },
+    },
+  },
+  SchedulePreferences: {
+    type: "object",
+    required: ["availability"],
+    properties: {
+      availability: {
+        type: "array",
+        minItems: 1,
+        maxItems: 100,
+        description:
+          "Non-overlapping UTC intervals sorted and normalized by the server. The first start and final end must match the request window.",
+        items: schemaRef("AvailabilityInterval"),
+      },
+    },
+    additionalProperties: true,
+  },
   Flight: {
     type: "object",
     required: [
@@ -849,14 +875,14 @@ const schemas = {
   },
   CreateScheduleRequestInput: {
     type: "object",
-    required: ["windowStart", "windowEnd", "desiredFlightCount"],
+    required: ["windowStart", "windowEnd", "desiredFlightCount", "preferences"],
     properties: {
-      title: { type: "string", maxLength: 200, nullable: true },
+      title: { type: "string", maxLength: 120, nullable: true },
       notes: { type: "string", maxLength: 2000, nullable: true },
       windowStart: schemaRef("DateTime"),
       windowEnd: schemaRef("DateTime"),
       desiredFlightCount: { type: "integer", minimum: 1, maximum: 50 },
-      preferences: schemaRef("ArbitraryObject"),
+      preferences: schemaRef("SchedulePreferences"),
     },
   },
   ReasonInput: {
@@ -875,7 +901,10 @@ const schemas = {
       depIcao: { type: "string", minLength: 4, maxLength: 4 },
       arrIcao: { type: "string", minLength: 4, maxLength: 4 },
       etd: schemaRef("DateTime"),
-      eta: schemaRef("DateTime"),
+      eta: {
+        ...schemaRef("DateTime"),
+        description: "Must be later than etd.",
+      },
       aircraftType: { type: "string", maxLength: 20, nullable: true },
       status: { type: "string", enum: ["draft", "offered"] },
       dispatcherNotes: {
@@ -893,7 +922,11 @@ const schemas = {
       depIcao: { type: "string", minLength: 4, maxLength: 4 },
       arrIcao: { type: "string", minLength: 4, maxLength: 4 },
       etd: schemaRef("DateTime"),
-      eta: schemaRef("DateTime"),
+      eta: {
+        ...schemaRef("DateTime"),
+        description:
+          "Must be later than etd and contained with etd inside one detailed request availability interval.",
+      },
       aircraftType: { type: "string", maxLength: 20, nullable: true },
       pilotMembershipId: schemaRef("NullableUuid"),
     },
@@ -1853,7 +1886,7 @@ export const openApiDocument = {
         operationId: "createFlight",
         summary: "Create a flight",
         description:
-          "Requires the dispatcher role or higher. ETA must be later than ETD; the selected pilot must be active in this tenant.",
+          "Requires the dispatcher role or higher. ETA must be after ETD. Offered flights require an active pilot in the current tenant. A request-linked flight inherits the request owner and cannot be reassigned to another pilot; its schedule must fit one detailed availability interval.",
         "x-required-role": "dispatcher",
         requestBody: jsonRequest(schemaRef("CreateFlightInput")),
         responses: {
@@ -1903,7 +1936,8 @@ export const openApiDocument = {
         tags: ["Flights"],
         operationId: "bulkCreateFlights",
         summary: "Create offered flights for a schedule request",
-        description: "Requires the dispatcher role or higher.",
+        description:
+          "Requires the dispatcher role or higher. Every flight is assigned to the requesting active pilot, ETA must be after ETD, and the full flight must fit one normalized detailed availability interval. Pilot assignment overrides to another member are rejected.",
         "x-required-role": "dispatcher",
         requestBody: jsonRequest(schemaRef("BulkCreateFlightsInput")),
         responses: {
@@ -1934,7 +1968,7 @@ export const openApiDocument = {
         operationId: "updateFlight",
         summary: "Update a flight",
         description:
-          "Requires dispatcher. Aircraft type is immutable. Pilot or time changes create a new assignment revision; expectedUpdatedAt prevents lost concurrent edits.",
+          "Requires dispatcher. Aircraft type is immutable. The merged flight must retain ETA after ETD, an active-pilot assignment when operational, and request-owner plus detailed-availability invariants when request-linked. Pilot or time changes create a new assignment revision; expectedUpdatedAt prevents lost concurrent edits.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
         requestBody: jsonRequest(schemaRef("UpdateFlightInput")),

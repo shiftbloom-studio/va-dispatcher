@@ -7,6 +7,7 @@ import {
   meSchema,
   membersSchema,
   scheduleRequestDetailResponseSchema,
+  schedulePreferencesSchema,
 } from "@/lib/api/schemas";
 
 describe("live API contract smoke fixtures", () => {
@@ -165,5 +166,24 @@ describe("live API contract smoke fixtures", () => {
         nextCursor: null,
       }).items[0].msgType,
     ).toBe("telex");
+  });
+
+  it("validates detailed schedule availability while accepting legacy rows", () => {
+    expect(schedulePreferencesSchema.parse({})).toEqual({});
+    expect(
+      schedulePreferencesSchema.parse({
+        availability: [
+          {
+            startAt: "2026-09-01T08:00:00.000Z",
+            endAt: "2026-09-01T10:00:00.000Z",
+          },
+        ],
+      }).availability,
+    ).toHaveLength(1);
+    expect(() =>
+      schedulePreferencesSchema.parse({
+        availability: [{ startAt: "invalid", endAt: "also-invalid" }],
+      }),
+    ).toThrow();
   });
 });

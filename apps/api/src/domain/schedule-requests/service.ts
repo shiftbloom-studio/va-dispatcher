@@ -4,6 +4,7 @@ import { listFlights } from "../../db/repositories/flights.js";
 import type { MemberRole, ScheduleRequest } from "../../db/schema.js";
 import { AppError } from "../../lib/errors.js";
 import { roleAtLeast } from "../members/roles.js";
+import { normalizeAvailability } from "./availability.js";
 import { assertScheduleRequestTransition } from "./transitions.js";
 
 export async function createRequest(
@@ -20,9 +21,6 @@ export async function createRequest(
     preferences?: Record<string, unknown>;
   },
 ): Promise<ScheduleRequest> {
-  if (input.windowEnd <= input.windowStart) {
-    throw new AppError("BAD_REQUEST", "windowEnd must be after windowStart");
-  }
   if (input.desiredFlightCount < 1 || input.desiredFlightCount > 50) {
     throw new AppError(
       "BAD_REQUEST",
@@ -30,10 +28,17 @@ export async function createRequest(
     );
   }
 
+  const normalizedAvailability = normalizeAvailability({
+    preferences: input.preferences,
+    windowStart: input.windowStart,
+    windowEnd: input.windowEnd,
+  });
+
   const scheduleRequest = await scheduleRepo.createScheduleRequest({
     tenantId: actor.tenantId,
     pilotMembershipId: actor.membershipId,
     ...input,
+    preferences: normalizedAvailability.preferences,
   });
 
   await writeAudit({

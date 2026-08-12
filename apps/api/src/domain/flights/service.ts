@@ -17,10 +17,12 @@ import type {
   FlightEventKind,
   FlightStatus,
   MemberRole,
+  ScheduleRequest,
 } from "../../db/schema.js";
 import { AppError } from "../../lib/errors.js";
 import { isUniqueViolation } from "../../lib/postgres.js";
 import { roleAtLeast } from "../members/roles.js";
+import { assertFlightInsideAvailability } from "../schedule-requests/availability.js";
 import { assertScheduleRequestTransition } from "../schedule-requests/transitions.js";
 import { fetchWeatherSnapshot } from "./weather.js";
 import { assertFlightTransition, pilotMayCancel } from "./transitions.js";
@@ -67,9 +69,11 @@ export async function createFlight(
   },
 ): Promise<Flight> {
   requireDispatcher(actor);
-  validateScheduledWindow(input.etd, input.eta);
+  assertFlightTimes(input.etd, input.eta);
+
+  let scheduleRequest: ScheduleRequest | null = null;
   if (input.scheduleRequestId) {
-    const scheduleRequest = await findScheduleRequest(
+    scheduleRequest = await findScheduleRequest(
       actor.tenantId,
       input.scheduleRequestId,
     );
@@ -77,14 +81,21 @@ export async function createFlight(
       throw new AppError("NOT_FOUND", "Schedule request not found");
     }
   }
-  if (input.pilotMembershipId) {
-    await requireActivePilot(actor.tenantId, input.pilotMembershipId);
+  const pilotMembershipId = resolveRequestAssignment(
+    input.pilotMembershipId,
+    scheduleRequest,
+  );
+  await assertActivePilot(actor.tenantId, pilotMembershipId, {
+    required: (input.status ?? "draft") === "offered",
+  });
+  if (scheduleRequest) {
+    assertFlightInsideAvailability(input.etd, input.eta, scheduleRequest);
   }
 
   const flight = await flightRepo.createFlight({
     tenantId: actor.tenantId,
     scheduleRequestId: input.scheduleRequestId,
-    pilotMembershipId: input.pilotMembershipId,
+    pilotMembershipId,
     flightNumber: input.flightNumber,
     depIcao: input.depIcao,
     arrIcao: input.arrIcao,
@@ -122,9 +133,6 @@ export async function bulkCreateFlights(
   },
 ): Promise<Flight[]> {
   requireDispatcher(actor);
-  for (const flight of input.flights) {
-    validateScheduledWindow(flight.etd, flight.eta);
-  }
   const scheduleRequest = await findScheduleRequest(
     actor.tenantId,
     input.scheduleRequestId,
@@ -133,23 +141,26 @@ export async function bulkCreateFlights(
     throw new AppError("NOT_FOUND", "Schedule request not found");
   }
 
-  const pilotIds = new Set(
-    input.flights.map(
-      (flight) => flight.pilotMembershipId ?? scheduleRequest.pilotMembershipId,
-    ),
-  );
-  await Promise.all(
-    [...pilotIds].map((pilotMembershipId) =>
-      requireActivePilot(actor.tenantId, pilotMembershipId),
-    ),
-  );
+  await assertActivePilot(actor.tenantId, scheduleRequest.pilotMembershipId, {
+    required: true,
+  });
+  for (const flight of input.flights) {
+    assertFlightTimes(flight.etd, flight.eta);
+    const pilotMembershipId = resolveRequestAssignment(
+      flight.pilotMembershipId,
+      scheduleRequest,
+    );
+    await assertActivePilot(actor.tenantId, pilotMembershipId, {
+      required: true,
+    });
+    assertFlightInsideAvailability(flight.etd, flight.eta, scheduleRequest);
+  }
 
   const createdFlights = await flightRepo.createFlights(
     input.flights.map((flight) => ({
       tenantId: actor.tenantId,
       scheduleRequestId: input.scheduleRequestId,
-      pilotMembershipId:
-        flight.pilotMembershipId ?? scheduleRequest.pilotMembershipId,
+      pilotMembershipId: scheduleRequest.pilotMembershipId,
       flightNumber: flight.flightNumber,
       depIcao: flight.depIcao,
       arrIcao: flight.arrIcao,
@@ -267,6 +278,25 @@ export async function transitionFlight(
   const flight = await requireFlight(actor.tenantId, flightId);
   assertFlightTransition(flight.status, to);
 
+  if (to === "offered") {
+    assertFlightTimes(flight.etd, flight.eta);
+    await assertActivePilot(actor.tenantId, flight.pilotMembershipId, {
+      required: true,
+    });
+    if (flight.scheduleRequestId) {
+      const scheduleRequest = await findScheduleRequest(
+        actor.tenantId,
+        flight.scheduleRequestId,
+      );
+      if (!scheduleRequest) {
+        throw new AppError("NOT_FOUND", "Schedule request not found");
+      }
+      resolveRequestAssignment(flight.pilotMembershipId, scheduleRequest);
+      assertFlightInsideAvailability(flight.etd, flight.eta, scheduleRequest);
+    }
+  }
+
+  // Authorization by transition
   if (to === "accepted" || to === "declined") {
     if (flight.pilotMembershipId !== actor.membershipId) {
       throw new AppError("FORBIDDEN", "Only the assigned pilot can respond");
@@ -341,9 +371,6 @@ export async function patchFlight(
       "Cannot edit a completed or cancelled flight",
     );
   }
-  if (patch.pilotMembershipId) {
-    await requireActivePilot(actor.tenantId, patch.pilotMembershipId);
-  }
   if (
     patch.pilotMembershipId === null &&
     ["accepted", "briefed", "active"].includes(flight.status)
@@ -354,9 +381,37 @@ export async function patchFlight(
     );
   }
 
-  validateScheduledWindow(patch.etd ?? flight.etd, patch.eta ?? flight.eta);
+  const resultingFlight = { ...flight, ...patch };
+  assertFlightTimes(resultingFlight.etd, resultingFlight.eta);
+  let scheduleRequest: ScheduleRequest | null = null;
+  if (resultingFlight.scheduleRequestId) {
+    scheduleRequest = await findScheduleRequest(
+      actor.tenantId,
+      resultingFlight.scheduleRequestId,
+    );
+    if (!scheduleRequest) {
+      throw new AppError("NOT_FOUND", "Schedule request not found");
+    }
+  }
+  const pilotMembershipId = resolveRequestAssignment(
+    resultingFlight.pilotMembershipId,
+    scheduleRequest,
+  );
+  await assertActivePilot(actor.tenantId, pilotMembershipId, {
+    required: resultingFlight.status !== "draft",
+  });
+  if (scheduleRequest) {
+    assertFlightInsideAvailability(
+      resultingFlight.etd,
+      resultingFlight.eta,
+      scheduleRequest,
+    );
+  }
 
   const { expectedUpdatedAt, ...flightPatch } = patch;
+  if (resultingFlight.pilotMembershipId !== pilotMembershipId) {
+    flightPatch.pilotMembershipId = pilotMembershipId;
+  }
   const changedPilot =
     flightPatch.pilotMembershipId !== undefined &&
     flightPatch.pilotMembershipId !== flight.pilotMembershipId;
@@ -796,12 +851,6 @@ function validateFuelBreakdown(draft: DispatchReleaseDraft): void {
   }
 }
 
-function validateScheduledWindow(etd: Date, eta: Date): void {
-  if (eta.getTime() <= etd.getTime()) {
-    throw new AppError("UNPROCESSABLE", "ETA must be later than ETD");
-  }
-}
-
 async function requireFlight(tenantId: string, id: string): Promise<Flight> {
   const flight = await flightRepo.findFlight(tenantId, id);
   if (!flight) throw new AppError("NOT_FOUND", "Flight not found");
@@ -823,23 +872,6 @@ async function requireRelease(
     );
   }
   return release;
-}
-
-async function requireActivePilot(
-  tenantId: string,
-  membershipId: string,
-): Promise<void> {
-  const membership = await findMembershipById(tenantId, membershipId);
-  if (
-    !membership ||
-    membership.role !== "pilot" ||
-    membership.status !== "active"
-  ) {
-    throw new AppError(
-      "UNPROCESSABLE",
-      "Choose an active pilot in this organization",
-    );
-  }
 }
 
 function requireDispatcher(actor: Actor): void {
@@ -874,4 +906,63 @@ async function writeProgressAudit(
     entityId: flight.id,
     meta: { ...meta, status: flight.status },
   });
+}
+
+function assertFlightTimes(etd: Date, eta: Date): void {
+  if (
+    !Number.isFinite(etd.getTime()) ||
+    !Number.isFinite(eta.getTime()) ||
+    eta <= etd
+  ) {
+    throw new AppError("BAD_REQUEST", "eta must be after etd");
+  }
+}
+
+/**
+ * Request-linked flights always belong to the requesting pilot. Dispatchers
+ * may omit the assignment to inherit it, but cannot override it to a different
+ * member because that would silently transfer another pilot's availability.
+ */
+function resolveRequestAssignment(
+  requestedPilotMembershipId: string | null | undefined,
+  scheduleRequest: ScheduleRequest | null,
+): string | null {
+  if (!scheduleRequest) return requestedPilotMembershipId ?? null;
+  if (
+    requestedPilotMembershipId &&
+    requestedPilotMembershipId !== scheduleRequest.pilotMembershipId
+  ) {
+    throw new AppError(
+      "UNPROCESSABLE",
+      "A request-linked flight must be assigned to the requesting pilot",
+    );
+  }
+  return scheduleRequest.pilotMembershipId;
+}
+
+async function assertActivePilot(
+  tenantId: string,
+  pilotMembershipId: string | null,
+  options: { required: boolean },
+): Promise<void> {
+  if (!pilotMembershipId) {
+    if (options.required) {
+      throw new AppError(
+        "UNPROCESSABLE",
+        "A pilot must be assigned before a flight can be offered",
+      );
+    }
+    return;
+  }
+
+  const membership = await findMembershipById(tenantId, pilotMembershipId);
+  if (!membership) {
+    throw new AppError("NOT_FOUND", "Pilot membership not found");
+  }
+  if (membership.status !== "active" || membership.role !== "pilot") {
+    throw new AppError(
+      "UNPROCESSABLE",
+      "The assigned membership must be an active pilot",
+    );
+  }
 }

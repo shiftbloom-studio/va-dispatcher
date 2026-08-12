@@ -95,6 +95,19 @@ export const meUpdateResponseSchema = z.object({
   membership: meSchema.shape.membership.unwrap(),
 });
 
+export const availabilityIntervalSchema = z.object({
+  startAt: z.string().datetime({ offset: true }),
+  endAt: z.string().datetime({ offset: true }),
+});
+
+// Historical requests may predate detailed slots, so availability remains
+// optional when reading. New create/edit payloads always include it.
+export const schedulePreferencesSchema = z
+  .object({
+    availability: z.array(availabilityIntervalSchema).optional(),
+  })
+  .catchall(z.unknown());
+
 export const scheduleRequestSchema = z.object({
   id: z.string(),
   pilotMembershipId: z.string(),
@@ -103,7 +116,7 @@ export const scheduleRequestSchema = z.object({
   desiredFlightCount: z.number(),
   windowStart: z.string(),
   windowEnd: z.string(),
-  preferences: z.unknown().nullish(),
+  preferences: schedulePreferencesSchema,
   status: scheduleRequestStatusSchema,
   rejectReason: z.string().nullish(),
   createdAt: z.string(),
