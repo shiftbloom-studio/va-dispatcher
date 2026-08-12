@@ -46,8 +46,8 @@ export function buildNavigraphAuthorizationUrl(input: {
   codeChallenge: string;
   authorizationEndpoint?: string;
 }): string {
-  if (!/^[A-Za-z0-9_-]{43}$/.test(input.state)) {
-    throw new Error("Navigraph OAuth state must be 43 base64url characters");
+  if (!/^[A-Za-z0-9._~-]{11,512}$/.test(input.state)) {
+    throw new Error("Navigraph OAuth state must be 11-512 URL-safe characters");
   }
   if (!/^[A-Za-z0-9_-]{43}$/.test(input.codeChallenge)) {
     throw new Error("Navigraph PKCE challenge must be 43 base64url characters");

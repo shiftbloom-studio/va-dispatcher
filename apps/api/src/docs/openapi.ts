@@ -1646,7 +1646,7 @@ export const openApiDocument = {
             "One-time OAuth state returned by Navigraph.",
             {
               type: "string",
-              pattern: "^[A-Za-z0-9_-]{43}$",
+              pattern: "^v1\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}$",
             },
           ),
           queryParameter(
@@ -1768,7 +1768,7 @@ export const openApiDocument = {
         operationId: "startNavigraphOauth",
         summary: "Start Navigraph account authorization",
         description:
-          "Creates short-lived, single-use OAuth state and S256 PKCE verifier records. Open the returned authorizationUrl in the user's browser. Requires configured Navigraph credentials and TENANT_SECRETS_KEY.",
+          "Creates short-lived, single-use, server-authenticated OAuth state and an encrypted S256 PKCE verifier record. Open the returned authorizationUrl in the user's browser. Requires configured Navigraph credentials and TENANT_SECRETS_KEY.",
         responses: {
           "200": jsonResponse(
             "One-time Navigraph authorization URL.",

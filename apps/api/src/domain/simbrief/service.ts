@@ -1,9 +1,4 @@
-import {
-  createHash,
-  randomBytes,
-  randomUUID,
-  timingSafeEqual,
-} from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { writeAudit } from "../../db/repositories/audit.js";
 import { findFlight } from "../../db/repositories/flights.js";
 import {
@@ -19,6 +14,7 @@ import type {
   SimbriefDispatch,
 } from "../../db/schema.js";
 import { env } from "../../env.js";
+import { createTokenMac, verifyTokenMac } from "../../lib/crypto.js";
 import { AppError } from "../../lib/errors.js";
 import { isUniqueViolation } from "../../lib/postgres.js";
 import {
@@ -26,6 +22,7 @@ import {
   SimbriefAdapter,
   SimbriefAdapterError,
 } from "../../simbrief/adapter.js";
+import { SimbriefLegacySigner } from "../../simbrief/legacy-signer.js";
 import { roleAtLeast } from "../members/roles.js";
 import type { SimbriefDispatchOptions } from "./validation.js";
 
@@ -133,7 +130,7 @@ export async function createDispatch(
   );
   const timestamp = Math.floor(Date.now() / 1000);
   const dispatchUrl = buildSimbriefDispatchUrl({
-    apiKey: config.apiKey,
+    signer: config.signer,
     outputPage,
     timestamp,
     parameters,
@@ -152,7 +149,11 @@ export async function createDispatch(
     createdByMembershipId: actor.membershipId,
     simbriefUserId: membership.simbriefUserId,
     staticId,
-    callbackTokenHash: hashCallbackToken(callbackToken),
+    callbackTokenMac: createTokenMac(
+      callbackToken,
+      config.secretsKey,
+      "simbrief-dispatch-callback",
+    ),
     request: parameters,
   });
   await writeAudit({
@@ -218,12 +219,18 @@ export async function completeDispatchCallback(
   dispatchId: string,
   callbackToken: string,
 ): Promise<SimbriefDispatch> {
+  const secretsKey = requireSecretsKey();
   const dispatch =
     await simbriefRepo.findSimbriefDispatchForCallback(dispatchId);
   if (
-    !dispatch?.callbackTokenHash ||
+    !dispatch?.callbackTokenMac ||
     Date.now() - dispatch.createdAt.getTime() > CALLBACK_MAX_AGE_MS ||
-    !callbackTokenMatches(callbackToken, dispatch.callbackTokenHash)
+    !verifyTokenMac(
+      callbackToken,
+      dispatch.callbackTokenMac,
+      secretsKey,
+      "simbrief-dispatch-callback",
+    )
   ) {
     throw new AppError("UNAUTHORIZED", "Invalid or expired SimBrief callback");
   }
@@ -372,9 +379,17 @@ function dispatchParameters(
   return parameters;
 }
 
-function requireSimbriefConfig(): { apiKey: string; callbackUrl: string } {
+function requireSimbriefConfig(): {
+  signer: SimbriefLegacySigner;
+  callbackUrl: string;
+  secretsKey: string;
+} {
   const config = env();
-  if (!config.SIMBRIEF_API_KEY || !config.SIMBRIEF_CALLBACK_URL) {
+  if (
+    !config.SIMBRIEF_API_KEY ||
+    !config.SIMBRIEF_CALLBACK_URL ||
+    !config.TENANT_SECRETS_KEY
+  ) {
     throw new AppError("INTERNAL", "SimBrief dispatch is not configured", {
       status: 503,
     });
@@ -387,7 +402,11 @@ function requireSimbriefConfig(): { apiKey: string; callbackUrl: string } {
       { status: 503 },
     );
   }
-  return { apiKey: config.SIMBRIEF_API_KEY, callbackUrl: callback.toString() };
+  return {
+    signer: new SimbriefLegacySigner(config.SIMBRIEF_API_KEY),
+    callbackUrl: callback.toString(),
+    secretsKey: config.TENANT_SECRETS_KEY,
+  };
 }
 
 function callbackUrl(
@@ -401,14 +420,14 @@ function callbackUrl(
   return url.toString();
 }
 
-function hashCallbackToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-function callbackTokenMatches(token: string, expectedHash: string): boolean {
-  const actual = Buffer.from(hashCallbackToken(token), "hex");
-  const expected = Buffer.from(expectedHash, "hex");
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
+function requireSecretsKey(): string {
+  const secretsKey = env().TENANT_SECRETS_KEY;
+  if (!secretsKey) {
+    throw new AppError("INTERNAL", "SimBrief dispatch is not configured", {
+      status: 503,
+    });
+  }
+  return secretsKey;
 }
 
 function publicSimbriefError(error: unknown): AppError {

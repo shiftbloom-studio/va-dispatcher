@@ -29,7 +29,7 @@ simbriefPublicRoutes.use("/simbrief/callback", noStorePublicCallback);
 
 const navigraphOauthCallbackSchema = z
   .object({
-    state: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    state: z.string().regex(/^v1\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/),
     code: z.string().min(1).max(4_096).optional(),
     error: z
       .string()

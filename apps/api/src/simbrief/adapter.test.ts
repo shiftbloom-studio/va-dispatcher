@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildSimbriefDispatchUrl, SimbriefAdapter } from "./adapter.js";
+import { SimbriefLegacySigner } from "./legacy-signer.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -9,8 +10,9 @@ describe("buildSimbriefDispatchUrl", () => {
   it("builds the documented signed redirect without exposing the API key", () => {
     const outputPage =
       "https://api.example.com/api/v1/simbrief/callback?dispatchId=123";
+    const signer = new SimbriefLegacySigner("secret");
     const result = buildSimbriefDispatchUrl({
-      apiKey: "secret",
+      signer,
       outputPage,
       timestamp: 1_700_000_000,
       parameters: {
@@ -31,12 +33,13 @@ describe("buildSimbriefDispatchUrl", () => {
     expect(url.searchParams.get("outputpage")).toBe(outputPage);
     expect(url.searchParams.get("timestamp")).toBe("1700000000");
     expect(result).not.toContain("secret");
+    expect(JSON.stringify(signer)).not.toContain("secret");
   });
 
   it("does not allow callers to override signing parameters", () => {
     expect(() =>
       buildSimbriefDispatchUrl({
-        apiKey: "secret",
+        signer: new SimbriefLegacySigner("secret"),
         outputPage: "https://api.example.com/callback",
         timestamp: 1_700_000_000,
         parameters: {

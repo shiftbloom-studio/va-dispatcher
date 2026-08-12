@@ -110,6 +110,7 @@ describe("SimBrief dispatch service", () => {
     resetEnvCache();
     loadEnv({
       NODE_ENV: "test",
+      TENANT_SECRETS_KEY: Buffer.alloc(32, 7).toString("base64"),
       SIMBRIEF_API_KEY: "server-secret",
       SIMBRIEF_CALLBACK_URL: "https://api.example.com/api/v1/simbrief/callback",
     });
@@ -126,7 +127,7 @@ describe("SimBrief dispatch service", () => {
         createdByMembershipId: string;
         simbriefUserId: string;
         staticId: string;
-        callbackTokenHash: string;
+        callbackTokenMac: string;
         request: Record<string, string>;
       }): Promise<SimbriefDispatch> => ({
         ...input,
@@ -164,7 +165,7 @@ describe("SimBrief dispatch service", () => {
         flightId: flight.id,
         createdByMembershipId: membership.id,
         simbriefUserId: "123456",
-        callbackTokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        callbackTokenMac: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
         request: expect.objectContaining({
           orig: "EKCH",
           dest: "KSFO",
@@ -183,6 +184,7 @@ describe("SimBrief dispatch service", () => {
       }),
     );
     const signingInput = mocks.buildDispatchUrl.mock.calls[0]?.[0];
+    expect(signingInput).not.toHaveProperty("apiKey");
     const outputPage = new URL(String(signingInput.outputPage));
     expect(outputPage.origin + outputPage.pathname).toBe(
       "https://api.example.com/api/v1/simbrief/callback",
@@ -311,7 +313,7 @@ describe("SimBrief dispatch service", () => {
       ...created.dispatch,
       status: "ready" as const,
       ofp,
-      callbackTokenHash: null,
+      callbackTokenMac: null,
       simbriefRequestId: "request_123",
       generatedAt: new Date("2026-08-12T12:01:00.000Z"),
       syncedAt: now,
@@ -333,5 +335,26 @@ describe("SimBrief dispatch service", () => {
       simbriefUserId: "123456",
       verifiedAt: now,
     });
+  });
+
+  it("rejects a leaked callback authenticator before fetching an OFP", async () => {
+    const created = await createDispatch(
+      {
+        tenantId: membership.tenantId,
+        membershipId: membership.id,
+        role: "pilot",
+      },
+      flight.id,
+      simbriefDispatchOptionsSchema.parse({}),
+    );
+    mocks.findSimbriefDispatchForCallback.mockResolvedValue(created.dispatch);
+
+    await expect(
+      completeDispatchCallback(
+        created.dispatch.id,
+        created.dispatch.callbackTokenMac!,
+      ),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(mocks.fetchFlightPlan).not.toHaveBeenCalled();
   });
 });

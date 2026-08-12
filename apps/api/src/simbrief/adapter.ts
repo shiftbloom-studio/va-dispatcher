@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import type { SimbriefLegacySigner } from "./legacy-signer.js";
 
 const DEFAULT_DISPATCH_URL = "https://www.simbrief.com/ofp/ofp.loader.api.php";
 const DEFAULT_FETCH_URL = "https://www.simbrief.com/api/xml.fetcher.php";
@@ -37,13 +37,11 @@ export class SimbriefAdapterError extends Error {
 }
 
 /**
- * Create the official SimBrief Dispatch Redirect URL without exposing the API
- * key. SimBrief currently requires this MD5 construction for `apicode`; it is
- * a compatibility signature, not a password hash or security primitive used
- * by this application.
+ * Create the official SimBrief Dispatch Redirect URL. Credential access stays
+ * inside the narrow server-side compatibility signer.
  */
 export function buildSimbriefDispatchUrl(input: {
-  apiKey: string;
+  signer: SimbriefLegacySigner;
   outputPage: string;
   timestamp: number;
   parameters: Record<string, string>;
@@ -62,16 +60,13 @@ export function buildSimbriefDispatchUrl(input: {
     throw new Error("SimBrief dispatch timestamp must be a positive integer");
   }
 
-  const apiCode = createHash("md5")
-    .update(
-      input.apiKey +
-        origin +
-        destination +
-        aircraftType +
-        input.timestamp +
-        input.outputPage,
-    )
-    .digest("hex");
+  const apiCode = input.signer.sign({
+    origin,
+    destination,
+    aircraftType,
+    timestamp: input.timestamp,
+    outputPage: input.outputPage,
+  });
 
   const url = new URL(input.dispatchUrl ?? DEFAULT_DISPATCH_URL);
   for (const [name, value] of Object.entries(input.parameters)) {

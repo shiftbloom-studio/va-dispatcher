@@ -208,9 +208,10 @@ export const flights = pgTable(
 /**
  * Short-lived server-side state for Navigraph Authorization Code + PKCE.
  *
- * The browser-visible state is stored only as a SHA-256 hash. The PKCE
- * verifier is encrypted at rest and each transaction is atomically consumed
- * before the authorization code is exchanged.
+ * Browser state is a versioned, server-authenticated token. Only its random
+ * lookup ID is stored, so a database leak cannot reconstruct a valid state.
+ * The PKCE verifier is encrypted at rest and each transaction is atomically
+ * consumed before the authorization code is exchanged.
  */
 export const navigraphOauthTransactions = pgTable(
   "navigraph_oauth_transactions",
@@ -222,7 +223,7 @@ export const navigraphOauthTransactions = pgTable(
     membershipId: uuid("membership_id")
       .notNull()
       .references(() => memberships.id, { onDelete: "cascade" }),
-    stateHash: text("state_hash").notNull(),
+    stateId: text("state_id").notNull(),
     codeVerifierEnc: text("code_verifier_enc").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
@@ -231,7 +232,7 @@ export const navigraphOauthTransactions = pgTable(
       .defaultNow(),
   },
   (t) => [
-    uniqueIndex("navigraph_oauth_transactions_state_uidx").on(t.stateHash),
+    uniqueIndex("navigraph_oauth_transactions_state_uidx").on(t.stateId),
     index("navigraph_oauth_transactions_expiry_idx").on(t.expiresAt),
     index("navigraph_oauth_transactions_member_idx").on(
       t.tenantId,
@@ -243,10 +244,10 @@ export const navigraphOauthTransactions = pgTable(
 /**
  * A server-signed SimBrief Dispatch Redirect attempt and its resulting OFP.
  *
- * The API key and callback token are never persisted. Only a SHA-256 callback
- * token hash is stored so a leaked database cannot be used to complete a
- * pending dispatch. The actor's SimBrief user ID is snapshotted because the
- * member may later disconnect or change accounts.
+ * The API key and callback token are never persisted. Only a domain-separated
+ * keyed callback authenticator is stored, so a leaked database cannot be used
+ * to complete a pending dispatch. The actor's SimBrief user ID is snapshotted
+ * because the member may later disconnect or change accounts.
  */
 export const simbriefDispatches = pgTable(
   "simbrief_dispatches",
@@ -264,7 +265,7 @@ export const simbriefDispatches = pgTable(
     ),
     simbriefUserId: text("simbrief_user_id").notNull(),
     staticId: text("static_id").notNull(),
-    callbackTokenHash: text("callback_token_hash"),
+    callbackTokenMac: text("callback_token_mac"),
     status: simbriefDispatchStatusEnum("status").notNull().default("pending"),
     request: jsonb("request")
       .$type<Record<string, string>>()

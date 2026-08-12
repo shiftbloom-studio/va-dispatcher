@@ -51,7 +51,7 @@ const dispatch: SimbriefDispatch = {
   createdByMembershipId: "10000000-0000-4000-8000-000000000001",
   simbriefUserId: "123456",
   staticId: "VAD_40000000000040008000000000000001",
-  callbackTokenHash: "hash-is-never-serialized",
+  callbackTokenMac: "mac-is-never-serialized",
   status: "pending",
   request: {
     orig: "EKCH",
@@ -135,7 +135,7 @@ describe("SimBrief routes", () => {
       expect.objectContaining({ notams: true, units: "KGS" }),
     );
     expect(body.dispatchUrl).toContain("simbrief.com");
-    expect(body.dispatch).not.toHaveProperty("callbackTokenHash");
+    expect(body.dispatch).not.toHaveProperty("callbackTokenMac");
     expect(body.dispatch.request).not.toHaveProperty("userid");
     expect(body.dispatch.request).not.toHaveProperty("pid");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
@@ -210,7 +210,7 @@ describe("SimBrief routes", () => {
   });
 
   it("completes the public OAuth callback and returns only connection metadata", async () => {
-    const state = "s".repeat(43);
+    const state = `v1.${"s".repeat(22)}.${"m".repeat(43)}`;
     const response = await app.request(
       `/simbrief/oauth/callback?state=${state}&code=authorization-code`,
     );

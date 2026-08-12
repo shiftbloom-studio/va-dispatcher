@@ -31,7 +31,7 @@ operating procedures for the actual deployment with qualified counsel.
 | `memberships`         | Clerk user ID, role, display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, status, timestamps |
 | `schedule_requests`   | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                            |
 | `flights`             | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                           |
-| OAuth transactions    | Short-lived hashed state, encrypted PKCE verifier, member/tenant link, expiry and consumption times                                                              |
+| OAuth transactions    | Short-lived random state lookup ID, encrypted PKCE verifier, member/tenant link, expiry and consumption times                                                    |
 | `simbrief_dispatches` | Flight, initiating member, SimBrief Pilot/static/request IDs, dispatch options, generated OFP, errors, timestamps                                                |
 | `acars_messages`      | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                                    |
 | `audit_events`        | Actor, action, entity identifiers, metadata, timestamp                                                                                                           |

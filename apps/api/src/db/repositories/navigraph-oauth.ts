@@ -8,7 +8,7 @@ import {
 export async function createNavigraphOauthTransaction(input: {
   tenantId: string;
   membershipId: string;
-  stateHash: string;
+  stateId: string;
   codeVerifierEnc: string;
   expiresAt: Date;
 }): Promise<NavigraphOauthTransaction> {
@@ -22,7 +22,7 @@ export async function createNavigraphOauthTransaction(input: {
 
 /** Atomically consume a live state so concurrent/replayed callbacks lose. */
 export async function consumeNavigraphOauthTransaction(
-  stateHash: string,
+  stateId: string,
   consumedAt: Date,
 ): Promise<NavigraphOauthTransaction | null> {
   const db = getDb();
@@ -31,7 +31,7 @@ export async function consumeNavigraphOauthTransaction(
     .set({ consumedAt })
     .where(
       and(
-        eq(navigraphOauthTransactions.stateHash, stateHash),
+        eq(navigraphOauthTransactions.stateId, stateId),
         isNull(navigraphOauthTransactions.consumedAt),
         gt(navigraphOauthTransactions.expiresAt, consumedAt),
       ),
