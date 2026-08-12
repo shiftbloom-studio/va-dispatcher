@@ -14,6 +14,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  postgres-contracts:
+    name: Fresh schema and PostgreSQL contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: va_dispatch_fresh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d va_dispatch_fresh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Push the canonical schema to a fresh database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/va_dispatch_fresh
+        run: pnpm db:push
+
+      - name: Verify PostgreSQL invariants
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/va_dispatch_fresh
+          TEST_CONFIRM_DATABASE: va_dispatch_fresh
+        run: pnpm --filter @va-dispatch/api test:postgres
+
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -73,4 +125,63 @@ jobs:
         with:
           name: playwright-report-node-24.15.0
           path: apps/web/playwright-report
+          retention-days: 7
+
+  integrated-e2e:
+    name: Integrated web, API, and PostgreSQL E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: va_dispatch_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d va_dispatch_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Push the canonical schema to the isolated E2E database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/va_dispatch_e2e
+        run: pnpm db:push
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @va-dispatch/web exec playwright install --with-deps chromium
+
+      - name: Run integrated pilot and dispatcher journeys
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/va_dispatch_e2e
+          E2E_CONFIRM_DATABASE: va_dispatch_e2e
+        run: pnpm test:e2e:integrated
+
+      - name: Upload failed integrated E2E artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integrated-e2e-failures-node-24.15.0
+          path: apps/web/test-results/integrated
+          if-no-files-found: ignore
           retention-days: 7

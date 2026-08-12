@@ -6,9 +6,20 @@ export const metadata: Metadata = { title: "My settings" };
 
 export default async function SettingsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ simbrief?: string | string[] }>;
 }) {
-  const { slug } = await params;
-  return <AccountSettings slug={slug} />;
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
+  return (
+    <AccountSettings
+      slug={slug}
+      simbriefRecovery={
+        query.simbrief === "navigraph-connected"
+          ? "navigraph-connected"
+          : undefined
+      }
+    />
+  );
 }

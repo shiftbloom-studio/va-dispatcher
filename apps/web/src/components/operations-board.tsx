@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
   CheckCheck,
@@ -21,6 +22,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiErrorMessage } from "@/lib/api/http";
 import {
   dispatchBoardSchema,
+  dispatchTelemetrySchema,
   membersSchema,
   type BoardFlight,
   type Member,
@@ -30,28 +32,35 @@ import { memberLabel } from "@/lib/member";
 
 const LANES = [
   {
-    status: "accepted",
+    lane: "overdue",
+    label: "Overdue",
+    description: "Past ETD; dispatch action required",
+    icon: AlertTriangle,
+    accent: "#b45309",
+  },
+  {
+    lane: "accepted",
     label: "To schedule",
     description: "Accepted by pilot; release outstanding",
     icon: PencilLine,
     accent: "var(--brand-complement)",
   },
   {
-    status: "briefed",
+    lane: "briefed",
     label: "Scheduled",
     description: "Dispatch release ready",
     icon: ClipboardCheck,
     accent: "#16834f",
   },
   {
-    status: "active",
+    lane: "active",
     label: "Active",
     description: "Currently being operated",
     icon: PlaneTakeoff,
     accent: "var(--brand)",
   },
   {
-    status: "completed",
+    lane: "completed",
     label: "Finished",
     description: "Current UTC month",
     icon: CheckCheck,
@@ -84,13 +93,15 @@ function BoardCard({
       style={
         {
           "--lane-accent":
-            flight.status === "briefed"
-              ? "#16834f"
-              : flight.status === "completed"
-                ? "#64748b"
-                : flight.status === "accepted"
-                  ? "var(--brand-complement)"
-                  : "var(--brand)",
+            flight.boardLane === "overdue"
+              ? "#b45309"
+              : flight.boardLane === "briefed"
+                ? "#16834f"
+                : flight.boardLane === "completed"
+                  ? "#64748b"
+                  : flight.boardLane === "accepted"
+                    ? "var(--brand-complement)"
+                    : "var(--brand)",
           animationDelay: `${Math.min(animationIndex, 8) * 25}ms`,
         } as React.CSSProperties
       }
@@ -185,6 +196,12 @@ export function OperationsBoard({ slug }: { slug: string }) {
     queryFn: () => api("/members", { schema: membersSchema }),
     staleTime: 60_000,
   });
+  const telemetry = useQuery({
+    queryKey: [slug, "dispatch", "telemetry"],
+    queryFn: () =>
+      api("/dispatch/telemetry", { schema: dispatchTelemetrySchema }),
+    refetchInterval: 10_000,
+  });
 
   if (board.isPending || members.isPending) {
     return <LoadingState label="Loading live operations board" />;
@@ -204,7 +221,12 @@ export function OperationsBoard({ slug }: { slug: string }) {
 
   return (
     <>
-      <KpiStrip metrics={board.data.metrics} />
+      <KpiStrip
+        metrics={board.data.metrics}
+        pilotPresence={telemetry.data?.summary ?? null}
+        pilotPresencePending={telemetry.isPending}
+        pilotPresenceError={telemetry.isError}
+      />
 
       <div className="mb-4 mt-7 flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -236,19 +258,19 @@ export function OperationsBoard({ slug }: { slug: string }) {
         </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         {LANES.map((lane) => {
           const flights = sortLane(
             board.data.flights.filter(
-              (flight) => flight.status === lane.status,
+              (flight) => flight.boardLane === lane.lane,
             ),
-            lane.status,
+            lane.lane,
           );
           const Icon = lane.icon;
           return (
             <section
-              key={lane.status}
-              aria-labelledby={`board-${lane.status}`}
+              key={lane.lane}
+              aria-labelledby={`board-${lane.lane}`}
               className="min-w-0 border-t-2 bg-[#f2f3f2]"
               style={{ borderTopColor: lane.accent }}
             >
@@ -260,7 +282,7 @@ export function OperationsBoard({ slug }: { slug: string }) {
                 />
                 <div className="min-w-0">
                   <h3
-                    id={`board-${lane.status}`}
+                    id={`board-${lane.lane}`}
                     className="font-display text-base font-black uppercase tracking-wide text-[#17213d]"
                   >
                     {lane.label}
@@ -294,16 +316,18 @@ export function OperationsBoard({ slug }: { slug: string }) {
                     <EmptyState
                       title={`No ${lane.label.toLowerCase()} flights`}
                       detail={
-                        lane.status === "completed"
+                        lane.lane === "completed"
                           ? "No flight has finished in the current UTC month."
-                          : "This operational lane is clear."
+                          : lane.lane === "overdue"
+                            ? "No accepted or scheduled flight has passed ETD inside the live window."
+                            : "This operational lane is clear."
                       }
                     />
                   </div>
                 )}
               </div>
               <div className="border border-slate-200 bg-white px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                {lane.status === "completed"
+                {lane.lane === "completed"
                   ? "Newest finished first"
                   : "Earliest ETD first"}
               </div>
@@ -311,7 +335,6 @@ export function OperationsBoard({ slug }: { slug: string }) {
           );
         })}
       </div>
-
       {selectedFlightId ? (
         <FlightPlanningDialog
           key={selectedFlightId}
@@ -321,14 +344,113 @@ export function OperationsBoard({ slug }: { slug: string }) {
           onClose={() => setSelectedFlightId(null)}
         />
       ) : null}
+      <div className="mt-4 flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <p className="flex items-center gap-2">
+          <PlaneTakeoff aria-hidden className="size-4" /> The board refreshes
+          every 10 seconds while this tab is visible and online.
+        </p>
+        <p>
+          Live window: {board.data.boardWindow.overdueLookbackHours} hours
+          overdue through {board.data.boardWindow.upcomingHorizonDays} days
+          ahead. Older records remain in{" "}
+          <Link
+            href={`/${slug}/dispatch?view=flights`}
+            className="font-semibold text-slate-700 underline underline-offset-2"
+          >
+            open flight management
+          </Link>
+          .
+        </p>
+      </div>
+
+      <section className="mt-8" aria-labelledby="live-telemetry-heading">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2
+              id="live-telemetry-heading"
+              className="font-display text-xl font-semibold text-slate-950"
+            >
+              Simulator monitoring
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Precise MSFS 2024 position and heartbeat data. Operational
+              awareness only; not a real-world safety service.
+            </p>
+          </div>
+          <Activity aria-hidden className="size-6 text-slate-500" />
+        </div>
+        {telemetry.isPending ? (
+          <LoadingState label="Loading live simulator telemetry" />
+        ) : telemetry.isError ? (
+          <ErrorState
+            message={apiErrorMessage(telemetry.error)}
+            onRetry={() => void telemetry.refetch()}
+          />
+        ) : telemetry.data.items.length ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {telemetry.data.items.map((item) => {
+              const boardFlight = board.data.flights.find(
+                (flight) => flight.id === item.flightId,
+              );
+              const member = memberMap.get(item.membershipId);
+              return (
+                <Link
+                  key={item.flightId}
+                  href={`/${slug}/dispatch/flights/${item.flightId}`}
+                  className="rounded-xl border border-slate-200 bg-white p-4 hover:border-slate-300 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-slate-950">
+                      {boardFlight?.flightNumber || "Assigned flight"}
+                    </p>
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                      <span
+                        aria-hidden
+                        className={`size-2 rounded-full ${
+                          item.presence === "online"
+                            ? "bg-emerald-500"
+                            : item.presence === "stale"
+                              ? "bg-amber-500"
+                              : "bg-slate-400"
+                        }`}
+                      />
+                      {item.presence}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {memberLabel(member)} · {item.phase.replace("_", " ")}
+                  </p>
+                  <p className="mt-3 font-mono text-xs text-slate-700">
+                    {item.latitude.toFixed(3)}, {item.longitude.toFixed(3)} ·{" "}
+                    {item.altitudeFeet.toLocaleString()} ft ·{" "}
+                    {item.groundSpeedKnots} kt
+                  </p>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            title="No simulator heartbeats"
+            detail="Assigned pilots appear here after an authenticated MSFS 2024 client reports telemetry."
+          />
+        )}
+      </section>
     </>
   );
 }
 
 function KpiStrip({
   metrics,
+  pilotPresence,
+  pilotPresencePending,
+  pilotPresenceError,
 }: {
   metrics: ReturnType<typeof dispatchBoardSchema.parse>["metrics"];
+  pilotPresence:
+    ReturnType<typeof dispatchTelemetrySchema.parse>["summary"] | null;
+  pilotPresencePending: boolean;
+  pilotPresenceError: boolean;
 }) {
   const otp = metrics.onTimePerformance;
   const progress = metrics.scheduledVsFinished;
@@ -337,7 +459,7 @@ function KpiStrip({
       aria-label="Operational KPIs"
       className="border-y border-slate-300 bg-white"
     >
-      <div className="grid snap-x snap-mandatory grid-flow-col auto-cols-[85%] divide-x divide-slate-200 overflow-x-auto md:grid-flow-row md:auto-cols-auto md:grid-cols-3 md:overflow-visible">
+      <div className="grid snap-x snap-mandatory grid-flow-col auto-cols-[85%] divide-x divide-slate-200 overflow-x-auto md:grid-flow-row md:auto-cols-auto md:grid-cols-4 md:overflow-visible">
         <Kpi
           label="Active flights"
           value={String(metrics.activeFlights.value)}
@@ -356,6 +478,26 @@ function KpiStrip({
           value={`${progress.finished} / ${progress.scheduled}`}
           supporting={`${formatRatio(progress.value)} finished · ${metrics.window.label}`}
           definition={progress.definition}
+        />
+        <Kpi
+          label="Pilots online"
+          value={
+            pilotPresencePending || pilotPresenceError || !pilotPresence
+              ? "—"
+              : String(pilotPresence.onlinePilots)
+          }
+          supporting={
+            pilotPresencePending
+              ? "Checking simulator presence…"
+              : pilotPresenceError || !pilotPresence
+                ? "Presence unavailable"
+                : `${pilotPresence.flyingPilots} airborne · ${pilotPresence.stalePilots} stale`
+          }
+          definition={
+            pilotPresence?.definition ??
+            "Distinct pilots classified from each pilot's newest trusted simulator receipt."
+          }
+          warning={pilotPresenceError}
         />
       </div>
     </section>

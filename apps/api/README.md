@@ -41,8 +41,15 @@ X-Dev-Role: admin   # pilot | dispatcher | admin
 ## Bootstrap vSAS
 
 1. Create Clerk Organization for vSAS; copy org id → `VSAS_CLERK_ORG_ID`.
-2. Set `DATABASE_URL` (Neon) and run `pnpm db:push` from repo root.
-3. Seed:
+2. Create an empty database, set `DATABASE_URL`, and run `pnpm db:push` from the
+   exact release commit. This pre-production Shiftbloom project recreates its
+   database when the canonical schema changes.
+3. In production, sign in as a verified administrator of the configured Clerk
+   organization. The audited first-login and no-active-admin recovery path
+   creates the initial local tenant, membership, and administrator without a
+   secret seed request.
+
+For a disposable local database only, the non-production convenience route is:
 
 ```bash
 curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
@@ -51,18 +58,54 @@ curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
   -d '{"clerkOrgId":"org_...","adminClerkUserId":"user_..."}'
 ```
 
+`/internal/seed/vsas` returns `404` in production regardless of
+`CRON_SECRET`. It is not a production provisioning or recovery mechanism.
+
 ## Core endpoints
 
 - Schedule: `POST/GET /schedule-requests`, `…/cancel|review|reject`
 - Flights: `POST /flights`, `POST /flights/bulk`, `…/accept|decline|cancel|offer|status`
 - Dispatch: `GET /dispatch/board`, `GET /dispatch/inbox`
+- Telemetry: `POST /telemetry/ingest`, `GET /dispatch/telemetry`, `GET /flights/:id/telemetry`
 - Profile: `PATCH /me` (display name and own ACARS callsign)
 - ACARS: `GET/POST /acars/messages`
 - Development fixture: `POST /acars/simulate` (non-production mock adapter only)
 - ACARS config: `PUT/DELETE /tenant/acars-config`, `POST /tenant/acars-config/test` (admin)
 - SimBrief connection: `GET/PUT/DELETE /simbrief/connection`, `POST /simbrief/oauth/start`
 - SimBrief flight plans: `POST /flights/:id/simbrief/dispatches`, `GET /flights/:id/simbrief`
-- Cron: `POST /internal/cron/acars-poll` (Bearer `CRON_SECRET`)
+- Cron: `GET|POST /internal/cron/acars-poll` (Bearer `CRON_SECRET`)
+- Privacy lifecycle: `GET|POST /internal/cron/privacy-lifecycle` (Bearer
+  `CRON_SECRET`; bounded dry-run/execution checkpoints)
+
+## Live operations board
+
+`GET /dispatch/board` is a deliberately bounded working view, not an archive.
+At one trusted server generation time it includes:
+
+- accepted and briefed flights from 24 hours before generation through seven
+  days after generation;
+- a separate `overdue` lane for accepted or briefed flights whose ETD has
+  passed;
+- every active flight, regardless of ETD; and
+- completed flights from the current UTC month in the `completed` lane.
+
+Offered flights stay in Flight Management until the pilot accepts them.
+
+Accepted and briefed flights more than 24 hours overdue or beyond the seven-day
+horizon leave the live board, but remain available through flight management
+and the tenant-scoped direct detail endpoint. The response exposes the exact
+`boardWindow` and a server-classified `boardLane` for every returned flight so
+lane counts and empty states describe the same query.
+
+The dispatcher `GET /dispatch/telemetry` response reports distinct pilot
+presence from each pilot's newest authenticated server receipt. `onlinePilots`
+means a receipt within 30 seconds; `flyingPilots` is the online subset whose
+newest phase is `airborne`; `stalePilots` means the newest receipt is older than
+30 seconds but no older than two minutes. These are live-presence counts, not a
+count of active membership records. Disconnected or revoked devices and stale
+assignment ownership are excluded by the telemetry repository joins.
+If two newest samples share an exact receipt timestamp, an airborne sample
+wins the flying tie-breaker so the summary is deterministic.
 
 ## SimBrief flight plans
 
@@ -91,6 +134,7 @@ Once Navigraph issues the credentials, configure these backend-only values:
 NAVIGRAPH_CLIENT_ID=...
 NAVIGRAPH_CLIENT_SECRET=...
 NAVIGRAPH_REDIRECT_URI=https://www.va-dispatcher.world/api/v1/simbrief/oauth/callback
+APP_ORIGIN=https://www.va-dispatcher.world
 ```
 
 `TENANT_SECRETS_KEY` must also be configured. It encrypts each short-lived PKCE
@@ -131,9 +175,9 @@ Before enabling the integration:
    deployment.
 3. Set `SIMBRIEF_CALLBACK_URL` to the separate flight-plan completion callback,
    `https://www.va-dispatcher.world/api/v1/simbrief/callback` in production.
-4. Apply the updated database schema with `pnpm db:push`.
+4. Apply the canonical schema to a new empty database with `pnpm db:push`.
 
-The authenticated API flow is:
+Members connect a numeric Pilot ID separately from optional Navigraph OAuth:
 
 ```http
 PUT /api/v1/simbrief/connection
@@ -145,6 +189,9 @@ Content-Type: application/json
 `userId` is the numeric SimBrief Pilot ID, not the username. The connection is
 marked verified only after SimBrief returns a matching OFP for a dispatch the
 member authenticated in the SimBrief window.
+
+The dispatcher then stores a canonical preparation without contacting
+SimBrief:
 
 ```http
 POST /api/v1/flights/{flightId}/simbrief/dispatches
@@ -158,18 +205,35 @@ Content-Type: application/json
 }
 ```
 
-The response contains a `dispatchUrl`. A future UI should open it in a new
-browser window immediately. The assigned pilot may create a plan for their own
-flight; dispatchers and admins may create one for any flight in their tenant.
-The person opening the URL must be signed into the same SimBrief Pilot ID they
-connected to this API.
+The server derives the preparing dispatcher name from the active authenticated
+membership, keeps remarks separate, snapshots the flight assignment and
+material route/schedule/aircraft fields, and atomically advances a per-flight
+revision head with the preparation audit. This operation has no provider side
+effect and returns a `prepared` revision, not a generation URL.
+
+Only the assigned active pilot can launch the canonical newest revision:
+
+```http
+POST /api/v1/flights/{flightId}/simbrief/dispatches/{dispatchId}/generate
+```
+
+That atomic transition rechecks pilot ownership, account linkage, the material
+flight snapshot, and the revision head. Obsolete or stale revisions return
+`409 CONFLICT`. A successful response contains `dispatchUrl`; the pilot opens
+it in the existing flight workspace and authenticates directly with SimBrief.
+The callback lifetime is fixed at two hours from this transition. Sync errors
+may update diagnostic timestamps but cannot extend that expiry.
 
 After generation, SimBrief redirects to the one-time callback. That callback
 fetches the OFP by the generated `static_id`, verifies its SimBrief user ID and
-origin/destination, stores it, and consumes the callback token. Consumers can
-read the latest state and full JSON OFP with:
+origin/destination, and atomically stores the ready OFP, consumes the callback
+MAC, verifies the pilot link, and records the ready audit. Preparation,
+generation, and ready-state audits roll back with their associated mutations
+if audit insertion fails. Consumers can read newest-first immutable revision
+history or the latest state and full JSON OFP with:
 
 ```http
+GET /api/v1/flights/{flightId}/simbrief/dispatches
 GET /api/v1/flights/{flightId}/simbrief
 ```
 
@@ -180,9 +244,16 @@ can retry the fetch idempotently:
 POST /api/v1/flights/{flightId}/simbrief/dispatches/{dispatchId}/sync
 ```
 
-SimBrief's JSON can include `plan_html`. Treat it as untrusted third-party HTML
-and sanitize it before any future UI renders it. The API returns operational
-JSON only and does not add a SimBrief UI in this change.
+The web flight workspace shows callback recovery, revision attribution and
+remarks, synchronization errors, and the imported OFP as escaped JSON. SimBrief
+can include `plan_html`; it remains untrusted third-party HTML and must be
+sanitized before any future rich rendering.
+
+Audit-integrity boundary: the dispatch lifecycle mutations above are atomic
+with their audit evidence. Manual SimBrief account connect/disconnect and
+Navigraph account-link mutations still update membership state before writing
+their audit row; do not describe account-link auditing as transactionally
+atomic until that separate repository boundary is implemented.
 
 ## ACARS
 
@@ -211,5 +282,5 @@ Registration is self-service and does not need separate API approval:
 pnpm dev          # watch mode :3001
 pnpm test
 pnpm typecheck
-pnpm db:push
+DATABASE_URL='postgresql://...' pnpm db:push
 ```

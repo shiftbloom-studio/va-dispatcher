@@ -152,12 +152,12 @@ No validation has run against these uncommitted changes.
    rg -n "stateHash|state_hash|callbackTokenHash|callback_token_hash" apps/api
    ```
 
-4. **The schema rename has no generated migration.**
-   This feature has not been merged, so first determine the repository's
-   intended schema workflow. Do not assume a production database can be
-   changed destructively.
+4. **Use a fresh canonical schema.**
+   SimBrief/Navigraph is part of `apps/api/src/db/schema.ts`. This Shiftbloom
+   project is pre-production: create an empty database and run `pnpm db:push`
+   from the release commit. Never run it against data that must be preserved.
 
-5. **The new legacy signer has not been evaluated by CodeQL.**
+5. **The signer has not been evaluated by CodeQL.**
    Local tests can prove output compatibility, but only a pushed CodeQL run
    will show whether the credential data flow is accepted. The expected
    compatibility vector remains:

@@ -44,7 +44,17 @@ describe("ACARS compose", () => {
       if (path === "/acars/messages" && options.method === "POST") {
         attempts += 1;
         return attempts === 1
-          ? Promise.reject(new Error("Provider unavailable"))
+          ? Promise.resolve({
+              message: {
+                id: "m0",
+                direction: "outbound",
+                fromStation: "VSAS",
+                toStation: "SAS101",
+                body: "HELLO",
+                provider: "hoppie",
+                deliveryStatus: "ambiguous",
+              },
+            })
           : Promise.resolve({
               message: {
                 id: "m1",
@@ -53,6 +63,7 @@ describe("ACARS compose", () => {
                 toStation: "SAS101",
                 body: "HELLO",
                 provider: "hoppie",
+                deliveryStatus: "accepted",
               },
             });
       }
@@ -60,7 +71,7 @@ describe("ACARS compose", () => {
     });
   });
 
-  it("retains a failed draft and retries only after a manual action", async () => {
+  it("retains an ambiguous draft and prevents a blind resend", async () => {
     const user = userEvent.setup();
     render(
       <TestQueryProvider>
@@ -73,14 +84,18 @@ describe("ACARS compose", () => {
     await user.click(screen.getByRole("button", { name: "Send telex" }));
 
     expect(
-      await screen.findByRole("button", { name: "Retry send" }),
+      await screen.findByText(/provider outcome is unknown/i),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Check inbox before resending" }),
+    ).toBeDisabled();
     expect(screen.getByLabelText("Message")).toHaveValue("HELLO FROM OPS");
     expect(
       apiMock.mock.calls.filter(([path]) => path === "/acars/messages"),
     ).toHaveLength(1);
 
-    await user.click(screen.getByRole("button", { name: "Retry send" }));
+    await user.type(screen.getByLabelText("Message"), " UPDATED");
+    await user.click(screen.getByRole("button", { name: "Send telex" }));
     await waitFor(() =>
       expect(screen.getByLabelText("Message")).toHaveValue(""),
     );
@@ -232,6 +247,7 @@ describe("ACARS compose", () => {
             {
               id: "flight-1",
               scheduleRequestId: null,
+              replacesFlightId: null,
               pilotMembershipId: "pilot-1",
               flightNumber: "SK123",
               depIcao: "EKCH",
@@ -239,6 +255,7 @@ describe("ACARS compose", () => {
               etd: "2026-08-12T12:00:00.000Z",
               eta: "2026-08-12T13:00:00.000Z",
               aircraftType: "A320",
+              version: 1,
               status: "offered",
               cancelReason: null,
               declinedReason: null,

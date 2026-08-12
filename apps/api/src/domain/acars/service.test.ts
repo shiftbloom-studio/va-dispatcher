@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   sendTelex: vi.fn(),
   poll: vi.fn(),
   insertAcarsMessage: vi.fn(),
+  updateAcarsDelivery: vi.fn(),
   findAcarsMessage: vi.fn(),
   listAcarsMessages: vi.fn(),
   enqueueMockAcars: vi.fn(),
@@ -14,6 +15,11 @@ const mocks = vi.hoisted(() => ({
   listHoppieTenants: vi.fn(),
   findFlight: vi.fn(),
   providerFactoryError: null as Error | null,
+  assertOptionalProcessingAllowed: vi.fn(),
+}));
+
+vi.mock("../privacy/service.js", () => ({
+  assertOptionalProcessingAllowed: mocks.assertOptionalProcessingAllowed,
 }));
 
 vi.mock("../../acars/factory.js", () => ({
@@ -29,6 +35,7 @@ vi.mock("../../acars/factory.js", () => ({
 }));
 vi.mock("../../db/repositories/acars.js", () => ({
   insertAcarsMessage: mocks.insertAcarsMessage,
+  updateAcarsDelivery: mocks.updateAcarsDelivery,
   findAcarsMessage: mocks.findAcarsMessage,
   listAcarsMessages: mocks.listAcarsMessages,
   enqueueMockAcars: mocks.enqueueMockAcars,
@@ -66,8 +73,17 @@ describe("ACARS service outbound delivery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.providerFactoryError = null;
+    mocks.assertOptionalProcessingAllowed.mockResolvedValue(undefined);
     mocks.findTenantById.mockResolvedValue(tenant);
     mocks.findFlight.mockResolvedValue({ id: "flight_test" });
+    mocks.insertAcarsMessage.mockImplementation(async (input) => ({
+      id: "message_test",
+      ...input,
+    }));
+    mocks.updateAcarsDelivery.mockImplementation(async (input) => ({
+      id: input.id,
+      deliveryStatus: input.status,
+    }));
   });
 
   it("fails safely before sending when Hoppie is not configured", async () => {
@@ -106,7 +122,7 @@ describe("ACARS service outbound delivery", () => {
     expect(mocks.enqueueMockAcars).not.toHaveBeenCalled();
   });
 
-  it("does not store an outbound record when Hoppie rejects it", async () => {
+  it("records a rejected outbound result without asking the client to guess", async () => {
     mocks.sendTelex.mockRejectedValue(
       new AcarsProviderError(
         "authentication",
@@ -121,21 +137,21 @@ describe("ACARS service outbound delivery", () => {
         to: "SAS123",
         body: "GATE 12",
       }),
-    ).rejects.toMatchObject({
-      code: "UPSTREAM",
-      status: 502,
-      details: { provider: "hoppie", reason: "authentication" },
+    ).resolves.toMatchObject({
+      id: "message_test",
+      deliveryStatus: "rejected",
     });
-    expect(mocks.insertAcarsMessage).not.toHaveBeenCalled();
-    expect(mocks.writeAudit).not.toHaveBeenCalled();
+    expect(mocks.insertAcarsMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryStatus: "pending" }),
+    );
+    expect(mocks.updateAcarsDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "rejected" }),
+    );
+    expect(mocks.writeAudit).toHaveBeenCalledOnce();
   });
 
-  it("stores the message only after provider acceptance", async () => {
+  it("stores pending before provider I/O and then records acceptance", async () => {
     mocks.sendTelex.mockResolvedValue({ ok: true, raw: "ok" });
-    mocks.insertAcarsMessage.mockImplementation(async (input) => ({
-      id: "message_test",
-      ...input,
-    }));
 
     const result = await sendTelex({
       tenantId: tenant.id,
@@ -145,15 +161,40 @@ describe("ACARS service outbound delivery", () => {
     });
 
     expect(result.id).toBe("message_test");
+    expect(mocks.insertAcarsMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.sendTelex.mock.invocationCallOrder[0]!,
+    );
     expect(mocks.insertAcarsMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         fromStation: "SAS",
         toStation: "SAS123",
         provider: "hoppie",
-        hoppieRaw: "ok",
+        deliveryStatus: "pending",
       }),
     );
+    expect(mocks.updateAcarsDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "accepted", hoppieRaw: "ok" }),
+    );
     expect(mocks.writeAudit).toHaveBeenCalledOnce();
+  });
+
+  it("records a timeout as ambiguous and never retries automatically", async () => {
+    mocks.sendTelex.mockRejectedValue(
+      new AcarsProviderError("timeout", "Hoppie timed out"),
+    );
+
+    await expect(
+      sendTelex({
+        tenantId: tenant.id,
+        membershipId: "membership_test",
+        to: "SAS123",
+        body: "GATE 12",
+      }),
+    ).resolves.toMatchObject({ deliveryStatus: "ambiguous" });
+    expect(mocks.sendTelex).toHaveBeenCalledOnce();
+    expect(mocks.updateAcarsDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "ambiguous" }),
+    );
   });
 
   it("rejects an unknown or cross-tenant flight before contacting Hoppie", async () => {

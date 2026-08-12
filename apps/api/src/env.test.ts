@@ -9,18 +9,13 @@ const productionEnvironment = {
   CRON_SECRET: "production-cron-secret",
 } as const;
 
-afterEach(() => {
-  resetEnvCache();
-});
+afterEach(() => resetEnvCache());
 
-describe("production environment validation", () => {
-  it("requires the credentials used by authenticated and internal routes", () => {
+describe("runtime environment validation", () => {
+  it("requires production credentials and a non-default cron secret", () => {
     expect(() => loadEnv({ NODE_ENV: "production" })).toThrow(
       /DATABASE_URL, CLERK_SECRET_KEY, TENANT_SECRETS_KEY/,
     );
-  });
-
-  it("rejects the checked-in cron secret", () => {
     expect(() =>
       loadEnv({
         ...productionEnvironment,
@@ -29,10 +24,42 @@ describe("production environment validation", () => {
     ).toThrow(/CRON_SECRET must not use the development default/);
   });
 
-  it("accepts an explicitly configured production environment", () => {
-    expect(loadEnv(productionEnvironment)).toMatchObject({
-      NODE_ENV: "production",
-      CRON_SECRET: "production-cron-secret",
-    });
+  it("forbids every authentication fixture mode in production", () => {
+    expect(() =>
+      loadEnv({ ...productionEnvironment, AUTH_DEV_BYPASS: "true" }),
+    ).toThrow(/AUTH_DEV_BYPASS is forbidden/);
+    expect(() =>
+      loadEnv({
+        ...productionEnvironment,
+        AUTH_DEV_BYPASS: "true",
+        E2E_FIXTURE_MODE: "true",
+        E2E_FIXTURE_SECRET: "fixture-secret-that-is-at-least-32-characters",
+        E2E_CONFIRM_DATABASE: "va_dispatch_e2e",
+      }),
+    ).toThrow(/E2E fixture mode is forbidden/);
+  });
+
+  it("requires explicit authority and database confirmation for E2E mode", () => {
+    expect(() =>
+      loadEnv({
+        NODE_ENV: "test",
+        AUTH_DEV_BYPASS: "true",
+        E2E_FIXTURE_MODE: "true",
+      }),
+    ).toThrow(/E2E_FIXTURE_SECRET, E2E_CONFIRM_DATABASE/);
+  });
+
+  it("accepts complete production and isolated E2E environments", () => {
+    expect(loadEnv(productionEnvironment).NODE_ENV).toBe("production");
+    resetEnvCache();
+    expect(
+      loadEnv({
+        NODE_ENV: "test",
+        AUTH_DEV_BYPASS: "true",
+        E2E_FIXTURE_MODE: "true",
+        E2E_FIXTURE_SECRET: "fixture-secret-that-is-at-least-32-characters",
+        E2E_CONFIRM_DATABASE: "va_dispatch_e2e",
+      }),
+    ).toMatchObject({ E2E_FIXTURE_MODE: true, AUTH_DEV_BYPASS: true });
   });
 });

@@ -1,13 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { writeAudit } from "../../db/repositories/audit.js";
+import { findLatestDispatchRelease } from "../../db/repositories/dispatch-releases.js";
 import { findFlight } from "../../db/repositories/flights.js";
 import {
   findMembershipById,
-  markSimbriefVerified,
   updateMembership,
 } from "../../db/repositories/memberships.js";
 import * as simbriefRepo from "../../db/repositories/simbrief.js";
 import type {
+  DispatchRelease,
   Flight,
   MemberRole,
   Membership,
@@ -24,7 +25,8 @@ import {
 } from "../../simbrief/adapter.js";
 import { SimbriefLegacySigner } from "../../simbrief/legacy-signer.js";
 import { roleAtLeast } from "../members/roles.js";
-import type { SimbriefDispatchOptions } from "./validation.js";
+import { assertOptionalProcessingAllowed } from "../privacy/service.js";
+import type { PrepareSimbriefDispatchInput } from "./validation.js";
 
 const CALLBACK_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const MAX_DISPATCH_URL_LENGTH = 8_192;
@@ -43,6 +45,11 @@ export async function connectAccount(
   actor: SimbriefActor,
   simbriefUserId: string,
 ): Promise<Membership> {
+  await assertOptionalProcessingAllowed({
+    tenantId: actor.tenantId,
+    membershipId: actor.membershipId,
+    purpose: "simbrief_navigraph",
+  });
   const current = await requireMembership(actor.tenantId, actor.membershipId);
   let updated: Membership | null;
   try {
@@ -100,34 +107,128 @@ export async function disconnectAccount(
   return updated;
 }
 
-export async function createDispatch(
+export async function prepareDispatch(
   actor: SimbriefActor,
   flightId: string,
-  options: SimbriefDispatchOptions,
-): Promise<{ dispatch: SimbriefDispatch; dispatchUrl: string }> {
-  const [flight, membership] = await Promise.all([
+  input: PrepareSimbriefDispatchInput,
+): Promise<SimbriefDispatch> {
+  if (!roleAtLeast(actor.role, "dispatcher")) {
+    throw new AppError("FORBIDDEN", "Dispatchers only");
+  }
+  const [flight, release] = await Promise.all([
     requireAccessibleFlight(actor, flightId),
-    requireMembership(actor.tenantId, actor.membershipId),
+    findLatestDispatchRelease(actor.tenantId, flightId),
+  ]);
+  await Promise.all([
+    assertOptionalProcessingAllowed({
+      tenantId: actor.tenantId,
+      membershipId: actor.membershipId,
+      purpose: "simbrief_navigraph",
+    }),
+    flight.pilotMembershipId && flight.pilotMembershipId !== actor.membershipId
+      ? assertOptionalProcessingAllowed({
+          tenantId: actor.tenantId,
+          membershipId: flight.pilotMembershipId,
+          purpose: "simbrief_navigraph",
+        })
+      : Promise.resolve(),
   ]);
   assertDispatchableFlight(flight);
+  if (!flight.pilotMembershipId) {
+    throw new AppError(
+      "UNPROCESSABLE",
+      "Assign a pilot before preparing a SimBrief flight plan",
+    );
+  }
+  if (!release) {
+    throw new AppError(
+      "CONFLICT",
+      "Publish a dispatch release before preparing a SimBrief flight plan",
+    );
+  }
+  if (
+    flight.version !== input.expectedFlightVersion ||
+    flight.assignmentRevision !== input.expectedAssignmentRevision ||
+    release.id !== input.releaseId ||
+    release.revision !== input.releaseRevision
+  ) {
+    throw new AppError(
+      "CONFLICT",
+      "The flight or dispatch release changed. Reload before preparing SimBrief.",
+    );
+  }
+  const id = randomUUID();
+  const staticId = `VAD_${id.replaceAll("-", "")}`;
+  const parameters = dispatchParameters(flight, release, staticId);
+
+  const preparedAt = new Date();
+  const dispatch = await simbriefRepo.createSimbriefDispatchAtomic({
+    id,
+    tenantId: actor.tenantId,
+    flightId: flight.id,
+    createdByMembershipId: actor.membershipId,
+    staticId,
+    request: parameters,
+    expectedFlightVersion: input.expectedFlightVersion,
+    expectedAssignmentRevision: input.expectedAssignmentRevision,
+    releaseId: input.releaseId,
+    releaseRevision: input.releaseRevision,
+    preparedAt,
+  });
+  if (!dispatch) {
+    throw new AppError(
+      "CONFLICT",
+      "The flight changed while this planning revision was being prepared. Reload and prepare it again.",
+    );
+  }
+  return dispatch;
+}
+
+export async function generateDispatch(
+  actor: SimbriefActor,
+  flightId: string,
+  dispatchId: string,
+): Promise<{ dispatch: SimbriefDispatch; dispatchUrl: string }> {
+  const [flight, membership, prepared] = await Promise.all([
+    requireAccessibleFlight(actor, flightId),
+    requireMembership(actor.tenantId, actor.membershipId),
+    simbriefRepo.findSimbriefDispatch(actor.tenantId, flightId, dispatchId),
+  ]);
+  assertDispatchableFlight(flight);
+  if (flight.pilotMembershipId !== actor.membershipId) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Only the assigned pilot can generate this plan in SimBrief",
+    );
+  }
+  if (!prepared) {
+    throw new AppError("NOT_FOUND", "SimBrief preparation not found");
+  }
+  if (prepared.status !== "prepared") {
+    throw new AppError(
+      "CONFLICT",
+      "This SimBrief preparation has already been launched",
+    );
+  }
   if (!membership.simbriefUserId) {
     throw new AppError(
       "UNPROCESSABLE",
-      "Connect your numeric SimBrief Pilot ID before creating a flight plan",
+      "Connect your numeric SimBrief Pilot ID before generating a flight plan",
     );
   }
 
   const config = requireSimbriefConfig();
-  const id = randomUUID();
-  const staticId = `VAD_${id.replaceAll("-", "")}`;
   const callbackToken = randomBytes(32).toString("base64url");
-  const outputPage = callbackUrl(config.callbackUrl, id, callbackToken);
-  const parameters = dispatchParameters(
-    flight,
-    membership.simbriefUserId,
-    staticId,
-    options,
+  const outputPage = callbackUrl(
+    config.callbackUrl,
+    prepared.id,
+    callbackToken,
   );
+  const parameters = {
+    ...prepared.request,
+    userid: membership.simbriefUserId,
+    pid: membership.simbriefUserId,
+  };
   const timestamp = Math.floor(Date.now() / 1000);
   const dispatchUrl = buildSimbriefDispatchUrl({
     signer: config.signer,
@@ -142,33 +243,64 @@ export async function createDispatch(
     );
   }
 
-  const dispatch = await simbriefRepo.createSimbriefDispatch({
-    id,
+  const startedAt = new Date();
+  const start = await simbriefRepo.startSimbriefDispatchAtomic({
+    id: prepared.id,
     tenantId: actor.tenantId,
-    flightId: flight.id,
-    createdByMembershipId: actor.membershipId,
+    flightId,
+    generatedByMembershipId: actor.membershipId,
     simbriefUserId: membership.simbriefUserId,
-    staticId,
     callbackTokenMac: createTokenMac(
       callbackToken,
       config.secretsKey,
       "simbrief-dispatch-callback",
     ),
-    request: parameters,
+    callbackExpiresAt: new Date(startedAt.getTime() + CALLBACK_MAX_AGE_MS),
+    startedAt,
   });
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
-    action: "simbrief.dispatch_create",
-    entityType: "simbrief_dispatch",
-    entityId: dispatch.id,
-    meta: {
-      flightId: flight.id,
-      staticId,
-      generatedForOwnFlight: flight.pilotMembershipId === actor.membershipId,
-    },
-  });
-  return { dispatch, dispatchUrl };
+  if (start.status === "superseded") {
+    throw new AppError(
+      "CONFLICT",
+      "A newer SimBrief planning revision is available. Reload before generating.",
+      { details: { latestDispatchId: start.latestId } },
+    );
+  }
+  if (start.status === "stale") {
+    throw new AppError(
+      "CONFLICT",
+      "The flight assignment or material planning details changed. Dispatch must prepare a new revision.",
+      { details: { latestDispatchId: start.latestId } },
+    );
+  }
+  if (start.status === "unavailable" || !start.dispatch) {
+    throw new AppError(
+      "CONFLICT",
+      "This SimBrief preparation was launched from another session",
+    );
+  }
+  return { dispatch: start.dispatch, dispatchUrl };
+}
+
+export async function listDispatches(
+  actor: SimbriefActor,
+  flightId: string,
+): Promise<{
+  items: SimbriefDispatch[];
+  currentDispatchId: string | null;
+}> {
+  const flight = await requireAccessibleFlight(actor, flightId);
+  const [items, release] = await Promise.all([
+    simbriefRepo.listSimbriefDispatches(actor.tenantId, flightId),
+    findLatestDispatchRelease(actor.tenantId, flightId),
+  ]);
+  const latest = items[0];
+  return {
+    items,
+    currentDispatchId:
+      latest && dispatchMatchesCurrentPlanning(latest, flight, release)
+        ? latest.id
+        : null,
+  };
 }
 
 export async function getLatestDispatch(
@@ -224,7 +356,8 @@ export async function completeDispatchCallback(
     await simbriefRepo.findSimbriefDispatchForCallback(dispatchId);
   if (
     !dispatch?.callbackTokenMac ||
-    Date.now() - dispatch.createdAt.getTime() > CALLBACK_MAX_AGE_MS ||
+    !dispatch.callbackExpiresAt ||
+    Date.now() >= dispatch.callbackExpiresAt.getTime() ||
     !verifyTokenMac(
       callbackToken,
       dispatch.callbackTokenMac,
@@ -241,6 +374,16 @@ async function syncStoredDispatch(
   dispatch: SimbriefDispatch,
 ): Promise<SimbriefDispatch> {
   if (dispatch.status === "ready" && dispatch.ofp) return dispatch;
+  if (
+    dispatch.status !== "pending" ||
+    !dispatch.simbriefUserId ||
+    !dispatch.staticId
+  ) {
+    throw new AppError(
+      "CONFLICT",
+      "Generate this prepared plan in SimBrief before synchronizing it",
+    );
+  }
 
   const adapter = new SimbriefAdapter();
   let result: Awaited<ReturnType<SimbriefAdapter["fetchFlightPlan"]>>;
@@ -261,8 +404,11 @@ async function syncStoredDispatch(
   }
 
   const syncedAt = new Date();
-  const completed = await simbriefRepo.completeSimbriefDispatch({
+  const completed = await simbriefRepo.completeSimbriefDispatchAtomic({
     id: dispatch.id,
+    tenantId: dispatch.tenantId,
+    flightId: dispatch.flightId,
+    simbriefUserId: dispatch.simbriefUserId,
     ofp: result.ofp,
     simbriefRequestId: result.requestId,
     generatedAt: result.generatedAt,
@@ -276,35 +422,15 @@ async function syncStoredDispatch(
     throw new AppError("NOT_FOUND", "SimBrief dispatch not found");
   }
 
-  if (dispatch.createdByMembershipId) {
-    await markSimbriefVerified({
-      tenantId: dispatch.tenantId,
-      membershipId: dispatch.createdByMembershipId,
-      simbriefUserId: dispatch.simbriefUserId,
-      verifiedAt: syncedAt,
-    });
-  }
-  await writeAudit({
-    tenantId: dispatch.tenantId,
-    actorMembershipId: dispatch.createdByMembershipId,
-    action: "simbrief.dispatch_ready",
-    entityType: "simbrief_dispatch",
-    entityId: dispatch.id,
-    meta: {
-      flightId: dispatch.flightId,
-      simbriefRequestId: result.requestId,
-    },
-  });
   return completed;
 }
 
 function dispatchParameters(
   flight: Flight,
-  simbriefUserId: string,
+  release: DispatchRelease,
   staticId: string,
-  options: SimbriefDispatchOptions,
 ): Record<string, string> {
-  const aircraftType = options.aircraftType ?? flight.aircraftType;
+  const aircraftType = flight.aircraftType;
   if (!aircraftType) {
     throw new AppError(
       "UNPROCESSABLE",
@@ -330,52 +456,30 @@ function dispatchParameters(
   const durationMinutes = Math.round(
     (flight.eta.getTime() - flight.etd.getTime()) / 60_000,
   );
+  const route = [release.sid, release.operationalRoute, release.star]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join(" ");
   const parameters: Record<string, string> = {
     orig: flight.depIcao.toUpperCase(),
     dest: flight.arrIcao.toUpperCase(),
     type: normalizedAircraftType,
-    fltnum: options.flightNumber ?? flight.flightNumber,
+    fltnum: flight.flightNumber,
     date: simbriefDate(flight.etd),
     deph: twoDigits(flight.etd.getUTCHours()),
     depm: twoDigits(flight.etd.getUTCMinutes()),
     steh: String(Math.floor(durationMinutes / 60)),
     stem: twoDigits(durationMinutes % 60),
-    userid: simbriefUserId,
-    pid: simbriefUserId,
     static_id: staticId,
-    units: options.units,
+    units: release.fuelUnit === "kg" ? "KGS" : "LBS",
+    route,
+    altn: release.alternateIcao,
+    fl: String(release.cruiseLevel),
+    navlog: "1",
+    notams: "1",
   };
 
-  setOptional(parameters, "airline", options.airline);
-  setOptional(parameters, "callsign", options.callsign);
-  setOptional(parameters, "route", options.route);
-  setOptional(parameters, "altn", options.alternate);
-  setOptional(parameters, "fl", options.flightLevel);
-  setOptional(parameters, "reg", options.registration);
-  setOptional(parameters, "pax", options.passengers);
-  setOptional(parameters, "cargo", options.cargo);
-  setOptional(parameters, "cpt", options.captainName);
-  setOptional(parameters, "dxname", options.dispatcherName);
-  setOptional(parameters, "manualrmk", options.customRemarks);
-  setOptional(parameters, "planformat", options.planFormat);
-  setOptional(parameters, "taxiout", options.taxiOutMinutes);
-  setOptional(parameters, "taxiin", options.taxiInMinutes);
-  setOptional(parameters, "resvrule", options.reserveMinutes);
-  if (options.costIndex !== undefined) {
-    parameters.cruise = "CI";
-    parameters.civalue = String(options.costIndex);
-  }
-
-  setBoolean(parameters, "navlog", options.navlog);
-  setBoolean(parameters, "etops", options.etops);
-  setBoolean(parameters, "stepclimbs", options.stepClimbs);
-  setBoolean(parameters, "tlr", options.runwayAnalysis);
-  setBoolean(parameters, "notams", options.notams);
-  setBoolean(parameters, "firnot", options.firNotams);
-  setBoolean(parameters, "omit_sids", options.omitSids);
-  setBoolean(parameters, "omit_stars", options.omitStars);
-  setOptional(parameters, "maps", options.maps);
-  setOptional(parameters, "find_sidstar", options.sidStarPreference);
+  if (!release.sid && !release.star) parameters.find_sidstar = "1";
+  setOptional(parameters, "manualrmk", release.dispatcherRemarks ?? undefined);
   return parameters;
 }
 
@@ -486,20 +590,54 @@ function assertDispatchableFlight(flight: Flight): void {
   }
 }
 
+/**
+ * Compares only the inputs that can change the resulting flight plan.
+ * `flight.version` remains the preparation CAS, but notes-only edits may also
+ * advance it and therefore do not invalidate an already captured plan.
+ */
+function dispatchMatchesCurrentPlanning(
+  dispatch: SimbriefDispatch,
+  flight: Flight,
+  release: DispatchRelease | null,
+): boolean {
+  if (
+    !release ||
+    !flight.pilotMembershipId ||
+    !["accepted", "briefed"].includes(flight.status)
+  ) {
+    return false;
+  }
+
+  const snapshot = dispatch.flightSnapshot;
+  return (
+    snapshot.assignmentRevision === flight.assignmentRevision &&
+    snapshot.dispatchReleaseId === release.id &&
+    snapshot.dispatchReleaseRevision === release.revision &&
+    snapshot.pilotMembershipId === flight.pilotMembershipId &&
+    snapshot.flightNumber === flight.flightNumber &&
+    snapshot.depIcao === flight.depIcao &&
+    snapshot.arrIcao === flight.arrIcao &&
+    snapshotDateMatches(snapshot.etd, flight.etd) &&
+    snapshotDateMatches(snapshot.eta, flight.eta) &&
+    snapshot.aircraftType === flight.aircraftType
+  );
+}
+
+function snapshotDateMatches(value: unknown, current: Date): boolean {
+  if (typeof value !== "string") return false;
+  const captured = new Date(value);
+  return (
+    !Number.isNaN(captured.getTime()) &&
+    captured.getTime() === current.getTime()
+  );
+}
+
 function setOptional(
   target: Record<string, string>,
   key: string,
   value: string | number | undefined,
 ): void {
   if (value !== undefined) target[key] = String(value);
-}
-
-function setBoolean(
-  target: Record<string, string>,
-  key: string,
-  value: boolean | undefined,
-): void {
-  if (value !== undefined) target[key] = value ? "1" : "0";
 }
 
 function simbriefDate(date: Date): string {

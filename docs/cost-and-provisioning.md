@@ -24,6 +24,9 @@ Goal: **near-zero cost when nobody is using the tool**, while staying ready for 
 - Fluid Compute / Active CPU: billed when handling requests, not for sitting idle.
 - Hobby/Pro free allowances cover light VA traffic.
 - The production Hoppie cron runs **every minute** and polls only tenants with a saved logon. Vercel Pro is required for that frequency.
+- The privacy lifecycle cron runs hourly and processes at most ten resumable
+  checkpoints per invocation. It creates no destructive work until a policy is
+  dual-approved and the dry-run/confirmation rules are satisfied.
 
 ### ACARS
 
@@ -52,7 +55,7 @@ cp apps/api/.env.local apps/api/.env
 #         ACARS_PROVIDER=hoppie (production; tenants configure credentials in Settings)
 #         CRON_SECRET=...
 
-pnpm db:push
+DATABASE_URL='postgresql://...' pnpm db:push
 curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
   -H "Authorization: Bearer $CRON_SECRET" \
   -H "Content-Type: application/json" \

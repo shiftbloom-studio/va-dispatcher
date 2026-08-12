@@ -39,7 +39,7 @@ body:
     id: impact
     attributes:
       label: Operational and compatibility impact
-      description: Consider tenant isolation, permissions, data migration, costs, and third-party services.
+      description: Consider tenant isolation, permissions, schema rollout, costs, and third-party services.
 
   - type: checkboxes
     id: contribution

@@ -2,6 +2,7 @@ import { OrganizationList } from "@clerk/nextjs";
 import { ShieldAlert } from "lucide-react";
 
 import { SiteFooter } from "@/components/site-footer";
+import { e2eFixtureEnabled } from "@/lib/e2e-fixture";
 
 export function OrganizationMismatch({
   tenantName,
@@ -10,9 +11,7 @@ export function OrganizationMismatch({
   tenantName: string;
   reason: string;
 }) {
-  const bypass =
-    process.env.E2E_AUTH_BYPASS === "true" &&
-    process.env.NODE_ENV !== "production";
+  const bypass = e2eFixtureEnabled();
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-white">

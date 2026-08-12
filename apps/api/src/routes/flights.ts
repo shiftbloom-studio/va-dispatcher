@@ -4,33 +4,86 @@ import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as flightService from "../domain/flights/service.js";
-import { paginationQuerySchema } from "../lib/pagination.js";
 import type {
   DispatchRelease,
   Flight,
   FlightOperationalEvent,
 } from "../db/schema.js";
+import {
+  flightCursorQuerySchema,
+  paginationQuerySchema,
+} from "../lib/pagination.js";
+import { flightStatusEnum } from "../db/schema.js";
 
 export const flightRoutes = new Hono<{ Variables: AppVariables }>();
 
-flightRoutes.use("*", requireAuth);
+flightRoutes.use("/flights", requireAuth);
+flightRoutes.use("/flights/*", requireAuth);
 
 const icao = z
   .string()
   .length(4)
   .transform((value) => value.toUpperCase());
 
-const flightBodySchema = z.object({
-  scheduleRequestId: z.string().uuid().optional().nullable(),
-  pilotMembershipId: z.string().uuid().optional().nullable(),
-  flightNumber: z.string().min(2).max(12),
-  depIcao: icao,
-  arrIcao: icao,
-  etd: z.coerce.date(),
-  eta: z.coerce.date(),
-  aircraftType: z.string().max(20).optional().nullable(),
-  status: z.enum(["draft", "offered"]).optional(),
-  dispatcherNotes: z.string().max(2000).optional().nullable(),
+const flightBodySchema = z
+  .object({
+    pilotMembershipId: z.string().uuid().optional().nullable(),
+    flightNumber: z.string().min(2).max(12),
+    depIcao: icao,
+    arrIcao: icao,
+    etd: z.coerce.date(),
+    eta: z.coerce.date(),
+    aircraftType: z.string().max(20).optional().nullable(),
+    status: z.enum(["draft", "offered"]).optional(),
+    dispatcherNotes: z.string().max(2000).optional().nullable(),
+  })
+  .strict()
+  .refine((value) => value.eta > value.etd, {
+    message: "eta must be after etd",
+    path: ["eta"],
+  });
+
+const bulkFlightItemSchema = z
+  .object({
+    flightNumber: z.string().min(2).max(12),
+    depIcao: icao,
+    arrIcao: icao,
+    etd: z.coerce.date(),
+    eta: z.coerce.date(),
+    aircraftType: z.string().max(20).optional().nullable(),
+    pilotMembershipId: z.string().uuid().optional().nullable(),
+  })
+  .refine((value) => value.eta > value.etd, {
+    message: "eta must be after etd",
+    path: ["eta"],
+  });
+
+const expectedVersionSchema = z.object({
+  expectedVersion: z.number().int().min(1),
+});
+
+const idempotencyHeaderSchema = z.object({
+  "idempotency-key": z.string().trim().min(1).max(200),
+});
+
+const flightStatusValues = new Set<string>(flightStatusEnum.enumValues);
+const flightStatusFilterSchema = z.string().transform((value, context) => {
+  const statuses = value.split(",").map((status) => status.trim());
+  if (
+    statuses.length === 0 ||
+    statuses.some((status) => !status || !flightStatusValues.has(status))
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "status contains an empty or unknown flight status",
+    });
+    return z.NEVER;
+  }
+  return [...new Set(statuses)] as Flight["status"][];
+});
+
+const versionedReasonSchema = expectedVersionSchema.extend({
+  reason: z.string().max(500).optional(),
 });
 
 flightRoutes.post(
@@ -55,38 +108,36 @@ flightRoutes.post(
 flightRoutes.post(
   "/flights/bulk",
   requireRole("dispatcher"),
+  zValidator("header", idempotencyHeaderSchema),
   zValidator(
     "json",
     z.object({
       scheduleRequestId: z.string().uuid(),
-      flights: z
-        .array(
-          z.object({
-            flightNumber: z.string().min(2).max(12),
-            depIcao: icao,
-            arrIcao: icao,
-            etd: z.coerce.date(),
-            eta: z.coerce.date(),
-            aircraftType: z.string().max(20).optional().nullable(),
-            pilotMembershipId: z.string().uuid().optional().nullable(),
-          }),
-        )
-        .min(1)
-        .max(50),
+      expectedRequestVersion: z.number().int().min(1),
+      flights: z.array(bulkFlightItemSchema).min(1).max(50),
     }),
   ),
   async (c) => {
     const auth = c.get("auth");
     const body = c.req.valid("json");
-    const flights = await flightService.bulkCreateFlights(
+    const result = await flightService.bulkCreateFlights(
       {
         tenantId: auth.tenantId,
         membershipId: auth.membershipId,
         role: auth.role,
       },
-      body,
+      {
+        ...body,
+        idempotencyKey: c.req.valid("header")["idempotency-key"],
+      },
     );
-    return c.json({ flights: flights.map(serializeFlight) }, 201);
+    return c.json(
+      {
+        flights: result.flights.map(serializeFlight),
+        fulfillment: result.fulfillment,
+      },
+      201,
+    );
   },
 );
 
@@ -95,12 +146,8 @@ flightRoutes.get(
   zValidator(
     "query",
     paginationQuerySchema.extend({
-      status: z
-        .string()
-        .optional()
-        .transform((value) =>
-          value ? (value.split(",") as Flight["status"][]) : undefined,
-        ),
+      cursor: flightCursorQuerySchema.optional(),
+      status: flightStatusFilterSchema.optional(),
       fromEtd: z.coerce.date().optional(),
       toEtd: z.coerce.date().optional(),
       scheduleRequestId: z.string().uuid().optional(),
@@ -116,7 +163,7 @@ flightRoutes.get(
         role: auth.role,
       },
       {
-        status: query.status?.length === 1 ? query.status[0] : query.status,
+        status: query.status,
         fromEtd: query.fromEtd,
         toEtd: query.toEtd,
         scheduleRequestId: query.scheduleRequestId,
@@ -149,8 +196,10 @@ flightRoutes.get("/flights/:id", async (c) => {
 flightRoutes.post(
   "/flights/:id/offer",
   requireRole("dispatcher"),
+  zValidator("json", expectedVersionSchema),
   async (c) => {
     const auth = c.get("auth");
+    const body = c.req.valid("json");
     const flight = await flightService.transitionFlight(
       {
         tenantId: auth.tenantId,
@@ -159,34 +208,38 @@ flightRoutes.post(
       },
       c.req.param("id"),
       "offered",
+      body,
     );
     return c.json({ flight: serializeFlight(flight) });
   },
 );
 
-flightRoutes.post("/flights/:id/accept", async (c) => {
-  const auth = c.get("auth");
-  const flight = await flightService.transitionFlight(
-    {
-      tenantId: auth.tenantId,
-      membershipId: auth.membershipId,
-      role: auth.role,
-    },
-    c.req.param("id"),
-    "accepted",
-  );
-  return c.json({ flight: serializeFlight(flight) });
-});
+flightRoutes.post(
+  "/flights/:id/accept",
+  zValidator("json", expectedVersionSchema),
+  async (c) => {
+    const auth = c.get("auth");
+    const body = c.req.valid("json");
+    const flight = await flightService.transitionFlight(
+      {
+        tenantId: auth.tenantId,
+        membershipId: auth.membershipId,
+        role: auth.role,
+      },
+      c.req.param("id"),
+      "accepted",
+      body,
+    );
+    return c.json({ flight: serializeFlight(flight) });
+  },
+);
 
 flightRoutes.post(
   "/flights/:id/decline",
-  zValidator(
-    "json",
-    z.object({ reason: z.string().max(500).optional() }).optional(),
-  ),
+  zValidator("json", versionedReasonSchema),
   async (c) => {
     const auth = c.get("auth");
-    const body = c.req.valid("json") ?? {};
+    const body = c.req.valid("json");
     const flight = await flightService.transitionFlight(
       {
         tenantId: auth.tenantId,
@@ -195,7 +248,7 @@ flightRoutes.post(
       },
       c.req.param("id"),
       "declined",
-      { reason: body.reason },
+      body,
     );
     return c.json({ flight: serializeFlight(flight) });
   },
@@ -203,13 +256,10 @@ flightRoutes.post(
 
 flightRoutes.post(
   "/flights/:id/cancel",
-  zValidator(
-    "json",
-    z.object({ reason: z.string().max(500).optional() }).optional(),
-  ),
+  zValidator("json", versionedReasonSchema),
   async (c) => {
     const auth = c.get("auth");
-    const body = c.req.valid("json") ?? {};
+    const body = c.req.valid("json");
     const flight = await flightService.transitionFlight(
       {
         tenantId: auth.tenantId,
@@ -218,7 +268,7 @@ flightRoutes.post(
       },
       c.req.param("id"),
       "cancelled",
-      { reason: body.reason },
+      body,
     );
     return c.json({ flight: serializeFlight(flight) });
   },
@@ -230,19 +280,22 @@ flightRoutes.patch(
   zValidator(
     "json",
     z.object({
+      expectedVersion: z.number().int().min(1),
+      changeReason: z.string().trim().max(500).optional(),
       flightNumber: z.string().min(2).max(12).optional(),
       depIcao: icao.optional(),
       arrIcao: icao.optional(),
       etd: z.coerce.date().optional(),
       eta: z.coerce.date().optional(),
+      aircraftType: z.string().trim().max(12).nullable().optional(),
       pilotMembershipId: z.string().uuid().nullable().optional(),
       dispatcherNotes: z.string().max(2000).nullable().optional(),
-      expectedUpdatedAt: z.coerce.date().optional(),
     }),
   ),
   async (c) => {
     const auth = c.get("auth");
     const body = c.req.valid("json");
+    const { expectedVersion, changeReason, ...patch } = body;
     const flight = await flightService.patchFlight(
       {
         tenantId: auth.tenantId,
@@ -250,24 +303,31 @@ flightRoutes.patch(
         role: auth.role,
       },
       c.req.param("id"),
-      body,
+      expectedVersion,
+      changeReason,
+      patch,
     );
     return c.json({ flight: serializeFlight(flight) });
   },
 );
 
-flightRoutes.post("/flights/:id/confirm-assignment", async (c) => {
-  const auth = c.get("auth");
-  const flight = await flightService.confirmAssignment(
-    {
-      tenantId: auth.tenantId,
-      membershipId: auth.membershipId,
-      role: auth.role,
-    },
-    c.req.param("id"),
-  );
-  return c.json({ flight: serializeFlight(flight) });
-});
+flightRoutes.post(
+  "/flights/:id/confirm-assignment",
+  zValidator("json", expectedVersionSchema),
+  async (c) => {
+    const auth = c.get("auth");
+    const flight = await flightService.confirmAssignment(
+      {
+        tenantId: auth.tenantId,
+        membershipId: auth.membershipId,
+        role: auth.role,
+      },
+      c.req.param("id"),
+      c.req.valid("json").expectedVersion,
+    );
+    return c.json({ flight: serializeFlight(flight) });
+  },
+);
 
 const releaseAmount = z.number().int().nonnegative().max(10_000_000);
 const positiveReleaseAmount = releaseAmount.refine((value) => value > 0, {
@@ -280,6 +340,7 @@ flightRoutes.post(
   zValidator(
     "json",
     z.object({
+      expectedVersion: z.number().int().min(1),
       operationalRoute: z.string().trim().min(1).max(1000),
       sid: z.string().trim().max(40).nullable().optional(),
       star: z.string().trim().max(40).nullable().optional(),
@@ -301,6 +362,7 @@ flightRoutes.post(
   ),
   async (c) => {
     const auth = c.get("auth");
+    const { expectedVersion, ...draft } = c.req.valid("json");
     const result = await flightService.publishDispatchRelease(
       {
         tenantId: auth.tenantId,
@@ -308,7 +370,8 @@ flightRoutes.post(
         role: auth.role,
       },
       c.req.param("id"),
-      c.req.valid("json"),
+      expectedVersion,
+      draft,
     );
     return c.json({
       flight: serializeFlight(result.flight),
@@ -317,31 +380,43 @@ flightRoutes.post(
   },
 );
 
-flightRoutes.post("/flights/:id/start", async (c) => {
-  const auth = c.get("auth");
-  const flight = await flightService.startFlight(
-    {
-      tenantId: auth.tenantId,
-      membershipId: auth.membershipId,
-      role: auth.role,
-    },
-    c.req.param("id"),
-  );
-  return c.json({ flight: serializeFlight(flight) });
-});
+flightRoutes.post(
+  "/flights/:id/start",
+  zValidator("json", expectedVersionSchema),
+  async (c) => {
+    const auth = c.get("auth");
+    const flight = await flightService.startFlight(
+      {
+        tenantId: auth.tenantId,
+        membershipId: auth.membershipId,
+        role: auth.role,
+      },
+      c.req.param("id"),
+      new Date(),
+      c.req.valid("json").expectedVersion,
+    );
+    return c.json({ flight: serializeFlight(flight) });
+  },
+);
 
-flightRoutes.post("/flights/:id/finish", async (c) => {
-  const auth = c.get("auth");
-  const flight = await flightService.finishFlight(
-    {
-      tenantId: auth.tenantId,
-      membershipId: auth.membershipId,
-      role: auth.role,
-    },
-    c.req.param("id"),
-  );
-  return c.json({ flight: serializeFlight(flight) });
-});
+flightRoutes.post(
+  "/flights/:id/finish",
+  zValidator("json", expectedVersionSchema),
+  async (c) => {
+    const auth = c.get("auth");
+    const flight = await flightService.finishFlight(
+      {
+        tenantId: auth.tenantId,
+        membershipId: auth.membershipId,
+        role: auth.role,
+      },
+      c.req.param("id"),
+      new Date(),
+      c.req.valid("json").expectedVersion,
+    );
+    return c.json({ flight: serializeFlight(flight) });
+  },
+);
 
 flightRoutes.post(
   "/flights/:id/status",
@@ -349,6 +424,7 @@ flightRoutes.post(
   zValidator(
     "json",
     z.object({
+      expectedVersion: z.number().int().min(1),
       status: z.enum(["active", "completed", "cancelled"]),
       reason: z.string().max(500).optional(),
     }),
@@ -364,38 +440,65 @@ flightRoutes.post(
       },
       c.req.param("id"),
       body.status,
-      { reason: body.reason },
+      { expectedVersion: body.expectedVersion, reason: body.reason },
     );
     return c.json({ flight: serializeFlight(flight) });
   },
 );
 
-function serializeFlight(f: Flight) {
+flightRoutes.post(
+  "/flights/:id/reoffer",
+  requireRole("dispatcher"),
+  zValidator(
+    "json",
+    expectedVersionSchema.extend({
+      pilotMembershipId: z.string().uuid().optional().nullable(),
+      reason: z.string().trim().min(1).max(500),
+    }),
+  ),
+  async (c) => {
+    const auth = c.get("auth");
+    const flight = await flightService.reofferDeclinedFlight(
+      {
+        tenantId: auth.tenantId,
+        membershipId: auth.membershipId,
+        role: auth.role,
+      },
+      c.req.param("id"),
+      c.req.valid("json"),
+    );
+    return c.json({ flight: serializeFlight(flight) }, 201);
+  },
+);
+
+function serializeFlight(flight: Flight) {
   return {
-    id: f.id,
-    scheduleRequestId: f.scheduleRequestId,
-    pilotMembershipId: f.pilotMembershipId,
-    flightNumber: f.flightNumber,
-    depIcao: f.depIcao,
-    arrIcao: f.arrIcao,
-    etd: f.etd.toISOString(),
-    eta: f.eta.toISOString(),
-    aircraftType: f.aircraftType,
-    status: f.status,
-    cancelReason: f.cancelReason,
-    declinedReason: f.declinedReason,
-    dispatcherNotes: f.dispatcherNotes,
-    assignmentRevision: f.assignmentRevision,
-    assignmentConfirmedRevision: f.assignmentConfirmedRevision,
-    assignmentConfirmedAt: f.assignmentConfirmedAt?.toISOString() ?? null,
+    id: flight.id,
+    scheduleRequestId: flight.scheduleRequestId,
+    replacesFlightId: flight.replacesFlightId,
+    pilotMembershipId: flight.pilotMembershipId,
+    flightNumber: flight.flightNumber,
+    depIcao: flight.depIcao,
+    arrIcao: flight.arrIcao,
+    etd: flight.etd.toISOString(),
+    eta: flight.eta.toISOString(),
+    aircraftType: flight.aircraftType,
+    version: flight.version,
+    status: flight.status,
+    cancelReason: flight.cancelReason,
+    declinedReason: flight.declinedReason,
+    dispatcherNotes: flight.dispatcherNotes,
+    assignmentRevision: flight.assignmentRevision,
+    assignmentConfirmedRevision: flight.assignmentConfirmedRevision,
+    assignmentConfirmedAt: flight.assignmentConfirmedAt?.toISOString() ?? null,
     assignmentConfirmationRequired:
-      flightService.assignmentNeedsConfirmation(f),
-    outAt: f.outAt?.toISOString() ?? null,
-    offAt: f.offAt?.toISOString() ?? null,
-    onAt: f.onAt?.toISOString() ?? null,
-    inAt: f.inAt?.toISOString() ?? null,
-    createdAt: f.createdAt.toISOString(),
-    updatedAt: f.updatedAt.toISOString(),
+      flightService.assignmentNeedsConfirmation(flight),
+    outAt: flight.outAt?.toISOString() ?? null,
+    offAt: flight.offAt?.toISOString() ?? null,
+    onAt: flight.onAt?.toISOString() ?? null,
+    inAt: flight.inAt?.toISOString() ?? null,
+    createdAt: flight.createdAt.toISOString(),
+    updatedAt: flight.updatedAt.toISOString(),
   };
 }
 

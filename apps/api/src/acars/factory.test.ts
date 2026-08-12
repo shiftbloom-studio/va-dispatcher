@@ -28,7 +28,7 @@ const productionEnvironment = {
   CLERK_SECRET_KEY: "sk_test_configured",
   TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
   CRON_SECRET: "production-cron-secret",
-};
+} as const;
 
 afterEach(() => {
   resetEnvCache();

@@ -32,12 +32,57 @@ const me = {
   },
 };
 
+const simbriefConnection = {
+  connection: {
+    connected: false,
+    userId: null,
+    verified: false,
+    verifiedAt: null,
+    oauth: {
+      configured: true,
+      connected: false,
+      username: null,
+      connectedAt: null,
+    },
+  },
+};
+let currentMe = me;
+
 describe("personal account settings", () => {
   beforeEach(() => {
+    currentMe = me;
     apiMock.mockReset();
     apiMock.mockImplementation(
       (path: string, options: { method?: string; body?: string }) => {
-        if (path === "/me" && !options.method) return Promise.resolve(me);
+        if (path === "/me" && !options.method)
+          return Promise.resolve(currentMe);
+        if (path === "/simbrief/connection" && !options.method)
+          return Promise.resolve(simbriefConnection);
+        if (path === "/telemetry/devices" && !options.method)
+          return Promise.resolve({ items: [] });
+        if (path === "/telemetry/devices" && options.method === "POST")
+          return Promise.resolve({
+            device: {
+              id: "device-1",
+              name: "Home cockpit",
+              status: "active",
+              lastSeenAt: null,
+              revokedAt: null,
+              createdAt: "2026-08-12T12:00:00.000Z",
+            },
+            token: "v1.device.one-time-token",
+            warning: "Copy this token now.",
+          });
+        if (path === "/simbrief/connection" && options.method === "PUT") {
+          const body = JSON.parse(options.body ?? "{}") as { userId: string };
+          return Promise.resolve({
+            connection: {
+              ...simbriefConnection.connection,
+              connected: true,
+              userId: body.userId,
+            },
+          });
+        }
         if (path === "/me" && options.method === "PATCH") {
           const body = JSON.parse(options.body ?? "{}") as {
             displayName: string | null;
@@ -96,5 +141,80 @@ describe("personal account settings", () => {
       "href",
       "https://www.hoppie.nl/acars/system/register.html",
     );
+  });
+
+  it("connects a numeric SimBrief Pilot ID without asking for a password", async () => {
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AccountSettings slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    const pilotId = await screen.findByLabelText("SimBrief numeric Pilot ID");
+    await user.type(pilotId, "123456");
+    await user.click(screen.getByRole("button", { name: "Connect Pilot ID" }));
+
+    expect(
+      await screen.findByText("SimBrief Pilot ID connected."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
+  });
+  it("surfaces Navigraph callback recovery after returning to settings", async () => {
+    render(
+      <TestQueryProvider>
+        <AccountSettings slug="vsas" simbriefRecovery="navigraph-connected" />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        "Navigraph returned successfully. Your current connection status is shown below.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("shows a simulator token exactly after creating a named device", async () => {
+    currentMe = {
+      ...me,
+      membership: { ...me.membership, role: "pilot" },
+    };
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AccountSettings slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.type(
+      await screen.findByLabelText("Device name"),
+      "Home cockpit",
+    );
+    await user.click(screen.getByRole("button", { name: "Create connection" }));
+
+    expect(await screen.findByText("v1.device.one-time-token")).toBeVisible();
+    const createCall = apiMock.mock.calls.find(
+      ([path, options]) =>
+        path === "/telemetry/devices" && options.method === "POST",
+    );
+    expect(JSON.parse(createCall?.[1].body ?? "{}")).toEqual({
+      name: "Home cockpit",
+    });
+    expect(screen.getByText(/precise aircraft position/i)).toBeVisible();
+  });
+
+  it("keeps cleanup visible but does not issue devices to non-pilots", async () => {
+    render(
+      <TestQueryProvider>
+        <AccountSettings slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        /new simulator credentials are available only to pilots/i,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Device name")).not.toBeInTheDocument();
   });
 });

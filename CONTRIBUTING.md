@@ -15,16 +15,20 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
 
-VA Dispatch is a pnpm monorepo and requires Node.js 22 or newer (Node.js 24 is
-recommended) and pnpm 11.
+VA Dispatch is a pnpm monorepo and requires Node.js 24 or newer (the version in
+`.nvmrc` is recommended) and pnpm 11.
 
 ```bash
 pnpm install
 cp .env.example apps/api/.env
 # Configure apps/web/.env.local from apps/web/.env.example.
-pnpm db:push
+DATABASE_URL='postgresql://...' pnpm db:push
 pnpm dev
 ```
+
+`schema.ts` is canonical while this Shiftbloom project is pre-production.
+Recreate an empty database and use `db:push`; never run it against a database
+containing data that must be preserved.
 
 Never commit credentials, personal data, production database contents, or
 third-party API secrets. Use only synthetic data in tests and bug reports.
@@ -43,6 +47,11 @@ pnpm security:audit
 pnpm build
 pnpm --filter @va-dispatch/web test:e2e
 ```
+
+CI also runs the two real web/API/PostgreSQL journeys. To run them locally,
+create and explicitly confirm a disposable database by following
+[`docs/integrated-e2e.md`](docs/integrated-e2e.md); never reuse a shared
+database for this suite.
 
 Install the Playwright browser once before running browser tests locally:
 
@@ -63,7 +72,7 @@ Keep pull requests focused and small enough to review. Include:
 - tests for changed behavior, including tenant-isolation and authorization
   cases where relevant;
 - screenshots for visible interface changes;
-- migration, configuration, compatibility, and rollout notes where relevant;
+- schema, configuration, and rollout notes where relevant;
 - confirmation that no secrets or sensitive production data are included.
 
 Maintainers may ask for changes before merging. A pull request is not accepted

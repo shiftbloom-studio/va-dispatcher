@@ -8,7 +8,7 @@ import { useFieldArray, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { FieldError, Input, Label } from "@/components/ui/fields";
+import { FieldError, Input, Label, Select } from "@/components/ui/fields";
 import { ApiError, apiErrorMessage } from "@/lib/api/http";
 import { bulkFlightResponseSchema } from "@/lib/api/schemas";
 import { jsonBody, useApi } from "@/lib/api/use-api";
@@ -22,51 +22,54 @@ export function OfferBuilder({
   slug,
   requestId,
   desiredFlightCount,
+  flightCount = desiredFlightCount,
+  expectedRequestVersion,
   onOffered,
 }: {
   slug: string;
   requestId: string;
   desiredFlightCount: number;
+  flightCount?: number;
+  expectedRequestVersion: number;
   onOffered: () => Promise<void>;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
   const [conflict, setConflict] = useState<string | null>(null);
-  const schema = useMemo(
-    () => offerBuilderSchema(desiredFlightCount),
-    [desiredFlightCount],
-  );
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [batchSize, setBatchSize] = useState(flightCount);
+  const schema = useMemo(() => offerBuilderSchema(batchSize), [batchSize]);
   const form = useForm<OfferBuilderValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      flights: Array.from({ length: desiredFlightCount }, () => ({
-        flightNumber: "",
-        depIcao: "",
-        arrIcao: "",
-        etd: "",
-        eta: "",
-        aircraftType: "",
-      })),
+      flights: emptyFlightRows(batchSize),
     },
   });
   const rows = useFieldArray({ control: form.control, name: "flights" });
   const mutation = useMutation({
-    mutationFn: (values: OfferBuilderValues) =>
-      api("/flights/bulk", {
+    mutationFn: (values: OfferBuilderValues) => {
+      const request = jsonBody({
+        scheduleRequestId: requestId,
+        expectedRequestVersion,
+        flights: values.flights.map((flight) => ({
+          flightNumber: flight.flightNumber.trim().toUpperCase(),
+          depIcao: flight.depIcao.trim().toUpperCase(),
+          arrIcao: flight.arrIcao.trim().toUpperCase(),
+          etd: utcInputToIso(flight.etd),
+          eta: utcInputToIso(flight.eta),
+          aircraftType: flight.aircraftType?.trim() || null,
+        })),
+      });
+      return api("/flights/bulk", {
         method: "POST",
         schema: bulkFlightResponseSchema,
-        ...jsonBody({
-          scheduleRequestId: requestId,
-          flights: values.flights.map((flight) => ({
-            flightNumber: flight.flightNumber.trim().toUpperCase(),
-            depIcao: flight.depIcao.trim().toUpperCase(),
-            arrIcao: flight.arrIcao.trim().toUpperCase(),
-            etd: utcInputToIso(flight.etd),
-            eta: utcInputToIso(flight.eta),
-            aircraftType: flight.aircraftType?.trim() || null,
-          })),
-        }),
-      }),
+        ...request,
+        headers: {
+          ...request.headers,
+          "Idempotency-Key": idempotencyKey,
+        },
+      });
+    },
     onSuccess: async () => {
       await Promise.all([
         onOffered(),
@@ -94,17 +97,60 @@ export function OfferBuilder({
     }
   }
 
+  function changeBatchSize(nextSize: number) {
+    if (!Number.isInteger(nextSize) || nextSize < 1 || nextSize > flightCount) {
+      return;
+    }
+    const current = form.getValues("flights");
+    if (nextSize < current.length) {
+      const discardedRowsContainWork = current
+        .slice(nextSize)
+        .some((row) => Object.values(row).some((value) => Boolean(value)));
+      if (
+        discardedRowsContainWork &&
+        !window.confirm(
+          "Reducing the batch will discard entries in the removed rows. Continue?",
+        )
+      ) {
+        return;
+      }
+    }
+    const nextRows = current.slice(0, nextSize);
+    while (nextRows.length < nextSize) nextRows.push(emptyFlightRow());
+    setBatchSize(nextSize);
+    form.reset({ flights: nextRows });
+  }
+
   return (
     <Card className="overflow-hidden">
       <CardHeader
-        title={`Offer ${desiredFlightCount} flight${desiredFlightCount === 1 ? "" : "s"}`}
-        description="Every row is required. The complete proposal is submitted once and immediately offered to the pilot."
+        title={`Offer flight batch`}
+        description={`${flightCount} of ${desiredFlightCount} requested flight slots remain. Choose how many to offer now; any remainder stays available for a follow-up batch.`}
       />
       <form
         onSubmit={form.handleSubmit(submit)}
         noValidate
         className="p-4 sm:p-5"
       >
+        <div className="mb-5 max-w-xs">
+          <Label htmlFor="offer-batch-size">Flights in this batch</Label>
+          <Select
+            id="offer-batch-size"
+            value={batchSize}
+            onChange={(event) => changeBatchSize(Number(event.target.value))}
+          >
+            {Array.from({ length: flightCount }, (_, index) => index + 1).map(
+              (size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ),
+            )}
+          </Select>
+          <p className="mt-1 text-xs text-slate-600">
+            Choose 1–{flightCount}. The default fills every remaining slot.
+          </p>
+        </div>
         <div className="space-y-4">
           {rows.fields.map((row, index) => {
             const errors = form.formState.errors.flights?.[index];
@@ -114,7 +160,7 @@ export function OfferBuilder({
                 className="rounded-[2px] border border-slate-200 p-4"
               >
                 <legend className="px-1 text-sm font-bold text-slate-700">
-                  Flight {index + 1} of {desiredFlightCount}
+                  Flight {index + 1} of {batchSize}
                 </legend>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                   <div>
@@ -210,15 +256,31 @@ export function OfferBuilder({
         ) : null}
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-600">
-            Submitting creates exactly {desiredFlightCount} offered flight
-            {desiredFlightCount === 1 ? "" : "s"}.
+            Submitting creates exactly {batchSize} offered flight
+            {batchSize === 1 ? "" : "s"}. {flightCount - batchSize} will remain
+            for a follow-up batch.
           </p>
           <Button type="submit" disabled={mutation.isPending}>
             <Send aria-hidden className="size-4" />{" "}
-            {mutation.isPending ? "Offering…" : "Offer complete schedule"}
+            {mutation.isPending ? "Offering…" : "Offer flight batch"}
           </Button>
         </div>
       </form>
     </Card>
   );
+}
+
+function emptyFlightRows(count: number): OfferBuilderValues["flights"] {
+  return Array.from({ length: count }, emptyFlightRow);
+}
+
+function emptyFlightRow(): OfferBuilderValues["flights"][number] {
+  return {
+    flightNumber: "",
+    depIcao: "",
+    arrIcao: "",
+    etd: "",
+    eta: "",
+    aircraftType: "",
+  };
 }

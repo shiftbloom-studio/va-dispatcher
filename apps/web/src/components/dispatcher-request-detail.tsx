@@ -1,18 +1,27 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { ArrowLeft, Ban, SearchCheck, XOctagon } from "lucide-react";
 import Link from "next/link";
 
-import { ConfirmAction, ReasonAction } from "@/components/action-dialog";
+import { ReasonAction } from "@/components/action-dialog";
 import { FlightCard } from "@/components/flight-card";
 import { OfferBuilder } from "@/components/offer-builder";
 import { PageHeading } from "@/components/page-heading";
+import {
+  ScheduleCancellationAction,
+  type LinkedFlightCancellationAction,
+} from "@/components/schedule-cancellation-action";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
-import { apiErrorMessage } from "@/lib/api/http";
+import { ApiError, apiErrorMessage } from "@/lib/api/http";
 import {
   flightPageSchema,
   membersSchema,
@@ -40,13 +49,15 @@ export function DispatcherRequestDetail({
         schema: scheduleRequestDetailResponseSchema,
       }),
   });
-  const flights = useQuery({
+  const flights = useInfiniteQuery({
     queryKey: [slug, "schedule-request", requestId, "flights"],
-    queryFn: () =>
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
       api(
-        `/flights?scheduleRequestId=${encodeURIComponent(requestId)}&limit=50`,
+        `/flights?scheduleRequestId=${encodeURIComponent(requestId)}&limit=50${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
         { schema: flightPageSchema },
       ),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
   const members = useQuery({
     queryKey: [slug, "members"],
@@ -62,16 +73,25 @@ export function DispatcherRequestDetail({
     mutationFn: ({
       action,
       reason,
+      linkedFlightAction,
     }: {
       action: "review" | "reject" | "cancel";
       reason?: string;
+      linkedFlightAction?: LinkedFlightCancellationAction;
     }) =>
       api(`/schedule-requests/${requestId}/${action}`, {
         method: "POST",
         schema: scheduleRequestResponseSchema,
-        ...(action === "reject"
-          ? jsonBody({ reason: reason || undefined })
-          : {}),
+        ...jsonBody({
+          expectedVersion: request.data?.request.version,
+          ...(action === "reject" ? { reason: reason || undefined } : {}),
+          ...(action === "cancel"
+            ? {
+                linkedFlightAction,
+                reason: reason || undefined,
+              }
+            : {}),
+        }),
       }),
     onSuccess: async () => {
       await Promise.all([
@@ -79,7 +99,19 @@ export function DispatcherRequestDetail({
         queryClient.invalidateQueries({
           queryKey: [slug, "dispatch", "requests"],
         }),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "dispatch", "board"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "dispatch", "flights"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "pilot"],
+        }),
       ]);
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409) await refresh();
     },
   });
 
@@ -102,13 +134,16 @@ export function DispatcherRequestDetail({
     );
 
   const scheduleRequest = request.data.request;
+  const fulfillment = request.data.fulfillment;
+  const linkedFlights = flights.data.pages.flatMap((page) => page.items);
   const pilot = members.data.items.find(
     (member) => member.id === scheduleRequest.pilotMembershipId,
   );
   const availability = availabilityFromPreferences(scheduleRequest.preferences);
   const canBuild =
-    scheduleRequest.status === "pending" ||
-    scheduleRequest.status === "in_review";
+    (scheduleRequest.status === "in_review" ||
+      scheduleRequest.status === "partially_fulfilled") &&
+    fulfillment.remainingFlightCount > 0;
 
   return (
     <>
@@ -139,8 +174,12 @@ export function DispatcherRequestDetail({
                 Flight count
               </dt>
               <dd className="mt-1 text-lg font-bold text-slate-950">
+                {fulfillment.linkedFlightCount} /{" "}
                 {scheduleRequest.desiredFlightCount}
               </dd>
+              <p className="mt-1 text-xs text-slate-500">
+                {fulfillment.remainingFlightCount} remaining
+              </p>
             </div>
             <div className="sm:col-span-2">
               <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -187,6 +226,16 @@ export function DispatcherRequestDetail({
               </p>
             </div>
           ) : null}
+          {scheduleRequest.rejectReason || scheduleRequest.cancelReason ? (
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Terminal reason
+              </h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                {scheduleRequest.rejectReason ?? scheduleRequest.cancelReason}
+              </p>
+            </div>
+          ) : null}
         </Card>
         <Card className="h-fit overflow-hidden">
           <CardHeader title="Request actions" />
@@ -218,18 +267,18 @@ export function DispatcherRequestDetail({
               />
             ) : null}
             {canCancelScheduleRequest(scheduleRequest.status) ? (
-              <ConfirmAction
+              <ScheduleCancellationAction
                 trigger={
                   <Button variant="secondary" className="w-full text-red-700">
                     <Ban aria-hidden className="size-4" /> Cancel request
                   </Button>
                 }
-                title="Cancel this request?"
-                detail="This makes the request terminal. Existing flight records remain unchanged."
-                confirmLabel="Cancel request"
-                danger
-                onConfirm={async () => {
-                  await transition.mutateAsync({ action: "cancel" });
+                onConfirm={async (linkedFlightAction, reason) => {
+                  await transition.mutateAsync({
+                    action: "cancel",
+                    linkedFlightAction,
+                    reason,
+                  });
                 }}
               />
             ) : null}
@@ -246,9 +295,12 @@ export function DispatcherRequestDetail({
 
       {canBuild ? (
         <OfferBuilder
+          key={`${scheduleRequest.version}:${fulfillment.remainingFlightCount}`}
           slug={slug}
           requestId={requestId}
           desiredFlightCount={scheduleRequest.desiredFlightCount}
+          flightCount={fulfillment.remainingFlightCount}
+          expectedRequestVersion={scheduleRequest.version}
           onOffered={refresh}
         />
       ) : null}
@@ -257,8 +309,9 @@ export function DispatcherRequestDetail({
           role="status"
           className="mb-6 rounded-[2px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
         >
-          This historical request was partially fulfilled. v1 does not append
-          partial proposals; it remains viewable and cancellable.
+          {fulfillment.remainingFlightCount > 0
+            ? `${fulfillment.linkedFlightCount} of ${scheduleRequest.desiredFlightCount} flights are linked. Build the ${fulfillment.remainingFlightCount} remaining offer${fulfillment.remainingFlightCount === 1 ? "" : "s"} above.`
+            : "The requested flight count is fully allocated; no further offers can be appended."}
         </p>
       ) : null}
 
@@ -268,8 +321,8 @@ export function DispatcherRequestDetail({
           description="Canonical serialized flight records; the embedded raw request payload is intentionally ignored."
         />
         <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-          {flights.data.items.length ? (
-            flights.data.items.map((flight) => (
+          {linkedFlights.length ? (
+            linkedFlights.map((flight) => (
               <FlightCard
                 key={flight.id}
                 flight={flight}
@@ -285,6 +338,19 @@ export function DispatcherRequestDetail({
             </div>
           )}
         </div>
+        {flights.hasNextPage ? (
+          <div className="border-t border-slate-100 p-4 text-center">
+            <Button
+              variant="secondary"
+              disabled={flights.isFetchingNextPage}
+              onClick={() => void flights.fetchNextPage()}
+            >
+              {flights.isFetchingNextPage
+                ? "Loading history…"
+                : "Load more linked flights"}
+            </Button>
+          </div>
+        ) : null}
       </Card>
     </>
   );

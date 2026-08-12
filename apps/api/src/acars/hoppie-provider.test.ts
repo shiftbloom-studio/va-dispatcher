@@ -119,6 +119,33 @@ describe("parseHoppiePollResponse", () => {
       type: "progress",
       body: "OUT/1234Z",
     });
+    expect(msgs[0]?.providerMessageId).toMatch(
+      /^hoppie-sha256-\d+-[a-f0-9]{64}$/,
+    );
+  });
+
+  it("deduplicates a repeated stored message only inside a short window", () => {
+    const raw = "ok {SAS123 telex {REQUESTING GATE ASSIGNMENT}}";
+    const firstPoll = new Date("2026-08-12T12:01:00.000Z");
+    const repeatedPoll = new Date("2026-08-12T12:05:00.000Z");
+    const laterMessage = new Date("2026-08-12T12:16:00.000Z");
+
+    expect(
+      parseHoppiePollResponse(raw, "VSAS", firstPoll)[0]?.providerMessageId,
+    ).toBe(
+      parseHoppiePollResponse(raw, "VSAS", repeatedPoll)[0]?.providerMessageId,
+    );
+    expect(
+      parseHoppiePollResponse(raw, "VSAS", laterMessage)[0]?.providerMessageId,
+    ).not.toBe(
+      parseHoppiePollResponse(raw, "VSAS", firstPoll)[0]?.providerMessageId,
+    );
+  });
+
+  it("rejects a non-empty malformed poll response", () => {
+    expect(() =>
+      parseHoppiePollResponse("ok malformed payload", "VSAS"),
+    ).toThrow("Hoppie returned an invalid poll response.");
   });
 
   it("returns empty on error response", () => {
