@@ -20,6 +20,7 @@ vi.mock("../../db/repositories/audit.js", () => ({
 }));
 
 import {
+  directoryPageLimitExceeded,
   syncMembersFromDirectory,
   updateMemberAsAdministrator,
 } from "./service.js";
@@ -79,6 +80,7 @@ describe("member administration service", () => {
 
     expect(result).toMatchObject({
       complete: true,
+      summaryAuditRecorded: true,
       pages: 3,
       seen: 205,
       created: 205,
@@ -99,6 +101,35 @@ describe("member administration service", () => {
       limit: 100,
       offset: 200,
     });
+  });
+
+  it("reports aggregate audit failure without hiding completed member changes", async () => {
+    mocks.writeAudit.mockRejectedValue(new Error("synthetic summary failure"));
+
+    const result = await syncMembersFromDirectory({
+      tenantId: "tenant-1",
+      actorMembershipId: "admin-1",
+      organizationId: "org-1",
+      loadPage: async () => ({
+        data: [directoryMember(0)],
+        totalCount: 1,
+      }),
+    });
+
+    expect(result).toMatchObject({
+      complete: false,
+      summaryAuditRecorded: false,
+      created: 1,
+      failed: 1,
+      failures: [{ scope: "page", offset: 1, code: "summary_audit_failed" }],
+    });
+  });
+
+  it("does not flag an exact page-limit completion as truncated", () => {
+    expect(directoryPageLimitExceeded(10_000, 1_000_000, 1_000_000)).toBe(
+      false,
+    );
+    expect(directoryPageLimitExceeded(10_000, 1_000_000, 1_000_001)).toBe(true);
   });
 
   it("reports the correct global item offset for a page-two partial failure", async () => {

@@ -1291,6 +1291,7 @@ const schemas = {
     type: "object",
     required: [
       "complete",
+      "summaryAuditRecorded",
       "pages",
       "seen",
       "created",
@@ -1302,6 +1303,11 @@ const schemas = {
     ],
     properties: {
       complete: { type: "boolean" },
+      summaryAuditRecorded: {
+        type: "boolean",
+        description:
+          "Whether the final aggregate sync summary audit was recorded. Per-member changes are individually atomic and audited even when this is false.",
+      },
       pages: { type: "integer", minimum: 0 },
       seen: { type: "integer", minimum: 0 },
       created: { type: "integer", minimum: 0 },
@@ -2056,7 +2062,7 @@ export const openApiDocument = {
         operationId: "syncMembers",
         summary: "Synchronize members from Clerk",
         description:
-          "Requires the admin role. Pages the complete Clerk organization directory and reports bounded per-item failures without silently truncating at 100 members. In local development bypass mode the operation returns without contacting Clerk.",
+          "Requires the admin role. Pages the complete Clerk organization directory and reports bounded per-item failures without silently truncating at 100 members. Per-member changes and audits are atomic. If the final aggregate audit fails, the response reports summaryAuditRecorded=false without incorrectly claiming prior changes rolled back. In local development bypass mode the operation returns without contacting Clerk.",
         "x-required-role": "admin",
         responses: {
           "200": jsonResponse(

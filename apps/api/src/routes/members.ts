@@ -64,6 +64,13 @@ const memberUpdateSchema = z
 
 membersRoutes.use("*", requireAuth);
 
+// Member directory and work-impact responses are tenant-confidential and may
+// contain stable identity fields. Never permit shared/browser cache reuse.
+membersRoutes.use("*", async (c, next) => {
+  await next();
+  c.header("Cache-Control", "private, no-store");
+});
+
 membersRoutes.get(
   "/members",
   requireRole("dispatcher"),
@@ -132,6 +139,7 @@ membersRoutes.post("/members/sync", requireRole("admin"), async (c) => {
   if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
     return c.json({
       complete: true,
+      summaryAuditRecorded: false,
       pages: 0,
       seen: 0,
       created: 0,

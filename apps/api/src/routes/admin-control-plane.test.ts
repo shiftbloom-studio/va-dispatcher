@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getAdministrativeMemberImpact: vi.fn(),
   syncMembersFromDirectory: vi.fn(),
   updateMemberAsAdministrator: vi.fn(),
+  getClerkClient: vi.fn(),
   queryAuditEvents: vi.fn(),
   writeAudit: vi.fn(),
 }));
@@ -37,7 +38,7 @@ vi.mock("../middleware/auth.js", async () => {
         }
         await next();
       }),
-    getClerkClient: vi.fn(),
+    getClerkClient: mocks.getClerkClient,
   };
 });
 
@@ -91,6 +92,19 @@ describe("admin control-plane routes", () => {
     });
     mocks.queryAuditEvents.mockResolvedValue({ items: [], nextCursor: null });
     mocks.writeAudit.mockResolvedValue(undefined);
+    mocks.getClerkClient.mockReturnValue({ organizations: {} });
+    mocks.syncMembersFromDirectory.mockResolvedValue({
+      complete: true,
+      summaryAuditRecorded: true,
+      pages: 1,
+      seen: 0,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      failures: [],
+    });
   });
 
   it("permits dispatcher roster reads but reserves mutations for admins", async () => {
@@ -98,6 +112,7 @@ describe("admin control-plane routes", () => {
       headers: { "x-test-role": "dispatcher" },
     });
     expect(list.status).toBe(200);
+    expect(list.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.listMemberships).toHaveBeenCalledWith({
       tenantId: "tenant-a",
       search: "SAS",
@@ -117,6 +132,7 @@ describe("admin control-plane routes", () => {
       },
     );
     expect(patch.status).toBe(403);
+    expect(patch.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.updateMemberAsAdministrator).not.toHaveBeenCalled();
   });
 
@@ -134,12 +150,30 @@ describe("admin control-plane routes", () => {
       },
     );
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.updateMemberAsAdministrator).toHaveBeenCalledWith({
       tenantId: "tenant-a",
       actorMembershipId: "26000000-0000-4000-8000-000000000011",
       membershipId: "26000000-0000-4000-8000-000000000021",
       patch: { role: "dispatcher" },
     });
+  });
+
+  it("marks member impact and directory sync responses private and no-store", async () => {
+    const headers = { "x-test-role": "admin" };
+    const impact = await app.request(
+      "/members/26000000-0000-4000-8000-000000000021/impact",
+      { headers },
+    );
+    expect(impact.status).toBe(200);
+    expect(impact.headers.get("cache-control")).toBe("private, no-store");
+
+    const sync = await app.request("/members/sync", {
+      method: "POST",
+      headers,
+    });
+    expect(sync.status).toBe(200);
+    expect(sync.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("passes opaque cursors through deterministic member pagination", async () => {
