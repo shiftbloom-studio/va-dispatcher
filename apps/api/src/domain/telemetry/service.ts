@@ -44,6 +44,12 @@ export async function createDevice(
   actor: TelemetryActor,
   name: string,
 ): Promise<{ device: SimulatorDevice; token: string }> {
+  if (actor.role !== "pilot") {
+    throw new AppError(
+      "FORBIDDEN",
+      "Only pilots can create simulator device credentials",
+    );
+  }
   const normalizedName = name.trim();
   if (!normalizedName || normalizedName.length > MAX_DEVICE_NAME_LENGTH) {
     throw new AppError("BAD_REQUEST", "Use a device name up to 80 characters");

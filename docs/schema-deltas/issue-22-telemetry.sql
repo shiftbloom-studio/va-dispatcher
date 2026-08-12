@@ -157,8 +157,8 @@ CREATE TABLE "flight_oooi_events" (
   "event_type" "oooi_event_type" NOT NULL,
   "occurred_at" timestamp with time zone,
   "source" "oooi_source" NOT NULL,
-  "actor_membership_id" uuid REFERENCES "memberships"("id") ON DELETE SET NULL,
-  "device_id" uuid REFERENCES "simulator_devices"("id") ON DELETE SET NULL,
+  "actor_membership_id" uuid REFERENCES "memberships"("id") ON DELETE RESTRICT,
+  "device_id" uuid REFERENCES "simulator_devices"("id") ON DELETE RESTRICT,
   "reason" text,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -171,10 +171,10 @@ ALTER TABLE "flight_oooi_events"
     REFERENCES "flights" ("tenant_id", "id") ON DELETE CASCADE,
   ADD CONSTRAINT "flight_oooi_events_tenant_actor_fk"
     FOREIGN KEY ("tenant_id", "actor_membership_id")
-    REFERENCES "memberships" ("tenant_id", "id"),
+    REFERENCES "memberships" ("tenant_id", "id") ON DELETE RESTRICT,
   ADD CONSTRAINT "flight_oooi_events_tenant_device_fk"
     FOREIGN KEY ("tenant_id", "device_id")
-    REFERENCES "simulator_devices" ("tenant_id", "id");
+    REFERENCES "simulator_devices" ("tenant_id", "id") ON DELETE RESTRICT;
 
 COMMIT;
 

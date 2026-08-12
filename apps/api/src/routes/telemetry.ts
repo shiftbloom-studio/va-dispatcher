@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
@@ -10,8 +10,30 @@ import {
 } from "../domain/telemetry/validation.js";
 import type { AppVariables } from "../middleware/auth.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { AppError } from "../lib/errors.js";
 
 export const telemetryClientRoutes = new Hono();
+const noStore: MiddlewareHandler = async (c, next) => {
+  try {
+    await next();
+  } finally {
+    c.header("Cache-Control", "no-store");
+  }
+};
+const privateNoStore: MiddlewareHandler = async (c, next) => {
+  try {
+    await next();
+  } finally {
+    const issuesCredential =
+      c.req.method === "POST" && c.req.path.endsWith("/telemetry/devices");
+    c.header(
+      "Cache-Control",
+      issuesCredential ? "no-store" : "private, no-store",
+    );
+  }
+};
+
+telemetryClientRoutes.use("/telemetry/ingest", noStore);
 
 telemetryClientRoutes.post(
   "/telemetry/ingest",
@@ -33,10 +55,23 @@ telemetryClientRoutes.post(
 );
 
 export const telemetryRoutes = new Hono<{ Variables: AppVariables }>();
+telemetryRoutes.use("*", privateNoStore);
 telemetryRoutes.use("*", requireAuth);
+const requirePilotDeviceIssuer: MiddlewareHandler<{
+  Variables: AppVariables;
+}> = async (c, next) => {
+  if (c.get("auth").role !== "pilot") {
+    throw new AppError(
+      "FORBIDDEN",
+      "Only pilots can create simulator device credentials",
+    );
+  }
+  await next();
+};
 
 telemetryRoutes.post(
   "/telemetry/devices",
+  requirePilotDeviceIssuer,
   zValidator(
     "json",
     z.object({ name: z.string().trim().min(1).max(80) }).strict(),

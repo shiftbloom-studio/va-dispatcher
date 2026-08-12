@@ -741,6 +741,49 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     ).rejects.toMatchObject({ code: "23503" });
   });
 
+  it("preserves OOOI provenance until actor and device references are explicitly anonymized", async () => {
+    await sqlClient!`
+      INSERT INTO flight_oooi_events (
+        tenant_id, flight_id, event_type, occurred_at, source,
+        actor_membership_id, device_id, reason
+      ) VALUES (
+        ${tenantId}, ${flightA}, 'out', ${now.toISOString()}, 'manual',
+        ${membershipId}, ${deviceA}, 'Privacy lifecycle contract'
+      )
+    `;
+
+    await expect(
+      sqlClient!`DELETE FROM simulator_devices WHERE id = ${deviceA}`,
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      sqlClient!`DELETE FROM memberships WHERE id = ${membershipId}`,
+    ).rejects.toMatchObject({ code: "23503" });
+
+    await sqlClient!`
+      UPDATE flight_oooi_events
+      SET actor_membership_id = NULL, device_id = NULL
+      WHERE flight_id = ${flightA}
+    `;
+    await sqlClient!`DELETE FROM simulator_devices WHERE id = ${deviceA}`;
+    await sqlClient!`DELETE FROM memberships WHERE id = ${membershipId}`;
+
+    const [state] = await sqlClient!`
+      SELECT actor_membership_id, device_id,
+        (SELECT count(*)::int FROM memberships
+          WHERE id = ${membershipId}) AS member_count,
+        (SELECT count(*)::int FROM simulator_devices
+          WHERE id = ${deviceA}) AS device_count
+      FROM flight_oooi_events
+      WHERE reason = 'Privacy lifecycle contract'
+    `;
+    expect(state).toMatchObject({
+      actor_membership_id: null,
+      device_id: null,
+      member_count: 0,
+      device_count: 0,
+    });
+  });
+
   it("returns 404 at the real ingest route for a cross-tenant device-flight pair", async () => {
     await sqlClient!`
       UPDATE simulator_devices

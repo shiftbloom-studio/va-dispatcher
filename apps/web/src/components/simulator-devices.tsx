@@ -18,7 +18,13 @@ import {
 import { jsonBody, useApi } from "@/lib/api/use-api";
 import { formatUtc } from "@/lib/utc";
 
-export function SimulatorDevices({ slug }: { slug: string }) {
+export function SimulatorDevices({
+  slug,
+  canCreate,
+}: {
+  slug: string;
+  canCreate: boolean;
+}) {
   const api = useApi();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
@@ -65,7 +71,11 @@ export function SimulatorDevices({ slug }: { slug: string }) {
     <Card className="overflow-hidden xl:col-span-2">
       <CardHeader
         title="MSFS 2024 simulator connections"
-        description="Issue a revocable, tenant-scoped device token for the simulator client."
+        description={
+          canCreate
+            ? "Issue a revocable, tenant-scoped device token for the simulator client."
+            : "Review and revoke credentials issued while this membership had the pilot role."
+        }
       />
       <div className="space-y-5 p-5">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
@@ -81,28 +91,36 @@ export function SimulatorDevices({ slug }: { slug: string }) {
           </p>
         </div>
 
-        <form
-          className="flex flex-col gap-3 sm:flex-row sm:items-end"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setIssuedToken(null);
-            if (name.trim()) create.mutate();
-          }}
-        >
-          <div className="flex-1">
-            <Label htmlFor="simulator-device-name">Device name</Label>
-            <Input
-              id="simulator-device-name"
-              maxLength={80}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Home cockpit"
-            />
-          </div>
-          <Button type="submit" disabled={!name.trim() || create.isPending}>
-            <PlugZap aria-hidden className="size-4" /> Create connection
-          </Button>
-        </form>
+        {canCreate ? (
+          <form
+            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setIssuedToken(null);
+              if (name.trim()) create.mutate();
+            }}
+          >
+            <div className="flex-1">
+              <Label htmlFor="simulator-device-name">Device name</Label>
+              <Input
+                id="simulator-device-name"
+                maxLength={80}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Home cockpit"
+              />
+            </div>
+            <Button type="submit" disabled={!name.trim() || create.isPending}>
+              <PlugZap aria-hidden className="size-4" /> Create connection
+            </Button>
+          </form>
+        ) : (
+          <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+            New simulator credentials are available only to pilots. Existing
+            devices remain visible here so they can be revoked after a role
+            change.
+          </p>
+        )}
 
         {issuedToken ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
@@ -157,7 +175,11 @@ export function SimulatorDevices({ slug }: { slug: string }) {
         ) : (
           <EmptyState
             title="No simulator connections"
-            detail="Create one when you are ready to connect the MSFS 2024 client."
+            detail={
+              canCreate
+                ? "Create one when you are ready to connect the MSFS 2024 client."
+                : "No credential issued while this membership had the pilot role remains."
+            }
           />
         )}
         {create.isError || revoke.isError ? (
