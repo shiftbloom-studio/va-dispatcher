@@ -8,14 +8,14 @@ import { retentionPolicyConfigSchema } from "../domain/privacy/policy.js";
 
 export const privacyRoutes = new Hono<{ Variables: AppVariables }>();
 
-privacyRoutes.use("*", async (context, next) => {
+privacyRoutes.use("/privacy/*", async (context, next) => {
   try {
     await next();
   } finally {
     context.header("Cache-Control", "private, no-store");
   }
 });
-privacyRoutes.use("*", requireAuth, requireRole("admin"));
+privacyRoutes.use("/privacy/*", requireAuth, requireRole("admin"));
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
