@@ -16,6 +16,7 @@ import { acarsRoutes } from "./routes/acars.js";
 import { internalRoutes } from "./routes/internal.js";
 import { docsRoutes } from "./routes/docs.js";
 import { simbriefPublicRoutes, simbriefRoutes } from "./routes/simbrief.js";
+import { publicRoutes } from "./routes/public.js";
 import type { AppVariables } from "./middleware/auth.js";
 
 // Ensure env is loaded once at import for local/dev.
@@ -83,6 +84,7 @@ export function createApp() {
   // business-route auth middleware, whose wildcard also matches later routes.
   v1.route("/", internalRoutes);
   v1.route("/", simbriefPublicRoutes);
+  v1.route("/", publicRoutes);
   v1.use("*", requireHuman);
   v1.route("/", meRoutes);
   v1.route("/", tenantRoutes);

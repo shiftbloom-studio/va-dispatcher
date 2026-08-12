@@ -118,7 +118,7 @@ function ActionDialog({
       <span onClick={() => dialog.current?.showModal()}>{trigger}</span>
       <dialog
         ref={dialog}
-        className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/60"
+        className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-[2px] border border-slate-300 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/60"
       >
         <form method="dialog" onSubmit={(event) => event.preventDefault()}>
           <div className="border-b border-slate-100 p-5">
@@ -145,7 +145,7 @@ function ActionDialog({
             {error ? (
               <p
                 role="alert"
-                className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+                className="mt-3 rounded-[2px] bg-red-50 p-3 text-sm text-red-800"
               >
                 {error}
               </p>

@@ -2,69 +2,179 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowRight,
-  CalendarClock,
-  ClipboardList,
+  CheckCheck,
+  ClipboardCheck,
+  Info,
+  MessageSquareText,
+  PencilLine,
   PlaneTakeoff,
-  UsersRound,
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
+import { FlightPlanningDialog } from "@/components/flight-planning-workspace";
 import { StatusBadge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiErrorMessage } from "@/lib/api/http";
 import {
   dispatchBoardSchema,
   membersSchema,
   type BoardFlight,
+  type Member,
 } from "@/lib/api/schemas";
 import { useApi } from "@/lib/api/use-api";
 import { memberLabel } from "@/lib/member";
-import { formatUtc } from "@/lib/utc";
 
-const groups = ["offered", "accepted", "briefed", "active"] as const;
+const LANES = [
+  {
+    status: "accepted",
+    label: "To schedule",
+    description: "Accepted by pilot; release outstanding",
+    icon: PencilLine,
+    accent: "var(--brand-complement)",
+  },
+  {
+    status: "briefed",
+    label: "Scheduled",
+    description: "Dispatch release ready",
+    icon: ClipboardCheck,
+    accent: "#16834f",
+  },
+  {
+    status: "active",
+    label: "Active",
+    description: "Currently being operated",
+    icon: PlaneTakeoff,
+    accent: "var(--brand)",
+  },
+  {
+    status: "completed",
+    label: "Finished",
+    description: "Current UTC month",
+    icon: CheckCheck,
+    accent: "#64748b",
+  },
+] as const;
 
 function BoardCard({
   flight,
   pilot,
-  href,
+  slug,
+  onModify,
+  animationIndex,
 }: {
   flight: BoardFlight;
-  pilot: string;
-  href: string;
+  pilot: Member | undefined;
+  slug: string;
+  onModify: () => void;
+  animationIndex: number;
 }) {
+  const active = flight.status === "active";
+  const pilotStation = pilot?.pilotCallsign;
   return (
-    <Link
-      href={href}
-      className="block rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+    <article
+      className={`board-card relative border bg-white py-3.5 pl-4 pr-3 transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-slate-400 hover:shadow-[0_7px_20px_rgba(15,23,42,0.07)] ${
+        flight.assignmentConfirmationRequired
+          ? "border-amber-400 bg-amber-50/45"
+          : "border-slate-200"
+      }`}
+      style={
+        {
+          "--lane-accent":
+            flight.status === "briefed"
+              ? "#16834f"
+              : flight.status === "completed"
+                ? "#64748b"
+                : flight.status === "accepted"
+                  ? "var(--brand-complement)"
+                  : "var(--brand)",
+          animationDelay: `${Math.min(animationIndex, 8) * 25}ms`,
+        } as React.CSSProperties
+      }
     >
-      <div className="flex items-center justify-between gap-2">
-        <p className="font-display font-bold text-slate-950">
-          {flight.flightNumber}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={onModify}
+          className="-ml-1 inline-flex min-h-8 items-center gap-1 border border-transparent px-1 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:border-slate-300 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
+        >
+          <PencilLine aria-hidden className="size-3.5" /> Modify
+        </button>
         <StatusBadge status={flight.status} />
       </div>
-      <div className="mt-4 flex items-center gap-2">
-        <span className="text-xl font-bold">{flight.depIcao}</span>
-        <ArrowRight aria-hidden className="size-4 flex-1 text-slate-400" />
-        <span className="text-xl font-bold">{flight.arrIcao}</span>
+
+      {flight.assignmentConfirmationRequired ? (
+        <div className="mt-2 flex gap-2 border-y border-amber-300 py-2 text-xs font-bold leading-4 text-amber-950">
+          <AlertTriangle aria-hidden className="size-4 shrink-0" />
+          Pilot confirmation pending · assignment R{flight.assignmentRevision}
+        </div>
+      ) : null}
+
+      <Link
+        href={`/${slug}/dispatch/flights/${flight.id}`}
+        className="mt-3 block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-action)]"
+      >
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+              {flight.flightNumber}
+            </p>
+            <p className="mt-0.5 font-display text-[1.4rem] font-black tracking-tight text-[#17213d]">
+              {flight.depIcao}
+              <span className="mx-2 text-base font-normal text-slate-400">
+                —
+              </span>
+              {flight.arrIcao}
+            </p>
+          </div>
+          <ArrowRight aria-hidden className="mb-1 size-4 text-slate-400" />
+        </div>
+      </Link>
+
+      <div className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-slate-200 pt-2 text-xs">
+        <span className="font-semibold text-slate-500">ETD / ETA</span>
+        <span className="text-right font-mono font-bold text-slate-900">
+          {timeOnly(flight.etd)} / {timeOnly(flight.eta)}
+        </span>
+        <span className="font-semibold text-slate-500">Aircraft</span>
+        <span className="text-right font-bold text-slate-800">
+          {flight.aircraftType || "TBA"}
+        </span>
+        <span className="font-semibold text-slate-500">Pilot</span>
+        <span className="max-w-40 truncate text-right font-bold text-slate-800">
+          {memberLabel(pilot)}
+        </span>
+        {flight.latestReleaseRevision ? (
+          <>
+            <span className="font-semibold text-slate-500">Release</span>
+            <span className="text-right font-bold text-emerald-800">
+              R{flight.latestReleaseRevision}
+            </span>
+          </>
+        ) : null}
       </div>
-      <p className="mt-2 text-sm font-medium text-slate-700">
-        {formatUtc(flight.etd, {
-          month: "short",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
-      </p>
-      <p className="mt-1 truncate text-xs text-slate-500">{pilot}</p>
-    </Link>
+
+      {active ? (
+        <Link
+          href={`/${slug}/dispatch/acars?${new URLSearchParams({
+            ...(pilotStation ? { station: pilotStation } : {}),
+            flightId: flight.id,
+          }).toString()}`}
+          className="mt-3 flex min-h-9 items-center justify-center gap-2 border border-[var(--brand-border)] bg-[var(--brand-faint)] px-3 text-xs font-black uppercase tracking-wider text-[var(--brand-action)] transition hover:bg-[var(--brand-soft)] focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
+        >
+          <MessageSquareText aria-hidden className="size-4" /> Open ACARS
+        </Link>
+      ) : null}
+    </article>
   );
 }
 
 export function OperationsBoard({ slug }: { slug: string }) {
   const api = useApi();
+  const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
   const board = useQuery({
     queryKey: [slug, "dispatch", "board"],
     queryFn: () => api("/dispatch/board", { schema: dispatchBoardSchema }),
@@ -73,120 +183,244 @@ export function OperationsBoard({ slug }: { slug: string }) {
   const members = useQuery({
     queryKey: [slug, "members"],
     queryFn: () => api("/members", { schema: membersSchema }),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 60_000,
   });
 
-  if (board.isPending || members.isPending)
-    return <LoadingState label="Loading operations board" />;
-  if (board.isError || members.isError)
+  if (board.isPending || members.isPending) {
+    return <LoadingState label="Loading live operations board" />;
+  }
+  if (board.isError || members.isError) {
     return (
       <ErrorState
         message={apiErrorMessage(board.error ?? members.error)}
         onRetry={() => void Promise.all([board.refetch(), members.refetch()])}
       />
     );
+  }
 
   const memberMap = new Map(
     members.data.items.map((member) => [member.id, member]),
   );
-  const counts = board.data.scheduleRequestCounts;
 
   return (
     <>
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Card className="flex items-center gap-4 p-4">
-          <span className="grid size-11 place-items-center rounded-xl bg-amber-100 text-amber-900">
-            <ClipboardList aria-hidden className="size-5" />
-          </span>
-          <div>
-            <p className="text-2xl font-bold text-slate-950">
-              {counts.pending ?? 0}
-            </p>
-            <p className="text-sm text-slate-600">Pending requests</p>
-          </div>
-        </Card>
-        <Card className="flex items-center gap-4 p-4">
-          <span className="grid size-11 place-items-center rounded-xl bg-sky-100 text-sky-800">
-            <CalendarClock aria-hidden className="size-5" />
-          </span>
-          <div>
-            <p className="text-2xl font-bold text-slate-950">
-              {counts.in_review ?? 0}
-            </p>
-            <p className="text-sm text-slate-600">In review</p>
-          </div>
-        </Card>
-        <Card className="flex items-center gap-4 p-4">
-          <span className="grid size-11 place-items-center rounded-xl bg-emerald-100 text-emerald-800">
-            <UsersRound aria-hidden className="size-5" />
-          </span>
-          <div>
-            <p className="text-2xl font-bold text-slate-950">
-              {
-                members.data.items.filter(
-                  (member) =>
-                    member.role === "pilot" && member.status === "active",
-                ).length
-              }
-            </p>
-            <p className="text-sm text-slate-600">Active pilots</p>
-          </div>
-        </Card>
+      <KpiStrip metrics={board.data.metrics} />
+
+      <div className="mb-4 mt-7 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-display text-xl font-black text-[#17213d]">
+            Flight flow
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Accepted assignments enter here after the pilot responds. Offered
+            flights remain in{" "}
+            <Link
+              href={`/${slug}/dispatch?view=flights`}
+              className="font-bold text-[var(--brand-action)] underline decoration-[var(--brand-border)] underline-offset-2"
+            >
+              flight management
+            </Link>
+            .
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void board.refetch()}
+          className="inline-flex min-h-10 items-center gap-2 border border-slate-300 bg-white px-3 text-xs font-black uppercase tracking-wider text-slate-700 hover:border-slate-500 focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
+        >
+          <RefreshCw
+            aria-hidden
+            className={`size-4 ${board.isFetching ? "animate-spin" : ""}`}
+          />
+          Live · 10s
+        </button>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-4">
-        {groups.map((status) => {
-          const flights = board.data.flights.filter(
-            (flight) => flight.status === status,
+      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+        {LANES.map((lane) => {
+          const flights = sortLane(
+            board.data.flights.filter(
+              (flight) => flight.status === lane.status,
+            ),
+            lane.status,
           );
+          const Icon = lane.icon;
           return (
             <section
-              key={status}
-              aria-labelledby={`board-${status}`}
-              className="rounded-2xl border border-slate-200 bg-slate-100/70 p-3"
+              key={lane.status}
+              aria-labelledby={`board-${lane.status}`}
+              className="min-w-0 border-t-2 bg-[#f2f3f2]"
+              style={{ borderTopColor: lane.accent }}
             >
-              <div className="mb-3 flex items-center justify-between px-1">
-                <h2
-                  id={`board-${status}`}
-                  className="font-display text-lg font-semibold text-slate-950"
-                >
-                  {status.charAt(0).toUpperCase() + status.slice(1)}
-                </h2>
-                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-600">
+              <div className="flex min-h-18 items-center border-x border-b border-slate-200 bg-white px-4 py-3">
+                <Icon
+                  aria-hidden
+                  className="mr-3 size-5"
+                  style={{ color: lane.accent }}
+                />
+                <div className="min-w-0">
+                  <h3
+                    id={`board-${lane.status}`}
+                    className="font-display text-base font-black uppercase tracking-wide text-[#17213d]"
+                  >
+                    {lane.label}
+                  </h3>
+                  <p className="truncate text-[11px] text-slate-500">
+                    {lane.description}
+                  </p>
+                </div>
+                <span className="ml-auto min-w-8 border border-slate-200 bg-slate-50 px-2 py-1 text-center font-mono text-xs font-black text-slate-700">
                   {flights.length}
                 </span>
               </div>
-              <div className="space-y-3">
+              <div className="min-h-52 space-y-2 border-x border-slate-200 p-2.5 2xl:min-h-[34rem]">
                 {flights.length ? (
-                  flights.map((flight) => (
+                  flights.map((flight, index) => (
                     <BoardCard
                       key={flight.id}
                       flight={flight}
-                      pilot={memberLabel(
+                      pilot={
                         flight.pilotMembershipId
                           ? memberMap.get(flight.pilotMembershipId)
-                          : undefined,
-                      )}
-                      href={`/${slug}/dispatch/flights/${flight.id}`}
+                          : undefined
+                      }
+                      slug={slug}
+                      animationIndex={index}
+                      onModify={() => setSelectedFlightId(flight.id)}
                     />
                   ))
                 ) : (
-                  <div className="rounded-xl bg-white">
+                  <div className="border border-dashed border-slate-300 bg-white/65">
                     <EmptyState
-                      title={`No ${status} flights`}
-                      detail="This column is clear for the next seven days."
+                      title={`No ${lane.label.toLowerCase()} flights`}
+                      detail={
+                        lane.status === "completed"
+                          ? "No flight has finished in the current UTC month."
+                          : "This operational lane is clear."
+                      }
                     />
                   </div>
                 )}
+              </div>
+              <div className="border border-slate-200 bg-white px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {lane.status === "completed"
+                  ? "Newest finished first"
+                  : "Earliest ETD first"}
               </div>
             </section>
           );
         })}
       </div>
-      <p className="mt-4 flex items-center gap-2 text-xs text-slate-500">
-        <PlaneTakeoff aria-hidden className="size-4" /> The board refreshes
-        every 10 seconds while this tab is visible and online.
-      </p>
+
+      {selectedFlightId ? (
+        <FlightPlanningDialog
+          key={selectedFlightId}
+          slug={slug}
+          flightId={selectedFlightId}
+          members={members.data.items}
+          onClose={() => setSelectedFlightId(null)}
+        />
+      ) : null}
     </>
   );
+}
+
+function KpiStrip({
+  metrics,
+}: {
+  metrics: ReturnType<typeof dispatchBoardSchema.parse>["metrics"];
+}) {
+  const otp = metrics.onTimePerformance;
+  const progress = metrics.scheduledVsFinished;
+  return (
+    <section
+      aria-label="Operational KPIs"
+      className="border-y border-slate-300 bg-white"
+    >
+      <div className="grid snap-x snap-mandatory grid-flow-col auto-cols-[85%] divide-x divide-slate-200 overflow-x-auto md:grid-flow-row md:auto-cols-auto md:grid-cols-3 md:overflow-visible">
+        <Kpi
+          label="Active flights"
+          value={String(metrics.activeFlights.value)}
+          supporting="Live current count"
+          definition={metrics.activeFlights.definition}
+        />
+        <Kpi
+          label="On-time performance"
+          value={formatRatio(otp.value)}
+          supporting={`${otp.onTime} on time · ${otp.tracked}/${otp.eligible} departures tracked`}
+          definition={otp.definition}
+          warning={otp.eligible > otp.tracked}
+        />
+        <Kpi
+          label="Scheduled vs Finished"
+          value={`${progress.finished} / ${progress.scheduled}`}
+          supporting={`${formatRatio(progress.value)} finished · ${metrics.window.label}`}
+          definition={progress.definition}
+        />
+      </div>
+    </section>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  supporting,
+  definition,
+  warning = false,
+}: {
+  label: string;
+  value: string;
+  supporting: string;
+  definition: string;
+  warning?: boolean;
+}) {
+  return (
+    <div className="relative min-h-40 snap-start px-5 py-4 sm:px-6">
+      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600">
+        {label}
+      </p>
+      <p className="mt-2 font-display text-5xl font-light tracking-tight text-[#17213d]">
+        {value}
+      </p>
+      <p
+        className={`mt-2 text-xs font-bold ${warning ? "text-amber-800" : "text-slate-500"}`}
+      >
+        {warning ? (
+          <AlertTriangle aria-hidden className="mr-1 inline size-3.5" />
+        ) : null}
+        {supporting}
+      </p>
+      <details className="group mt-3 text-xs text-slate-500">
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 font-bold hover:text-slate-900">
+          <Info aria-hidden className="size-3.5" /> Definition
+        </summary>
+        <p className="mt-2 max-w-md leading-5">{definition}</p>
+      </details>
+    </div>
+  );
+}
+
+function sortLane(flights: BoardFlight[], status: string): BoardFlight[] {
+  return [...flights].sort((a, b) =>
+    status === "completed"
+      ? new Date(b.inAt ?? b.etd).getTime() -
+        new Date(a.inAt ?? a.etd).getTime()
+      : new Date(a.etd).getTime() - new Date(b.etd).getTime(),
+  );
+}
+
+function timeOnly(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Invalid time";
+  return `${new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date)}Z`;
+}
+
+function formatRatio(value: number | null): string {
+  return value === null ? "—" : `${Math.round(value * 100)}%`;
 }

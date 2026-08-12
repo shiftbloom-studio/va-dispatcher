@@ -109,7 +109,7 @@ export function PilotDashboard({ slug }: { slug: string }) {
         <Card className="overflow-hidden">
           <CardHeader
             title="Upcoming flights"
-            description="Accepted and briefed sectors."
+            description="Accepted and scheduled sectors."
           />
           <div className="grid gap-3 p-4 sm:grid-cols-2">
             {upcoming.length ? (

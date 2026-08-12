@@ -2,6 +2,12 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 
 const timestamp = "2026-09-01T08:00:00.000Z";
 
+const brand = {
+  seedColor: "#e64646",
+  presence: "balanced",
+  logoUrl: null,
+};
+
 const pilot = {
   id: "11111111-1111-4111-8111-111111111111",
   role: "pilot",
@@ -26,6 +32,10 @@ function flight(overrides: Record<string, unknown> = {}) {
     cancelReason: null,
     declinedReason: null,
     dispatcherNotes: "Report ready for briefing.",
+    assignmentRevision: 1,
+    assignmentConfirmedRevision: null,
+    assignmentConfirmedAt: null,
+    assignmentConfirmationRequired: false,
     outAt: null,
     offAt: null,
     onAt: null,
@@ -33,6 +43,85 @@ function flight(overrides: Record<string, unknown> = {}) {
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides,
+  };
+}
+
+function dispatchRelease(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "44444444-4444-4444-8444-444444444444",
+    flightId: "22222222-2222-4222-8222-222222222222",
+    revision: 1,
+    operationalRoute: "NEXEN Z711 MONAK",
+    sid: "NEXEN2A",
+    star: "MONAK3M",
+    cruiseLevel: 350,
+    alternateIcao: "ESSA",
+    fuelUnit: "kg",
+    payloadUnit: "kg",
+    taxiFuel: 200,
+    tripFuel: 4_000,
+    contingencyFuel: 200,
+    alternateFuel: 700,
+    finalReserveFuel: 900,
+    additionalFuel: 0,
+    blockFuel: 6_000,
+    plannedPayload: 14_000,
+    weatherSnapshot: {
+      source: "aviationweather.gov",
+      fetchedAt: timestamp,
+      stations: ["EKCH", "ENGM", "ESSA"],
+      metar: [{ icaoId: "EKCH", rawOb: "EKCH 010750Z 24008KT CAVOK" }],
+      taf: [],
+      unavailable: [],
+    },
+    releaseNotes: "Review NOTAMs before departure.",
+    dispatcherRemarks: "Gate allocation pending.",
+    releasedByMembershipId: "dispatcher-membership",
+    releasedAt: timestamp,
+    ...overrides,
+  };
+}
+
+function flightDetail(
+  currentFlight: ReturnType<typeof flight>,
+  release: ReturnType<typeof dispatchRelease> | null = null,
+) {
+  return {
+    flight: currentFlight,
+    release,
+    releaseRevisions: release ? [release] : [],
+    events: [],
+  };
+}
+
+function emptyBoard() {
+  return {
+    flights: [],
+    metrics: {
+      window: {
+        from: "2026-09-01T00:00:00.000Z",
+        toExclusive: "2026-10-01T00:00:00.000Z",
+        label: "Current UTC calendar month",
+      },
+      activeFlights: {
+        value: 0,
+        definition: "Flights currently in Active status.",
+      },
+      onTimePerformance: {
+        value: null,
+        onTime: 0,
+        tracked: 0,
+        eligible: 0,
+        definition: "Actual OUT at or before ETD + 15 minutes.",
+      },
+      scheduledVsFinished: {
+        scheduled: 0,
+        finished: 0,
+        value: null,
+        definition: "Finished flights divided by scheduled flights.",
+      },
+    },
+    scheduleRequestCounts: {},
   };
 }
 
@@ -93,6 +182,7 @@ async function baseFixtures(page: Page) {
       acarsProvider: "mock",
       hoppiePollingEnabled: false,
       hoppieLastTestedAt: null,
+      brand,
       settings: {},
     }),
   );
@@ -187,11 +277,15 @@ test("pilot requests a UTC schedule and accepts an offer", async ({
     json(route, { items: [currentFlight], nextCursor: null }),
   );
   await page.route("**/api/v1/flights/*/accept", (route) => {
-    currentFlight = flight({ status: "accepted" });
+    currentFlight = flight({
+      status: "accepted",
+      assignmentConfirmedRevision: 1,
+      assignmentConfirmedAt: timestamp,
+    });
     return json(route, { flight: currentFlight });
   });
   await page.route("**/api/v1/flights/*", (route) =>
-    json(route, { flight: currentFlight }),
+    json(route, flightDetail(currentFlight)),
   );
 
   await page.goto("/vsas/portal/schedule-requests/new");
@@ -214,7 +308,12 @@ test("dispatcher builds the exact offer and advances a flight", async ({
   await context.addCookies([
     { name: "e2e-role", value: "dispatcher", domain: "127.0.0.1", path: "/" },
   ]);
-  let currentFlight = flight({ status: "accepted" });
+  let currentFlight = flight({
+    status: "accepted",
+    assignmentConfirmedRevision: 1,
+    assignmentConfirmedAt: timestamp,
+  });
+  let currentRelease: ReturnType<typeof dispatchRelease> | null = null;
   let currentRequest = scheduleRequest({ status: "in_review" });
   await baseFixtures(page);
   await page.route("**/api/v1/schedule-requests/*", (route) =>
@@ -224,7 +323,7 @@ test("dispatcher builds the exact offer and advances a flight", async ({
     json(route, { items: [], nextCursor: null }),
   );
   await page.route("**/api/v1/flights/*", (route) =>
-    json(route, { flight: currentFlight }),
+    json(route, flightDetail(currentFlight, currentRelease)),
   );
   await page.route("**/api/v1/flights/bulk", async (route) => {
     const body = route.request().postDataJSON();
@@ -234,11 +333,29 @@ test("dispatcher builds the exact offer and advances a flight", async ({
   });
   await page.route("**/api/v1/flights/*/status", async (route) => {
     const body = route.request().postDataJSON();
-    currentFlight = flight({ status: body.status });
+    currentFlight = flight({ ...currentFlight, status: body.status });
     return json(route, { flight: currentFlight });
   });
+  await page.route("**/api/v1/flights/*/release", async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body).toMatchObject({
+      operationalRoute: "NEXEN Z711 MONAK",
+      alternateIcao: "ESSA",
+      cruiseLevel: 350,
+      taxiFuel: 200,
+      tripFuel: 4_000,
+      contingencyFuel: 200,
+      alternateFuel: 700,
+      finalReserveFuel: 900,
+      blockFuel: 6_000,
+      plannedPayload: 14_000,
+    });
+    currentFlight = flight({ ...currentFlight, status: "briefed" });
+    currentRelease = dispatchRelease(body);
+    return json(route, { flight: currentFlight, release: currentRelease }, 201);
+  });
   await page.route("**/api/v1/dispatch/board", (route) =>
-    json(route, { flights: [], scheduleRequestCounts: {} }),
+    json(route, emptyBoard()),
   );
 
   await page.goto(`/vsas/dispatch/requests/${currentRequest.id}`);
@@ -252,8 +369,25 @@ test("dispatcher builds the exact offer and advances a flight", async ({
   await expect(page.getByText("Fulfilled", { exact: true })).toBeVisible();
 
   await page.goto(`/vsas/dispatch/flights/${currentFlight.id}`);
-  await page.getByRole("button", { name: "Mark briefed" }).click();
-  await expect(page.getByText("Briefed", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Prepare dispatch release" }).click();
+  const planning = page.getByRole("dialog", {
+    name: "Flight planning workspace",
+  });
+  await planning.getByLabel("Operational route").fill("NEXEN Z711 MONAK");
+  await planning.getByLabel("Alternate ICAO").fill("ESSA");
+  await planning.getByLabel("Taxi").fill("200");
+  await planning.getByLabel("Trip").fill("4000");
+  await planning.getByLabel("Contingency").fill("200");
+  await planning.getByLabel("Alternate", { exact: true }).fill("700");
+  await planning.getByLabel("Final reserve").fill("900");
+  await planning.getByLabel("Planned payload").fill("14000");
+  await planning
+    .getByRole("button", { name: "Publish and schedule flight" })
+    .click();
+  await expect(planning.getByText("Scheduled", { exact: true })).toBeVisible();
+  await planning
+    .getByRole("button", { name: "Close planning workspace" })
+    .click();
   await page.getByRole("button", { name: "Activate flight" }).click();
   await expect(page.getByText("Active", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Complete flight" }).click();
@@ -261,7 +395,88 @@ test("dispatcher builds the exact offer and advances a flight", async ({
     .getByRole("dialog")
     .getByRole("button", { name: "Complete flight" })
     .click();
-  await expect(page.getByText("Completed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Finished", { exact: true })).toBeVisible();
+});
+
+test("dispatcher scans the live board and opens flight planning", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    { name: "e2e-role", value: "dispatcher", domain: "127.0.0.1", path: "/" },
+  ]);
+  const accepted = flight({
+    status: "accepted",
+    assignmentRevision: 2,
+    assignmentConfirmedRevision: 1,
+    assignmentConfirmedAt: timestamp,
+    assignmentConfirmationRequired: true,
+  });
+  const active = flight({
+    id: "55555555-5555-4555-8555-555555555555",
+    status: "active",
+    flightNumber: "SK480",
+    assignmentConfirmedRevision: 1,
+    assignmentConfirmedAt: timestamp,
+  });
+  await baseFixtures(page);
+  await page.route("**/api/v1/dispatch/board", (route) => {
+    const fixture = emptyBoard();
+    return json(route, {
+      ...fixture,
+      flights: [
+        { ...accepted, latestReleaseRevision: null },
+        { ...active, latestReleaseRevision: 1 },
+      ],
+      metrics: {
+        ...fixture.metrics,
+        activeFlights: {
+          ...fixture.metrics.activeFlights,
+          value: 1,
+        },
+        onTimePerformance: {
+          ...fixture.metrics.onTimePerformance,
+          value: 1,
+          onTime: 1,
+          tracked: 1,
+          eligible: 2,
+        },
+        scheduledVsFinished: {
+          ...fixture.metrics.scheduledVsFinished,
+          scheduled: 2,
+          finished: 0,
+          value: 0,
+        },
+      },
+    });
+  });
+  await page.route(`**/api/v1/flights/${accepted.id}`, (route) =>
+    json(route, flightDetail(accepted)),
+  );
+
+  await page.goto("/vsas/dispatch");
+  await expect(page.getByText("1/2 departures tracked")).toBeVisible();
+  const toSchedule = page.getByRole("region", { name: "To schedule" });
+  await expect(
+    toSchedule.getByText(/Pilot confirmation pending/),
+  ).toBeVisible();
+  const activeLane = page.getByRole("region", { name: "Active" });
+  await expect(
+    activeLane.getByRole("link", { name: "Open ACARS" }),
+  ).toHaveAttribute(
+    "href",
+    new RegExp(`station=SAS101.*flightId=${active.id}`),
+  );
+
+  await toSchedule.getByRole("button", { name: "Modify" }).click();
+  const planning = page.getByRole("dialog", {
+    name: "Flight planning workspace",
+  });
+  await expect(planning.getByLabel("Aircraft type")).toHaveAttribute(
+    "readonly",
+    "",
+  );
+  await expect(planning.getByText("Pilot confirmation required")).toBeVisible();
 });
 
 test("dispatcher sends Hoppie ACARS", async ({ page, context }) => {
@@ -286,6 +501,7 @@ test("dispatcher sends Hoppie ACARS", async ({ page, context }) => {
       acarsProvider: "hoppie",
       hoppiePollingEnabled: true,
       hoppieLastTestedAt: timestamp,
+      brand,
       settings: {},
     }),
   );

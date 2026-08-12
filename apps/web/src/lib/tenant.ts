@@ -1,10 +1,13 @@
+import type { TenantBrand, TenantDetail } from "@/lib/api/schemas";
+import { DEFAULT_BRAND } from "@/lib/brand";
+
 export type TenantConfig = {
   slug: string;
   name: string;
   shortName: string;
-  accent: string;
+  brand: TenantBrand;
   logo: {
-    src: string;
+    src: string | null;
     alt: string;
   };
 };
@@ -16,7 +19,7 @@ const tenants: Record<string, TenantConfig> = {
     slug: DEFAULT_TENANT_SLUG,
     name: "Virtual SAS",
     shortName: "vSAS",
-    accent: "#e64646",
+    brand: DEFAULT_BRAND,
     logo: {
       src: "/tenants/vsas/logo.jpg",
       alt: "Virtual SAS logo",
@@ -26,4 +29,20 @@ const tenants: Record<string, TenantConfig> = {
 
 export function getTenantConfig(slug: string): TenantConfig | null {
   return tenants[slug.toLowerCase()] ?? null;
+}
+
+export function tenantConfigFromDetail(
+  tenant: Pick<TenantDetail, "slug" | "name" | "brand">,
+  fallback?: TenantConfig | null,
+): TenantConfig {
+  return {
+    slug: tenant.slug,
+    name: tenant.name,
+    shortName: fallback?.shortName ?? tenant.name,
+    brand: tenant.brand,
+    logo: {
+      src: tenant.brand.logoUrl ?? fallback?.logo.src ?? null,
+      alt: `${tenant.name} logo`,
+    },
+  };
 }

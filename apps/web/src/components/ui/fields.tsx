@@ -23,7 +23,7 @@ export function Label({
 }
 
 const fieldClass =
-  "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-950 shadow-sm outline-none placeholder:text-slate-400 focus:border-[var(--accent)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--accent)_20%,transparent)] disabled:bg-slate-100 sm:text-sm";
+  "min-h-11 w-full rounded-[2px] border border-slate-300 bg-white px-3 py-2 text-base text-slate-950 outline-none placeholder:text-slate-400 focus:border-[var(--brand-action)] focus:ring-2 focus:ring-[var(--brand-soft)] disabled:bg-slate-100 sm:text-sm";
 
 export const Input = forwardRef<
   HTMLInputElement,

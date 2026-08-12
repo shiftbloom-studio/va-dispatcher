@@ -3,8 +3,9 @@ import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { OrganizationMismatch } from "@/components/organization-mismatch";
+import { getPublicTenantConfig } from "@/lib/public-tenant";
 import { getServerIdentity } from "@/lib/server-identity";
-import { getTenantConfig } from "@/lib/tenant";
+import { tenantConfigFromDetail } from "@/lib/tenant";
 
 export default async function ProtectedLayout({
   children,
@@ -14,7 +15,7 @@ export default async function ProtectedLayout({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const tenant = getTenantConfig(slug);
+  const tenant = await getPublicTenantConfig(slug);
   if (!tenant) notFound();
 
   const identity = await getServerIdentity(slug);
@@ -25,11 +26,12 @@ export default async function ProtectedLayout({
     );
   }
 
+  const operationalConfig = tenantConfigFromDetail(identity.tenant, tenant);
+
   return (
     <AppShell
       slug={slug}
-      tenant={tenant}
-      operationalTenant={identity.tenant}
+      tenant={operationalConfig}
       me={identity.me}
       role={identity.role}
     >

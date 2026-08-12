@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PilotFlightDetail } from "@/components/pilot-flight-detail";
+import type { Flight } from "@/lib/api/schemas";
 import { TestQueryProvider } from "@/test/test-query-provider";
 
 const apiMock = vi.fn();
@@ -15,7 +16,7 @@ vi.mock("@/lib/api/use-api", () => ({
   }),
 }));
 
-const offeredFlight = {
+const offeredFlight: Flight = {
   id: "flight-1",
   scheduleRequestId: "request-1",
   pilotMembershipId: "member-1",
@@ -29,6 +30,10 @@ const offeredFlight = {
   cancelReason: null,
   declinedReason: null,
   dispatcherNotes: null,
+  assignmentRevision: 1,
+  assignmentConfirmedRevision: null,
+  assignmentConfirmedAt: null,
+  assignmentConfirmationRequired: false,
   outAt: null,
   offAt: null,
   onAt: null,
@@ -40,17 +45,25 @@ const offeredFlight = {
 describe("PilotFlightDetail decisions", () => {
   beforeEach(() => {
     apiMock.mockReset();
+    let currentFlight = offeredFlight;
     apiMock.mockImplementation((path: string, options: { method?: string }) => {
       if (path === "/flights/flight-1" && !options.method)
-        return Promise.resolve({ flight: offeredFlight });
-      if (path === "/flights/flight-1/decline")
         return Promise.resolve({
-          flight: {
-            ...offeredFlight,
-            status: "declined",
-            declinedReason: "Schedule conflict",
-          },
+          flight: currentFlight,
+          release: null,
+          releaseRevisions: [],
+          events: [],
         });
+      if (path === "/flights/flight-1/decline") {
+        currentFlight = {
+          ...offeredFlight,
+          status: "declined",
+          declinedReason: "Schedule conflict",
+        };
+        return Promise.resolve({
+          flight: currentFlight,
+        });
+      }
       throw new Error(`Unexpected API call: ${path}`);
     });
   });
