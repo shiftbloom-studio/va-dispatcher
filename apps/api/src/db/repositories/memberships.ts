@@ -104,6 +104,11 @@ export async function updateMembership(
     role?: MemberRole;
     displayName?: string | null;
     pilotCallsign?: string | null;
+    simbriefUserId?: string | null;
+    simbriefVerifiedAt?: Date | null;
+    navigraphSubject?: string | null;
+    navigraphUsername?: string | null;
+    navigraphConnectedAt?: Date | null;
     status?: Membership["status"];
   },
 ): Promise<Membership | null> {
@@ -112,6 +117,30 @@ export async function updateMembership(
     .update(memberships)
     .set({ ...patch, updatedAt: new Date() })
     .where(and(eq(memberships.tenantId, tenantId), eq(memberships.id, id)))
+    .returning();
+  return updated ?? null;
+}
+
+export async function markSimbriefVerified(input: {
+  tenantId: string;
+  membershipId: string;
+  simbriefUserId: string;
+  verifiedAt: Date;
+}): Promise<Membership | null> {
+  const db = getDb();
+  const [updated] = await db
+    .update(memberships)
+    .set({
+      simbriefVerifiedAt: input.verifiedAt,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(memberships.tenantId, input.tenantId),
+        eq(memberships.id, input.membershipId),
+        eq(memberships.simbriefUserId, input.simbriefUserId),
+      ),
+    )
     .returning();
   return updated ?? null;
 }

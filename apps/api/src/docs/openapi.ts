@@ -60,6 +60,18 @@ const queryParameter = (
   schema,
 });
 
+const requiredQueryParameter = (
+  name: string,
+  description: string,
+  schema: OpenApiObject,
+): OpenApiObject => ({
+  name,
+  in: "query",
+  required: true,
+  description,
+  schema,
+});
+
 const paginationParameters = [
   queryParameter(
     "cursor",
@@ -183,6 +195,10 @@ const schemas = {
   AcarsProvider: {
     type: "string",
     enum: ["mock", "hoppie"],
+  },
+  SimbriefDispatchStatus: {
+    type: "string",
+    enum: ["pending", "ready"],
   },
   ErrorCode: {
     type: "string",
@@ -529,6 +545,85 @@ const schemas = {
       sentAt: schemaRef("NullableDateTime"),
     },
   },
+  SimbriefConnection: {
+    type: "object",
+    required: ["connected", "userId", "verified", "verifiedAt", "oauth"],
+    properties: {
+      connected: { type: "boolean" },
+      userId: {
+        type: "string",
+        nullable: true,
+        pattern: "^[1-9]\\d{1,11}$",
+        description: "Numeric SimBrief Pilot ID.",
+      },
+      verified: { type: "boolean" },
+      verifiedAt: schemaRef("NullableDateTime"),
+      oauth: {
+        type: "object",
+        required: ["configured", "connected", "username", "connectedAt"],
+        properties: {
+          configured: { type: "boolean" },
+          connected: { type: "boolean" },
+          username: schemaRef("NullableString"),
+          connectedAt: schemaRef("NullableDateTime"),
+        },
+      },
+    },
+  },
+  SimbriefDispatch: {
+    type: "object",
+    required: [
+      "id",
+      "flightId",
+      "createdByMembershipId",
+      "staticId",
+      "status",
+      "request",
+      "ofp",
+      "simbriefRequestId",
+      "generatedAt",
+      "syncedAt",
+      "lastError",
+      "createdAt",
+      "updatedAt",
+    ],
+    properties: {
+      id: schemaRef("Uuid"),
+      flightId: schemaRef("Uuid"),
+      createdByMembershipId: schemaRef("NullableUuid"),
+      staticId: { type: "string", example: "VAD_0123456789abcdef" },
+      status: schemaRef("SimbriefDispatchStatus"),
+      request: {
+        type: "object",
+        additionalProperties: { type: "string" },
+        description:
+          "Normalized dispatch parameters. SimBrief user identifiers are omitted from API responses.",
+      },
+      ofp: {
+        type: "object",
+        nullable: true,
+        additionalProperties: true,
+        description:
+          "Untrusted SimBrief operational flight-plan JSON. Sanitize plan_html before rendering it in a UI.",
+      },
+      simbriefRequestId: schemaRef("NullableString"),
+      generatedAt: schemaRef("NullableDateTime"),
+      syncedAt: schemaRef("NullableDateTime"),
+      lastError: schemaRef("NullableString"),
+      createdAt: schemaRef("DateTime"),
+      updatedAt: schemaRef("DateTime"),
+    },
+  },
+  SimbriefCallbackDispatch: {
+    type: "object",
+    required: ["id", "flightId", "status", "generatedAt"],
+    properties: {
+      id: schemaRef("Uuid"),
+      flightId: schemaRef("Uuid"),
+      status: schemaRef("SimbriefDispatchStatus"),
+      generatedAt: schemaRef("NullableDateTime"),
+    },
+  },
   UpdateProfileInput: {
     type: "object",
     minProperties: 1,
@@ -700,6 +795,76 @@ const schemas = {
       msgType: schemaRef("AcarsMessageType"),
     },
   },
+  ConnectSimbriefInput: {
+    type: "object",
+    required: ["userId"],
+    additionalProperties: false,
+    properties: {
+      userId: {
+        type: "string",
+        pattern: "^[1-9]\\d{1,11}$",
+        description: "Numeric SimBrief Pilot ID, not a username.",
+        example: "123456",
+      },
+    },
+  },
+  CreateSimbriefDispatchInput: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      aircraftType: {
+        type: "string",
+        minLength: 2,
+        maxLength: 64,
+        pattern: "^[A-Za-z0-9_-]+$",
+        description:
+          "ICAO aircraft type or SimBrief airframe Internal ID. Defaults to the flight aircraft type.",
+      },
+      airline: { type: "string", minLength: 1, maxLength: 3 },
+      flightNumber: { type: "string", minLength: 1, maxLength: 12 },
+      callsign: {
+        type: "string",
+        minLength: 2,
+        maxLength: 12,
+        pattern: "^[A-Za-z0-9]+$",
+      },
+      route: { type: "string", maxLength: 2000 },
+      alternate: { type: "string", minLength: 4, maxLength: 4 },
+      flightLevel: {
+        oneOf: [
+          { type: "integer", minimum: 0, maximum: 60000 },
+          { type: "string", pattern: "^(?:FL)?\\d{2,5}$" },
+        ],
+      },
+      registration: { type: "string", minLength: 1, maxLength: 16 },
+      passengers: { type: "integer", minimum: 0, maximum: 1000 },
+      cargo: { type: "number", minimum: 0, maximum: 9999 },
+      captainName: { type: "string", minLength: 1, maxLength: 120 },
+      dispatcherName: { type: "string", minLength: 1, maxLength: 120 },
+      customRemarks: { type: "string", maxLength: 2000 },
+      units: { type: "string", enum: ["KGS", "LBS"], default: "KGS" },
+      planFormat: { type: "string", minLength: 1, maxLength: 32 },
+      costIndex: {
+        oneOf: [
+          { type: "integer", minimum: 0, maximum: 999 },
+          { type: "string", enum: ["AUTO"] },
+        ],
+      },
+      taxiOutMinutes: { type: "integer", minimum: 0, maximum: 180 },
+      taxiInMinutes: { type: "integer", minimum: 0, maximum: 180 },
+      reserveMinutes: { type: "integer", minimum: 0, maximum: 600 },
+      navlog: { type: "boolean" },
+      etops: { type: "boolean" },
+      stepClimbs: { type: "boolean" },
+      runwayAnalysis: { type: "boolean" },
+      notams: { type: "boolean" },
+      firNotams: { type: "boolean" },
+      omitSids: { type: "boolean" },
+      omitStars: { type: "boolean" },
+      maps: { type: "string", enum: ["detail", "simple", "none"] },
+      sidStarPreference: { type: "string", enum: ["R", "C"] },
+    },
+  },
   SeedVsasInput: {
     type: "object",
     properties: {
@@ -784,6 +949,53 @@ const schemas = {
     properties: {
       flights: { type: "array", items: schemaRef("Flight") },
     },
+  },
+  SimbriefConnectionResponse: {
+    type: "object",
+    required: ["connection"],
+    properties: { connection: schemaRef("SimbriefConnection") },
+  },
+  NavigraphOauthStartResponse: {
+    type: "object",
+    required: ["authorizationUrl", "redirectUri", "expiresAt"],
+    properties: {
+      authorizationUrl: {
+        type: "string",
+        format: "uri",
+        description:
+          "One-time Navigraph Authorization Code URL with S256 PKCE. Open it in the user's browser before expiresAt.",
+      },
+      redirectUri: {
+        type: "string",
+        format: "uri",
+        example:
+          "https://www.va-dispatcher.world/api/v1/simbrief/oauth/callback",
+      },
+      expiresAt: schemaRef("DateTime"),
+    },
+  },
+  SimbriefDispatchResponse: {
+    type: "object",
+    required: ["dispatch"],
+    properties: { dispatch: schemaRef("SimbriefDispatch") },
+  },
+  CreateSimbriefDispatchResponse: {
+    type: "object",
+    required: ["dispatch", "dispatchUrl"],
+    properties: {
+      dispatch: schemaRef("SimbriefDispatch"),
+      dispatchUrl: {
+        type: "string",
+        format: "uri",
+        description:
+          "Signed SimBrief Dispatch Redirect URL. Open it directly in the user's browser; do not proxy it through the API.",
+      },
+    },
+  },
+  SimbriefCallbackResponse: {
+    type: "object",
+    required: ["dispatch"],
+    properties: { dispatch: schemaRef("SimbriefCallbackDispatch") },
   },
   DispatchBoardResponse: {
     type: "object",
@@ -878,7 +1090,15 @@ const responses = {
     schemaRef("ErrorResponse"),
   ),
   UpstreamError: jsonResponse(
-    "The configured upstream ACARS provider rejected or failed the request.",
+    "A configured upstream provider rejected or failed the request.",
+    schemaRef("ErrorResponse"),
+  ),
+  TooManyRequests: jsonResponse(
+    "The upstream provider is rate-limiting requests.",
+    schemaRef("ErrorResponse"),
+  ),
+  GatewayTimeout: jsonResponse(
+    "The upstream provider did not respond before the timeout.",
     schemaRef("ErrorResponse"),
   ),
   InternalError: jsonResponse(
@@ -899,7 +1119,7 @@ export const openApiDocument = {
     title: "VA Dispatch API",
     version: "0.1.0",
     description:
-      "Multi-tenant REST API for Virtual Airline scheduling, live dispatch, flights, membership administration, and ACARS messaging. All tenant data is resolved from the authenticated Clerk organization; clients never supply a tenant ID.",
+      "Multi-tenant REST API for Virtual Airline scheduling, live dispatch, flights, SimBrief flight planning, membership administration, and ACARS messaging. All tenant data is resolved from the authenticated Clerk organization; clients never supply a tenant ID.",
     license: {
       name: "AGPL-3.0-or-later",
       url: "https://www.gnu.org/licenses/agpl-3.0.html",
@@ -938,6 +1158,11 @@ export const openApiDocument = {
     {
       name: "Flights",
       description: "Flight creation, assignment, and lifecycle transitions.",
+    },
+    {
+      name: "SimBrief",
+      description:
+        "Navigraph account linking and tenant-scoped SimBrief flight-plan dispatches.",
     },
     { name: "Dispatch", description: "Dispatcher operational views." },
     { name: "ACARS", description: "Tenant-scoped ACARS messaging." },
@@ -1404,6 +1629,232 @@ export const openApiDocument = {
             schemaRef("FlightResponse"),
           ),
           ...mutationErrors,
+        },
+      },
+    },
+    "/simbrief/oauth/callback": {
+      get: {
+        tags: ["SimBrief"],
+        operationId: "completeNavigraphOauth",
+        summary: "Complete Navigraph account authorization",
+        description:
+          "Public Authorization Code callback registered with Navigraph. Exactly one of code or error must be supplied with the one-time state. The server consumes the state, exchanges the code with S256 PKCE, and stores only the stable account identity.",
+        security: [],
+        parameters: [
+          requiredQueryParameter(
+            "state",
+            "One-time OAuth state returned by Navigraph.",
+            {
+              type: "string",
+              pattern: "^v1\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}$",
+            },
+          ),
+          queryParameter(
+            "code",
+            "Authorization code returned after consent. Mutually exclusive with error.",
+            { type: "string", minLength: 1, maxLength: 4096 },
+          ),
+          queryParameter(
+            "error",
+            "OAuth error returned when authorization is denied. Mutually exclusive with code.",
+            {
+              type: "string",
+              pattern: "^[A-Za-z0-9_]{1,64}$",
+            },
+          ),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Connected Navigraph identity and SimBrief account state.",
+            schemaRef("SimbriefConnectionResponse"),
+          ),
+          "400": responseRef("BadRequest"),
+          "401": responseRef("Unauthorized"),
+          "409": responseRef("Conflict"),
+          "429": responseRef("TooManyRequests"),
+          "500": responseRef("InternalError"),
+          "502": responseRef("UpstreamError"),
+          "503": responseRef("ServiceUnavailable"),
+          "504": responseRef("GatewayTimeout"),
+        },
+      },
+    },
+    "/simbrief/callback": {
+      get: {
+        tags: ["SimBrief"],
+        operationId: "completeSimbriefDispatch",
+        summary: "Complete a SimBrief dispatch redirect",
+        description:
+          "Public, one-time callback reached after SimBrief generation. The server verifies the callback token, fetches the OFP by static ID, checks its pilot and route identifiers, and stores the result.",
+        security: [],
+        parameters: [
+          requiredQueryParameter(
+            "dispatchId",
+            "Pending SimBrief dispatch ID.",
+            schemaRef("Uuid"),
+          ),
+          requiredQueryParameter(
+            "token",
+            "One-time callback token embedded in the signed Dispatch Redirect URL.",
+            {
+              type: "string",
+              pattern: "^[A-Za-z0-9_-]{43}$",
+            },
+          ),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Completed dispatch summary.",
+            schemaRef("SimbriefCallbackResponse"),
+          ),
+          "400": responseRef("BadRequest"),
+          "401": responseRef("Unauthorized"),
+          "409": responseRef("Conflict"),
+          "429": responseRef("TooManyRequests"),
+          "500": responseRef("InternalError"),
+          "502": responseRef("UpstreamError"),
+          "504": responseRef("GatewayTimeout"),
+        },
+      },
+    },
+    "/simbrief/connection": {
+      get: {
+        tags: ["SimBrief"],
+        operationId: "getSimbriefConnection",
+        summary: "Get the current member's SimBrief connection",
+        description:
+          "Reports the separate numeric SimBrief Pilot ID and Navigraph OAuth identity states without exposing the Navigraph subject or any OAuth token.",
+        responses: {
+          "200": jsonResponse(
+            "Current connection state.",
+            schemaRef("SimbriefConnectionResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+      put: {
+        tags: ["SimBrief"],
+        operationId: "connectSimbriefPilotId",
+        summary: "Connect a numeric SimBrief Pilot ID",
+        description:
+          "Stores the member's numeric SimBrief Pilot ID. The ID becomes verified only after a generated OFP returns with the same account identifier.",
+        requestBody: jsonRequest(schemaRef("ConnectSimbriefInput")),
+        responses: {
+          "200": jsonResponse(
+            "Updated connection state.",
+            schemaRef("SimbriefConnectionResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+      delete: {
+        tags: ["SimBrief"],
+        operationId: "disconnectSimbriefAccount",
+        summary: "Disconnect SimBrief and Navigraph account data",
+        description:
+          "Clears the current member's SimBrief Pilot ID, verification state, and Navigraph identity link. Existing flight-plan records remain subject to the configured retention policy.",
+        responses: {
+          "200": jsonResponse(
+            "Disconnected connection state.",
+            schemaRef("SimbriefConnectionResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/simbrief/oauth/start": {
+      post: {
+        tags: ["SimBrief"],
+        operationId: "startNavigraphOauth",
+        summary: "Start Navigraph account authorization",
+        description:
+          "Creates short-lived, single-use, server-authenticated OAuth state and an encrypted S256 PKCE verifier record. Open the returned authorizationUrl in the user's browser. Requires configured Navigraph credentials and TENANT_SECRETS_KEY.",
+        responses: {
+          "200": jsonResponse(
+            "One-time Navigraph authorization URL.",
+            schemaRef("NavigraphOauthStartResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/flights/{flightId}/simbrief/dispatches": {
+      post: {
+        tags: ["SimBrief"],
+        operationId: "createSimbriefDispatch",
+        summary: "Create a SimBrief flight-plan dispatch",
+        description:
+          "The assigned pilot may create a plan for their own flight; dispatchers and admins may create one for any tenant flight. The creator must have a connected numeric SimBrief Pilot ID. Open the returned signed dispatchUrl directly in a browser so SimBrief can authenticate the person generating the plan.",
+        parameters: [pathParameter("flightId", "Flight ID.")],
+        requestBody: optionalJsonRequest(
+          schemaRef("CreateSimbriefDispatchInput"),
+          "Optional SimBrief planning overrides. Omitted fields are derived from the flight or use SimBrief defaults.",
+        ),
+        responses: {
+          "201": jsonResponse(
+            "Created pending dispatch and signed browser URL.",
+            schemaRef("CreateSimbriefDispatchResponse"),
+          ),
+          ...mutationErrors,
+          "422": responseRef("UnprocessableEntity"),
+        },
+      },
+    },
+    "/flights/{flightId}/simbrief": {
+      get: {
+        tags: ["SimBrief"],
+        operationId: "getLatestSimbriefDispatch",
+        summary: "Get the latest SimBrief dispatch for a flight",
+        description:
+          "Returns the latest pending or ready dispatch and its stored OFP. Pilots can read their own assigned flight; dispatchers and admins can read any tenant flight.",
+        parameters: [pathParameter("flightId", "Flight ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Latest SimBrief dispatch.",
+            schemaRef("SimbriefDispatchResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/flights/{flightId}/simbrief/dispatches/{dispatchId}": {
+      get: {
+        tags: ["SimBrief"],
+        operationId: "getSimbriefDispatch",
+        summary: "Get a SimBrief dispatch",
+        parameters: [
+          pathParameter("flightId", "Flight ID."),
+          pathParameter("dispatchId", "SimBrief dispatch ID."),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "SimBrief dispatch detail.",
+            schemaRef("SimbriefDispatchResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/flights/{flightId}/simbrief/dispatches/{dispatchId}/sync": {
+      post: {
+        tags: ["SimBrief"],
+        operationId: "syncSimbriefDispatch",
+        summary: "Retry fetching a generated SimBrief OFP",
+        description:
+          "Idempotently fetches and verifies the OFP when the browser callback was interrupted after generation.",
+        parameters: [
+          pathParameter("flightId", "Flight ID."),
+          pathParameter("dispatchId", "SimBrief dispatch ID."),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Ready SimBrief dispatch, or the already stored result.",
+            schemaRef("SimbriefDispatchResponse"),
+          ),
+          ...mutationErrors,
+          "429": responseRef("TooManyRequests"),
+          "502": responseRef("UpstreamError"),
+          "504": responseRef("GatewayTimeout"),
         },
       },
     },
