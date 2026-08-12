@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { loadLegalConfig } from "@/lib/legal";
+import { loadLegalConfig, toTelephoneUri } from "@/lib/legal";
 
 const completeEnvironment = {
   NODE_ENV: "production",
   LEGAL_OPERATOR_NAME: "Example Aviation e.V.",
+  LEGAL_OPERATOR_DESCRIPTION: "Operator of the Example project",
   LEGAL_OPERATOR_ADDRESS: "Example Street 1|10115 Berlin|Germany",
   LEGAL_OPERATOR_EMAIL: "legal@example.test",
   LEGAL_PRIVACY_EMAIL: "privacy@example.test",
@@ -13,6 +14,10 @@ const completeEnvironment = {
 };
 
 describe("legal configuration", () => {
+  it("builds an international telephone URI without the domestic trunk prefix", () => {
+    expect(toTelephoneUri("+49 (0) 163 8552 708")).toBe("tel:+491638552708");
+  });
+
   it("rejects incomplete production configuration", () => {
     expect(() => loadLegalConfig({ NODE_ENV: "production" })).toThrowError(
       /LEGAL_OPERATOR_NAME/,
@@ -28,6 +33,7 @@ describe("legal configuration", () => {
       "10115 Berlin",
       "Germany",
     ]);
+    expect(config.operatorDescription).toBe("Operator of the Example project");
     expect(config.privacyEmail).toBe("privacy@example.test");
   });
 

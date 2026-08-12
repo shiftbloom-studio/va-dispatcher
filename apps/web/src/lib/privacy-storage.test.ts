@@ -2,33 +2,44 @@ import { describe, expect, it, vi } from "vitest";
 
 import { LEGAL_NOTICE_VERSION } from "@/lib/legal";
 import {
-  COOKIE_NOTICE_STORAGE_KEY,
-  clearCookieNotice,
-  parseCookieNoticeRecord,
-  readCookieNotice,
-  saveCookieNotice,
+  PRIVACY_PREFERENCES_STORAGE_KEY,
+  clearPrivacyPreferences,
+  parsePrivacyPreferencesRecord,
+  readPrivacyPreferences,
+  savePrivacyPreferences,
 } from "@/lib/privacy-storage";
 
-describe("cookie-notice storage", () => {
+describe("privacy-preference storage", () => {
   it("accepts only the current, well-formed notice version", () => {
     const current = JSON.stringify({
       version: LEGAL_NOTICE_VERSION,
-      acknowledgedAt: "2026-08-12T12:00:00.000Z",
+      decidedAt: "2026-08-12T12:00:00.000Z",
+      analyticsAllowed: true,
     });
 
-    expect(parseCookieNoticeRecord(current)).toEqual({
+    expect(parsePrivacyPreferencesRecord(current)).toEqual({
       version: LEGAL_NOTICE_VERSION,
-      acknowledgedAt: "2026-08-12T12:00:00.000Z",
+      decidedAt: "2026-08-12T12:00:00.000Z",
+      analyticsAllowed: true,
     });
     expect(
-      parseCookieNoticeRecord(
+      parsePrivacyPreferencesRecord(
         JSON.stringify({
           version: "old-version",
-          acknowledgedAt: "2026-08-12T12:00:00.000Z",
+          decidedAt: "2026-08-12T12:00:00.000Z",
+          analyticsAllowed: true,
         }),
       ),
     ).toBeNull();
-    expect(parseCookieNoticeRecord("not-json")).toBeNull();
+    expect(
+      parsePrivacyPreferencesRecord(
+        JSON.stringify({
+          version: LEGAL_NOTICE_VERSION,
+          decidedAt: "2026-08-12T12:00:00.000Z",
+        }),
+      ),
+    ).toBeNull();
+    expect(parsePrivacyPreferencesRecord("not-json")).toBeNull();
   });
 
   it("writes, reads, and clears the acknowledgement", () => {
@@ -39,14 +50,19 @@ describe("cookie-notice storage", () => {
       removeItem: (key: string) => values.delete(key),
     };
 
-    saveCookieNotice(storage, new Date("2026-08-12T12:00:00.000Z"));
-    expect(readCookieNotice(storage)).toEqual({
+    savePrivacyPreferences(
+      storage,
+      false,
+      new Date("2026-08-12T12:00:00.000Z"),
+    );
+    expect(readPrivacyPreferences(storage)).toEqual({
       version: LEGAL_NOTICE_VERSION,
-      acknowledgedAt: "2026-08-12T12:00:00.000Z",
+      decidedAt: "2026-08-12T12:00:00.000Z",
+      analyticsAllowed: false,
     });
 
-    clearCookieNotice(storage);
-    expect(values.has(COOKIE_NOTICE_STORAGE_KEY)).toBe(false);
+    clearPrivacyPreferences(storage);
+    expect(values.has(PRIVACY_PREFERENCES_STORAGE_KEY)).toBe(false);
   });
 
   it("does not break the privacy UI when browser storage is unavailable", () => {
@@ -60,8 +76,8 @@ describe("cookie-notice storage", () => {
       throw new Error("blocked");
     });
 
-    expect(readCookieNotice({ getItem })).toBeNull();
-    expect(() => saveCookieNotice({ setItem })).not.toThrow();
-    expect(() => clearCookieNotice({ removeItem })).not.toThrow();
+    expect(readPrivacyPreferences({ getItem })).toBeNull();
+    expect(() => savePrivacyPreferences({ setItem }, false)).not.toThrow();
+    expect(() => clearPrivacyPreferences({ removeItem })).not.toThrow();
   });
 });
