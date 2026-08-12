@@ -22,7 +22,7 @@ export default function AppError({
     >
       <div
         role="alert"
-        className="max-w-lg rounded-2xl border border-red-200 bg-white p-8 text-center shadow-xl"
+        className="max-w-lg rounded-[2px] border border-red-200 bg-white p-8 text-center shadow-xl"
       >
         <p className="text-sm font-bold uppercase tracking-widest text-red-700">
           Operational error

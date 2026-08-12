@@ -8,11 +8,13 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-[var(--accent)] text-white shadow-sm hover:brightness-95",
+  primary:
+    "border border-[var(--brand-action)] bg-[var(--brand-action)] text-[var(--brand-on-action)] hover:brightness-95",
   secondary:
-    "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
-  danger: "bg-red-700 text-white hover:bg-red-800",
-  ghost: "text-slate-700 hover:bg-slate-100",
+    "border border-slate-300 bg-white text-slate-800 hover:border-slate-500 hover:bg-slate-50",
+  danger: "border border-red-800 bg-red-800 text-white hover:bg-red-900",
+  ghost:
+    "border border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-100",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -30,7 +32,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         type={type}
-        className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55 ${
+        className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-[2px] font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-action)] disabled:cursor-not-allowed disabled:opacity-55 ${
           size === "sm" ? "px-3 py-1.5 text-sm" : "px-4 py-2 text-sm"
         } ${variants[variant]} ${className}`}
         {...props}

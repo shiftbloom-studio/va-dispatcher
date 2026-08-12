@@ -58,15 +58,15 @@ function MessageCard({
   const DirectionIcon = isInbound ? ArrowDownLeft : ArrowUpRight;
   return (
     <article
-      className={`rounded-xl border p-4 ${selected ? "border-[var(--accent)] bg-red-50/40" : "border-slate-200 bg-white"}`}
+      className={`border p-4 ${selected ? "border-[var(--brand-action)] bg-[var(--brand-faint)]" : "border-slate-200 bg-white"}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           onClick={() => onStation(remoteStation(message))}
-          className="flex min-h-10 items-center gap-2 rounded-lg text-left font-display font-bold text-slate-950 hover:text-[var(--accent)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+          className="flex min-h-10 items-center gap-2 text-left font-display font-bold text-slate-950 hover:text-[var(--brand-action)] focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
         >
           <span
-            className={`grid size-8 place-items-center rounded-lg ${isInbound ? "bg-sky-100 text-sky-800" : "bg-emerald-100 text-emerald-800"}`}
+            className={`grid size-8 place-items-center ${isInbound ? "bg-sky-100 text-sky-800" : "bg-emerald-100 text-emerald-800"}`}
           >
             <DirectionIcon aria-hidden className="size-4" />
           </span>
@@ -93,7 +93,7 @@ function MessageCard({
         {message.flightId ? (
           <Link
             href={`/${slug}/dispatch/flights/${message.flightId}`}
-            className="ml-auto inline-flex items-center gap-1 font-bold text-[var(--accent)] hover:underline"
+            className="ml-auto inline-flex items-center gap-1 font-bold text-[var(--brand-action)] hover:underline"
           >
             <Link2 aria-hidden className="size-3.5" /> Linked flight
           </Link>
@@ -115,6 +115,7 @@ export function AcarsWorkspace({
   const search = useSearchParams();
   const queryClient = useQueryClient();
   const station = search.get("station")?.trim().toUpperCase() || null;
+  const linkedFlightId = search.get("flightId") || "";
   const inbox = useQuery({
     queryKey: [slug, "acars", "inbox"],
     queryFn: () => api("/dispatch/inbox", { schema: acarsMessagePageSchema }),
@@ -194,7 +195,7 @@ export function AcarsWorkspace({
                 ? `/${slug}/settings/organization`
                 : `/${slug}/settings`
             }
-            className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            className="inline-flex min-h-11 items-center border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-action)]"
           >
             {canManageOrganization
               ? "Organization ACARS settings"
@@ -281,10 +282,11 @@ export function AcarsWorkspace({
         <div className="space-y-6">
           {acarsReady ? (
             <ComposeTelex
-              key={station ?? "new-message"}
+              key={`${station ?? "new-message"}-${linkedFlightId}`}
               flights={flights.data.items}
               members={members.data.items}
               defaultRecipient={station ?? ""}
+              defaultFlightId={linkedFlightId}
               provider={tenant.data.acarsProvider}
               onSent={async () => {
                 await Promise.all([
@@ -331,6 +333,7 @@ function ComposeTelex({
   flights,
   members,
   defaultRecipient,
+  defaultFlightId,
   provider,
   onSent,
 }: {
@@ -343,13 +346,24 @@ function ComposeTelex({
   }>;
   members: Member[];
   defaultRecipient: string;
+  defaultFlightId: string;
   provider: "mock" | "hoppie";
   onSent: () => Promise<void>;
 }) {
   const api = useApi();
-  const [recipient, setRecipient] = useState(defaultRecipient);
+  const initialFlight = flights.find((flight) => flight.id === defaultFlightId);
+  const initialPilot = members.find(
+    (member) => member.id === initialFlight?.pilotMembershipId,
+  );
+  const [recipient, setRecipient] = useState(
+    defaultRecipient || initialPilot?.pilotCallsign || "",
+  );
   const [body, setBody] = useState("");
-  const [flightId, setFlightId] = useState("");
+  const [flightId, setFlightId] = useState(
+    flights.some((flight) => flight.id === defaultFlightId)
+      ? defaultFlightId
+      : "",
+  );
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const sendMessageMutation = useMutation({
     mutationFn: () =>
@@ -462,7 +476,7 @@ function ComposeTelex({
         {successMessage ? (
           <p
             role="status"
-            className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800"
+            className="rounded-[2px] bg-emerald-50 p-3 text-sm text-emerald-800"
           >
             {successMessage}
           </p>
@@ -470,7 +484,7 @@ function ComposeTelex({
         {sendMessageMutation.isError ? (
           <p
             role="alert"
-            className="rounded-lg bg-red-50 p-3 text-sm text-red-800"
+            className="rounded-[2px] bg-red-50 p-3 text-sm text-red-800"
           >
             {apiErrorMessage(sendMessageMutation.error)} Your draft is retained;
             retry manually when ready.
@@ -575,7 +589,7 @@ function MockInboundSimulator({ onQueued }: { onQueued: () => Promise<void> }) {
         {success ? (
           <p
             role="status"
-            className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800"
+            className="rounded-[2px] bg-emerald-50 p-3 text-sm text-emerald-800"
           >
             {success}
           </p>
@@ -583,7 +597,7 @@ function MockInboundSimulator({ onQueued }: { onQueued: () => Promise<void> }) {
         {simulate.isError ? (
           <p
             role="alert"
-            className="rounded-lg bg-red-50 p-3 text-sm text-red-800"
+            className="rounded-[2px] bg-red-50 p-3 text-sm text-red-800"
           >
             {apiErrorMessage(simulate.error)} Your simulated message is
             retained; retry manually when ready.
@@ -625,12 +639,12 @@ function HoppieSetupRequired({
         {canManageOrganization ? (
           <Link
             href={`/${slug}/settings/organization`}
-            className="inline-flex min-h-11 items-center rounded-lg bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            className="inline-flex min-h-11 items-center rounded-[2px] bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
           >
             Open organization settings
           </Link>
         ) : (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-950">
+          <p className="rounded-[2px] border border-amber-200 bg-amber-50 p-3 font-medium text-amber-950">
             Ask an organization administrator to connect and test the shared
             ground station.
           </p>

@@ -57,6 +57,20 @@ export async function findAcarsMessage(
   return rows[0] ?? null;
 }
 
+export async function linkAcarsMessageToFlight(
+  tenantId: string,
+  id: string,
+  flightId: string,
+): Promise<AcarsMessage | null> {
+  const db = getDb();
+  const [updated] = await db
+    .update(acarsMessages)
+    .set({ flightId, updatedAt: new Date() })
+    .where(and(eq(acarsMessages.tenantId, tenantId), eq(acarsMessages.id, id)))
+    .returning();
+  return updated ?? null;
+}
+
 export async function listAcarsMessages(input: {
   tenantId: string;
   direction?: "inbound" | "outbound";

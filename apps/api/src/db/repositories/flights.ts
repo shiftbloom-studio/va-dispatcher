@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { flights, type Flight, type FlightStatus } from "../schema.js";
 import {
@@ -162,11 +162,15 @@ export async function updateFlight(
     cancelReason: string | null;
     declinedReason: string | null;
     dispatcherNotes: string | null;
+    assignmentRevision: number;
+    assignmentConfirmedRevision: number | null;
+    assignmentConfirmedAt: Date | null;
     outAt: Date | null;
     offAt: Date | null;
     onAt: Date | null;
     inAt: Date | null;
   }>,
+  options?: { expectedUpdatedAt?: Date },
 ): Promise<Flight | null> {
   const db = getDb();
   const normalized = { ...patch };
@@ -176,23 +180,97 @@ export async function updateFlight(
   const [row] = await db
     .update(flights)
     .set({ ...normalized, updatedAt: new Date() })
-    .where(and(eq(flights.tenantId, tenantId), eq(flights.id, id)))
+    .where(
+      and(
+        eq(flights.tenantId, tenantId),
+        eq(flights.id, id),
+        ...(options?.expectedUpdatedAt
+          ? [
+              sql`date_trunc('milliseconds', ${flights.updatedAt}) = ${options.expectedUpdatedAt}`,
+            ]
+          : []),
+      ),
+    )
     .returning();
   return row ?? null;
 }
 
-export async function listBoardFlights(tenantId: string): Promise<Flight[]> {
+export async function listBoardFlights(
+  tenantId: string,
+  now = new Date(),
+): Promise<Flight[]> {
   const db = getDb();
-  const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
-  const boardHorizon = new Date(Date.now() + sevenDaysInMilliseconds);
+  const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const monthStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  );
+  const nextMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  );
   return db
     .select()
     .from(flights)
     .where(
       and(
         eq(flights.tenantId, tenantId),
-        inArray(flights.status, ["offered", "accepted", "briefed", "active"]),
-        lte(flights.etd, boardHorizon),
+        or(
+          eq(flights.status, "active"),
+          and(
+            inArray(flights.status, ["accepted", "briefed"]),
+            lte(flights.etd, horizon),
+          ),
+          and(
+            eq(flights.status, "completed"),
+            gte(flights.etd, monthStart),
+            lt(flights.etd, nextMonth),
+          ),
+        )!,
+      ),
+    )
+    .orderBy(flights.etd);
+}
+
+export async function listMonthMetricFlights(
+  tenantId: string,
+  monthStart: Date,
+  nextMonth: Date,
+): Promise<Array<Pick<Flight, "id" | "status" | "etd" | "outAt">>> {
+  const db = getDb();
+  return db
+    .select({
+      id: flights.id,
+      status: flights.status,
+      etd: flights.etd,
+      outAt: flights.outAt,
+    })
+    .from(flights)
+    .where(
+      and(
+        eq(flights.tenantId, tenantId),
+        gte(flights.etd, monthStart),
+        lt(flights.etd, nextMonth),
+        inArray(flights.status, ["briefed", "active", "completed"]),
+      ),
+    );
+}
+
+export async function listTrackableFlightsForPilot(input: {
+  tenantId: string;
+  pilotMembershipId: string;
+  from: Date;
+  to: Date;
+}): Promise<Flight[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(flights)
+    .where(
+      and(
+        eq(flights.tenantId, input.tenantId),
+        eq(flights.pilotMembershipId, input.pilotMembershipId),
+        inArray(flights.status, ["accepted", "briefed", "active"]),
+        gte(flights.etd, input.from),
+        lte(flights.etd, input.to),
       ),
     )
     .orderBy(flights.etd);

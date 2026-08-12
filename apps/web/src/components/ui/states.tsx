@@ -38,7 +38,7 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900"
+      className="border border-red-300 bg-red-50 p-4 text-red-900"
     >
       <div className="flex gap-3">
         <AlertTriangle aria-hidden className="mt-0.5 size-5 shrink-0" />
@@ -63,7 +63,7 @@ export function OfflineNotice() {
   return (
     <div
       role="status"
-      className="flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-950"
+      className="flex items-center gap-2 border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950"
     >
       <WifiOff aria-hidden className="size-4" />
       You are offline. Live updates will resume when the connection returns.

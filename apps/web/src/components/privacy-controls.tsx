@@ -86,7 +86,7 @@ export function PrivacyControls() {
       {noticeVisible ? (
         <aside
           aria-label="Cookie notice"
-          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-3xl rounded-2xl border border-slate-700 bg-slate-950 p-4 text-white shadow-2xl sm:p-5"
+          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-3xl rounded-[2px] border border-slate-700 bg-slate-950 p-4 text-white shadow-2xl sm:p-5"
         >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -133,7 +133,7 @@ export function PrivacyControls() {
       <dialog
         ref={dialogRef}
         aria-labelledby="cookie-settings-title"
-        className="m-auto w-[min(42rem,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/70"
+        className="m-auto w-[min(42rem,calc(100%-2rem))] rounded-[2px] border border-slate-200 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/70"
       >
         <div className="p-5 sm:p-7">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-700">
@@ -153,10 +153,10 @@ export function PrivacyControls() {
           </p>
 
           <div className="mt-5 space-y-3">
-            <section className="rounded-xl border border-slate-200 p-4">
+            <section className="rounded-[2px] border border-slate-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold">Authentication and security</h3>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                <span className="rounded-[2px] bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
                   Always active
                 </span>
               </div>
@@ -167,14 +167,14 @@ export function PrivacyControls() {
                 protected requests to prevent automated abuse.
               </p>
             </section>
-            <section className="rounded-xl border border-slate-200 p-4">
+            <section className="rounded-[2px] border border-slate-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold">
                   Anonymous usage and performance
                 </h3>
                 <span
                   aria-live="polite"
-                  className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700"
+                  className="rounded-[2px] bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700"
                 >
                   {preferences?.analyticsAllowed ? "Allowed" : "Off"}
                 </span>
@@ -201,10 +201,10 @@ export function PrivacyControls() {
                 </Button>
               </div>
             </section>
-            <section className="rounded-xl border border-slate-200 p-4">
+            <section className="rounded-[2px] border border-slate-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold">Privacy preference</h3>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                <span className="rounded-[2px] bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
                   Local only
                 </span>
               </div>

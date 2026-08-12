@@ -26,9 +26,9 @@ export function DispatcherDashboard({ slug }: { slug: string }) {
       : "operations";
   const copy = {
     operations: {
-      title: "Operations board",
+      title: "Operations dashboard",
       description:
-        "The next seven days of offered, accepted, briefed, and active flying.",
+        "Plan accepted flights, publish releases, monitor active flying, and close the monthly operation from one live board.",
     },
     requests: {
       title: "Schedule requests",
@@ -59,7 +59,7 @@ export function DispatcherDashboard({ slug }: { slug: string }) {
       <div
         role="tablist"
         aria-label="Dispatcher workspace"
-        className="mb-6 flex max-w-xl rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
+        className="mb-7 flex max-w-xl border border-slate-300 bg-white"
       >
         {views.map(({ value, label, icon: Icon }) => (
           <button
@@ -67,7 +67,7 @@ export function DispatcherDashboard({ slug }: { slug: string }) {
             role="tab"
             aria-selected={view === value}
             onClick={() => select(value)}
-            className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${view === value ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+            className={`flex min-h-11 flex-1 items-center justify-center gap-2 border-r border-slate-200 px-3 text-sm font-bold transition last:border-r-0 focus-visible:outline-2 focus-visible:outline-[var(--brand-action)] ${view === value ? "bg-[#17213d] text-white" : "text-slate-600 hover:bg-slate-50"}`}
           >
             <Icon aria-hidden className="size-4" />
             <span className="hidden sm:inline">{label}</span>

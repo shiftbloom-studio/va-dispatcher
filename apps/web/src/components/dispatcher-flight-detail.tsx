@@ -17,6 +17,10 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { ConfirmAction, ReasonAction } from "@/components/action-dialog";
+import {
+  DispatchReleaseSnapshot,
+  FlightPlanningDialog,
+} from "@/components/flight-planning-workspace";
 import { PageHeading } from "@/components/page-heading";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +35,7 @@ import {
 import { ErrorState, LoadingState } from "@/components/ui/states";
 import { ApiError, apiErrorMessage } from "@/lib/api/http";
 import {
+  flightDetailResponseSchema,
   flightResponseSchema,
   membersSchema,
   type Flight,
@@ -45,8 +50,7 @@ import { memberLabel } from "@/lib/member";
 import { flightActions } from "@/lib/status";
 import { formatUtc, isoToUtcInput, utcInputToIso } from "@/lib/utc";
 
-type DispatchTransition =
-  "offer" | "briefed" | "active" | "completed" | "cancelled";
+type DispatchTransition = "offer" | "active" | "completed" | "cancelled";
 
 export function DispatcherFlightDetail({
   slug,
@@ -58,11 +62,12 @@ export function DispatcherFlightDetail({
   const api = useApi();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const flight = useQuery({
     queryKey: [slug, "flight", flightId],
     queryFn: () =>
-      api(`/flights/${flightId}`, { schema: flightResponseSchema }),
+      api(`/flights/${flightId}`, { schema: flightDetailResponseSchema }),
   });
   const members = useQuery({
     queryKey: [slug, "members"],
@@ -151,7 +156,7 @@ export function DispatcherFlightDetail({
       {notice ? (
         <p
           role="status"
-          className="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"
+          className="mb-5 rounded-[2px] border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"
         >
           {notice}
         </p>
@@ -246,6 +251,15 @@ export function DispatcherFlightDetail({
               onRefresh={refreshFlightData}
             />
           ) : null}
+          {flight.data.release ? (
+            <Card className="overflow-hidden">
+              <CardHeader
+                title="Current dispatch release"
+                description="The latest immutable release revision for this flight."
+              />
+              <DispatchReleaseSnapshot release={flight.data.release} />
+            </Card>
+          ) : null}
         </div>
 
         <Card className="h-fit overflow-hidden">
@@ -258,10 +272,20 @@ export function DispatcherFlightDetail({
               <Button
                 variant="secondary"
                 className="w-full"
-                onClick={() => setEditing((value) => !value)}
+                onClick={() => {
+                  if (
+                    ["accepted", "briefed", "active"].includes(
+                      currentFlight.status,
+                    )
+                  ) {
+                    setPlanning(true);
+                  } else {
+                    setEditing((value) => !value);
+                  }
+                }}
               >
                 <Pencil aria-hidden className="size-4" />{" "}
-                {editing ? "Close editor" : "Edit flight"}
+                {editing ? "Close editor" : "Open planning workspace"}
               </Button>
             ) : null}
             {actions.includes("offer") ? (
@@ -276,14 +300,9 @@ export function DispatcherFlightDetail({
               </Button>
             ) : null}
             {actions.includes("brief") ? (
-              <Button
-                className="w-full"
-                disabled={transition.isPending}
-                onClick={() =>
-                  void advanceFlight("briefed").catch(() => undefined)
-                }
-              >
-                <ClipboardCheck aria-hidden className="size-4" /> Mark briefed
+              <Button className="w-full" onClick={() => setPlanning(true)}>
+                <ClipboardCheck aria-hidden className="size-4" /> Prepare
+                dispatch release
               </Button>
             ) : null}
             {actions.includes("activate") ? (
@@ -326,7 +345,7 @@ export function DispatcherFlightDetail({
               />
             ) : null}
             {!actions.length ? (
-              <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+              <p className="rounded-[2px] bg-slate-50 p-3 text-sm text-slate-600">
                 This terminal flight is read-only.
               </p>
             ) : null}
@@ -337,7 +356,7 @@ export function DispatcherFlightDetail({
             ) ? (
               <p
                 role="alert"
-                className="rounded-lg bg-red-50 p-3 text-sm text-red-800"
+                className="rounded-[2px] bg-red-50 p-3 text-sm text-red-800"
               >
                 {apiErrorMessage(transition.error)}
               </p>
@@ -345,6 +364,17 @@ export function DispatcherFlightDetail({
           </div>
         </Card>
       </div>
+      {planning ? (
+        <FlightPlanningDialog
+          slug={slug}
+          flightId={flightId}
+          members={members.data.items}
+          onClose={() => {
+            setPlanning(false);
+            void refreshFlightData();
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -378,8 +408,8 @@ function FlightEditor({
           arrIcao: values.arrIcao.trim().toUpperCase(),
           etd: utcInputToIso(values.etd),
           eta: utcInputToIso(values.eta),
-          aircraftType: values.aircraftType?.trim().toUpperCase() || null,
           dispatcherNotes: values.dispatcherNotes?.trim() || null,
+          expectedUpdatedAt: flight.updatedAt,
         }),
       }),
     onSuccess: async () => {
@@ -404,7 +434,7 @@ function FlightEditor({
     <Card className="overflow-hidden">
       <CardHeader
         title="Edit flight details"
-        description="Terminal flights cannot be edited. Times remain UTC / Zulu."
+        description="Terminal flights cannot be edited. Times remain UTC / Zulu; aircraft type is immutable after creation."
       />
       <form
         onSubmit={form.handleSubmit(submit)}
@@ -466,6 +496,8 @@ function FlightEditor({
             id="edit-aircraft"
             className="uppercase"
             maxLength={20}
+            readOnly
+            aria-readonly="true"
             {...form.register("aircraftType")}
           />
         </div>
@@ -501,7 +533,7 @@ function FlightEditor({
         ) ? (
           <p
             role="alert"
-            className="rounded-lg bg-red-50 p-3 text-sm text-red-800 md:col-span-2 xl:col-span-3"
+            className="rounded-[2px] bg-red-50 p-3 text-sm text-red-800 md:col-span-2 xl:col-span-3"
           >
             {apiErrorMessage(mutation.error)}
           </p>

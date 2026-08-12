@@ -10,12 +10,18 @@ import { env } from "../env.js";
 import { writeAudit } from "../db/repositories/audit.js";
 import { activeAcarsProviderName } from "../acars/factory.js";
 import { HoppieAcarsProvider } from "../acars/hoppie-provider.js";
+import { del, put } from "@vercel/blob";
 import {
   acarsStationSchema,
   hoppieLogonSchema,
 } from "../domain/acars/validation.js";
 import { publicProviderError } from "../domain/acars/service.js";
 import type { Tenant } from "../db/schema.js";
+import { serializeBrand } from "../domain/tenants/brand.js";
+import {
+  TENANT_LOGO_MAX_BYTES,
+  validateTenantLogo,
+} from "../domain/tenants/logo.js";
 
 export const tenantRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -35,6 +41,7 @@ tenantRoutes.get("/tenant", async (c) => {
     hoppiePollingEnabled:
       activeAcarsProviderName() === "hoppie" && Boolean(tenant.hoppieLogonEnc),
     hoppieLastTestedAt: hoppieLastTestedAt(tenant.settings),
+    brand: serializeBrand(tenant),
     settings: tenant.settings,
   });
 });
@@ -70,6 +77,120 @@ tenantRoutes.patch(
     });
   },
 );
+
+tenantRoutes.patch(
+  "/tenant/brand",
+  requireRole("admin"),
+  zValidator(
+    "json",
+    z.object({
+      seedColor: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color")
+        .transform((value) => value.toLowerCase()),
+      presence: z.enum(["restrained", "balanced", "high"]),
+    }),
+  ),
+  async (c) => {
+    const auth = c.get("auth");
+    const body = c.req.valid("json");
+    const updated = await updateTenant(auth.tenantId, {
+      brandSeedColor: body.seedColor,
+      brandPresence: body.presence,
+    });
+    if (!updated) throw new AppError("NOT_FOUND", "Tenant not found");
+    await writeAudit({
+      tenantId: auth.tenantId,
+      actorMembershipId: auth.membershipId,
+      action: "tenant.brand_update",
+      entityType: "tenant",
+      entityId: auth.tenantId,
+      meta: { seedColor: body.seedColor, presence: body.presence },
+    });
+    return c.json({ brand: serializeBrand(updated) });
+  },
+);
+
+tenantRoutes.post("/tenant/brand/logo", requireRole("admin"), async (c) => {
+  const auth = c.get("auth");
+  const tenant = await requireTenant(auth.tenantId);
+  const token = env().BLOB_READ_WRITE_TOKEN;
+  if (!token) {
+    throw new AppError(
+      "UNPROCESSABLE",
+      "Organization logo storage is not configured",
+    );
+  }
+
+  const form = await c.req.raw.formData();
+  const candidate = form.get("logo");
+  if (!(candidate instanceof File)) {
+    throw new AppError("UNPROCESSABLE", "Choose a logo image to upload");
+  }
+  const extension = await validateTenantLogo(candidate);
+  const pathname = `tenant-logos/${tenant.slug}/${crypto.randomUUID()}.${extension}`;
+
+  let uploaded: Awaited<ReturnType<typeof put>>;
+  try {
+    uploaded = await put(pathname, candidate, {
+      access: "public",
+      addRandomSuffix: false,
+      contentType: candidate.type,
+      maximumSizeInBytes: TENANT_LOGO_MAX_BYTES,
+      token,
+    });
+  } catch (error) {
+    throw new AppError("UPSTREAM", "The logo could not be stored", {
+      cause: error,
+    });
+  }
+
+  const updated = await updateTenant(auth.tenantId, {
+    brandLogoUrl: uploaded.url,
+    brandLogoPathname: uploaded.pathname,
+  });
+  if (!updated) {
+    await safeDeleteBlob(uploaded.pathname, token);
+    throw new AppError("NOT_FOUND", "Tenant not found");
+  }
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    actorMembershipId: auth.membershipId,
+    action: "tenant.brand_logo_upload",
+    entityType: "tenant",
+    entityId: auth.tenantId,
+    meta: { pathname: uploaded.pathname, bytes: candidate.size },
+  });
+  if (tenant.brandLogoPathname) {
+    await safeDeleteBlob(tenant.brandLogoPathname, token);
+  }
+  return c.json({ brand: serializeBrand(updated) }, 201);
+});
+
+tenantRoutes.delete("/tenant/brand/logo", requireRole("admin"), async (c) => {
+  const auth = c.get("auth");
+  const tenant = await requireTenant(auth.tenantId);
+  const updated = await updateTenant(auth.tenantId, {
+    brandLogoUrl: null,
+    brandLogoPathname: null,
+  });
+  if (!updated) throw new AppError("NOT_FOUND", "Tenant not found");
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    actorMembershipId: auth.membershipId,
+    action: "tenant.brand_logo_clear",
+    entityType: "tenant",
+    entityId: auth.tenantId,
+    meta: {},
+  });
+  const token = env().BLOB_READ_WRITE_TOKEN;
+  if (tenant.brandLogoPathname && token) {
+    await safeDeleteBlob(tenant.brandLogoPathname, token);
+  }
+  return c.json({ brand: serializeBrand(updated) });
+});
 
 tenantRoutes.put(
   "/tenant/acars-config",
@@ -249,4 +370,12 @@ function withoutHoppieLastTestedAt(
       : {};
   const { hoppieLastTestedAt: _removed, ...remaining } = current;
   return { ...settings, acars: remaining };
+}
+
+async function safeDeleteBlob(pathname: string, token: string): Promise<void> {
+  try {
+    await del(pathname, { token });
+  } catch (error) {
+    console.error(`Failed to remove replaced tenant logo ${pathname}`, error);
+  }
 }

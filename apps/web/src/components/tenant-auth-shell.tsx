@@ -1,14 +1,15 @@
-import Image from "next/image";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { SiteFooter } from "@/components/site-footer";
+import { TenantLogo } from "@/components/tenant-logo";
+import { brandStyle } from "@/lib/brand";
 import type { TenantConfig } from "@/lib/tenant";
 
 export const TENANT_AUTH_APPEARANCE = {
   elements: {
     rootBox: "w-full",
     cardBox: "w-full",
-    card: "shadow-xl border border-slate-200",
+    card: "shadow-none border border-slate-300 rounded-none",
   },
 };
 
@@ -21,32 +22,25 @@ export function TenantAuthShell({
 }) {
   return (
     <div
-      style={{ "--accent": tenant.accent } as CSSProperties}
-      className="flex min-h-screen flex-col bg-slate-950 text-white"
+      style={brandStyle(tenant.brand)}
+      data-brand-presence={tenant.brand.presence}
+      className="flex min-h-screen flex-col bg-[#101728] text-white"
     >
       <main
         id="main-content"
-        className="grid flex-1 bg-slate-950 lg:grid-cols-[1.1fr_0.9fr]"
+        className="grid flex-1 bg-[#101728] lg:grid-cols-[1.08fr_0.92fr]"
       >
         <section className="relative hidden overflow-hidden p-12 lg:flex lg:flex-col lg:justify-between">
-          <div className="absolute -right-24 top-28 size-80 rounded-full bg-red-600/30 blur-3xl" />
+          <div className="absolute inset-y-0 right-0 w-px bg-[var(--brand)] opacity-80" />
+          <div className="auth-flight-path absolute inset-x-0 top-1/3 h-px opacity-40" />
           <div className="relative flex items-center gap-4">
-            <span className="relative h-14 w-40 shrink-0 overflow-hidden rounded-xl bg-slate-50 shadow-lg shadow-black/20 ring-1 ring-white/10">
-              <Image
-                alt={tenant.logo.alt}
-                className="object-cover"
-                fill
-                sizes="160px"
-                src={tenant.logo.src}
-                unoptimized
-              />
-            </span>
+            <TenantLogo tenant={tenant} className="size-16" sizes="64px" />
             <span className="font-display text-xl font-bold">
               {tenant.shortName} Live Operations
             </span>
           </div>
           <div className="relative max-w-xl">
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-red-400">
+            <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--brand-border)]">
               Dispatch · Schedule · ACARS
             </p>
             <h1 className="mt-4 font-display text-6xl font-semibold leading-[1.05]">
@@ -65,16 +59,11 @@ export function TenantAuthShell({
         <section className="flex items-center justify-center bg-slate-50 p-5 text-slate-950 sm:p-10">
           <div className="w-full max-w-md">
             <div className="mb-8 text-center lg:hidden">
-              <div className="relative mx-auto h-14 w-40 overflow-hidden rounded-xl bg-slate-100 shadow-sm ring-1 ring-slate-200">
-                <Image
-                  alt={tenant.logo.alt}
-                  className="object-cover"
-                  fill
-                  sizes="160px"
-                  src={tenant.logo.src}
-                  unoptimized
-                />
-              </div>
+              <TenantLogo
+                tenant={tenant}
+                className="mx-auto size-16"
+                sizes="64px"
+              />
               <h1 className="mt-4 font-display text-3xl font-semibold text-slate-950">
                 {tenant.shortName} Live Operations
               </h1>

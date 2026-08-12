@@ -24,6 +24,11 @@ const tenant = {
   acarsProvider: "hoppie",
   hoppiePollingEnabled: false,
   hoppieLastTestedAt: null,
+  brand: {
+    seedColor: "#e64646",
+    presence: "balanced",
+    logoUrl: null,
+  },
   settings: {},
 };
 
@@ -41,6 +46,16 @@ describe("organization settings", () => {
             acarsProvider: "hoppie",
             hoppiePollingEnabled: true,
             hoppieLastTestedAt: "2026-08-12T12:00:00.000Z",
+          });
+        }
+        if (path === "/tenant/brand" && options.method === "PATCH") {
+          const body = JSON.parse(options.body ?? "{}");
+          return Promise.resolve({
+            brand: {
+              seedColor: body.seedColor,
+              presence: body.presence,
+              logoUrl: null,
+            },
           });
         }
         throw new Error(
@@ -81,5 +96,32 @@ describe("organization settings", () => {
     await waitFor(() =>
       expect(screen.getByText("Connected")).toBeInTheDocument(),
     );
+  });
+
+  it("previews and saves the one-color airline identity", async () => {
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <OrganizationSettings slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    const color = await screen.findByLabelText("Hex value");
+    await user.clear(color);
+    await user.type(color, "#174ea6");
+    await user.click(screen.getByRole("radio", { name: /High visibility/ }));
+    await user.click(screen.getByRole("button", { name: "Save identity" }));
+
+    const brandCall = apiMock.mock.calls.find(
+      ([path, options]) =>
+        path === "/tenant/brand" && options.method === "PATCH",
+    );
+    expect(JSON.parse(brandCall?.[1].body ?? "{}")).toEqual({
+      seedColor: "#174ea6",
+      presence: "high",
+    });
+    expect(
+      await screen.findByText("Brand color and presence saved."),
+    ).toBeInTheDocument();
   });
 });

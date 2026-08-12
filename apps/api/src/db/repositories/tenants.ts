@@ -1,6 +1,6 @@
 import { eq, isNotNull } from "drizzle-orm";
 import { getDb } from "../client.js";
-import { tenants, type Tenant } from "../schema.js";
+import { tenants, type BrandPresence, type Tenant } from "../schema.js";
 
 export async function findTenantByClerkOrgId(
   clerkOrgId: string,
@@ -79,6 +79,10 @@ export async function updateTenant(
     settings?: Record<string, unknown>;
     hoppieStation?: string | null;
     hoppieLogonEnc?: string | null;
+    brandSeedColor?: string;
+    brandPresence?: BrandPresence;
+    brandLogoUrl?: string | null;
+    brandLogoPathname?: string | null;
   },
 ): Promise<Tenant | null> {
   const db = getDb();

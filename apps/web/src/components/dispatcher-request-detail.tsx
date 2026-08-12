@@ -168,7 +168,7 @@ export function DispatcherRequestDetail({
               ).map((interval, index) => (
                 <div
                   key={`${interval.startAt}-${index}`}
-                  className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700"
+                  className="rounded-[2px] bg-slate-50 p-3 text-sm text-slate-700"
                 >
                   <strong>Slot {index + 1}:</strong>
                   <br />
@@ -236,7 +236,7 @@ export function DispatcherRequestDetail({
             {!canBuild &&
             !canCancelScheduleRequest(scheduleRequest.status) &&
             scheduleRequest.status !== "pending" ? (
-              <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+              <p className="rounded-[2px] bg-slate-50 p-3 text-sm text-slate-600">
                 This request is read-only in its current state.
               </p>
             ) : null}
@@ -255,7 +255,7 @@ export function DispatcherRequestDetail({
       {scheduleRequest.status === "partially_fulfilled" ? (
         <p
           role="status"
-          className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+          className="mb-6 rounded-[2px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
         >
           This historical request was partially fulfilled. v1 does not append
           partial proposals; it remains viewable and cancellable.
