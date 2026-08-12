@@ -94,6 +94,12 @@ export default async function PrivacyPage() {
               "Article 6(1)(f) GDPR (legitimate interests in secure and reliable operations)",
               "Only for the period necessary for security review, incident response, troubleshooting, and applicable claims; records are then deleted or aggregated",
             ],
+            [
+              "Aggregated page routes, referrers, coarse location and device categories, and browser performance metrics",
+              "Understand service usage and improve reliability and performance",
+              "Article 6(1)(f) GDPR (legitimate interests in privacy-preserving service measurement and improvement)",
+              "According to the configured Vercel Analytics and Speed Insights retention periods; Web Analytics visitor hashes reset daily",
+            ],
           ]}
         />
         <p>
@@ -125,8 +131,9 @@ export default async function PrivacyPage() {
             .
           </li>
           <li>
-            <strong>Vercel Inc.</strong> — application hosting, delivery,
-            infrastructure logs, and server execution. See the{" "}
+            <strong>Vercel Inc.</strong> — application hosting, delivery, server
+            execution, infrastructure logs, privacy-preserving web analytics,
+            performance measurement, and bot and abuse detection. See the{" "}
             <a
               href="https://vercel.com/legal/dpa"
               target="_blank"
@@ -188,10 +195,12 @@ export default async function PrivacyPage() {
         title="6. Cookies and local storage"
       >
         <p>
-          The current application does not use analytics, advertising, or
-          marketing cookies. Optional services are not loaded before consent
-          because no optional service is configured. The cookie banner is an
-          informational notice, not a request for unnecessary consent.
+          The current application does not use advertising or marketing cookies.
+          Vercel Web Analytics stores anonymized aggregate data without cookies,
+          Speed Insights reports browser performance metrics, and Vercel BotID
+          performs security challenges on protected requests. The cookie banner
+          is an informational notice, not a request for an optional cookie
+          category.
         </p>
         <LegalTable
           caption="Browser storage used by the application"
@@ -210,6 +219,12 @@ export default async function PrivacyPage() {
               <code key="cloudflare-cookie">_cfuvid (where set)</code>,
               "Cloudflare as part of Clerk delivery",
               "Rate limiting, fraud and abuse protection",
+              "Provider-controlled security lifetime",
+            ],
+            [
+              <code key="botid-cookies">KP_* security keys (where set)</code>,
+              "Vercel BotID",
+              "Validate protected browser requests and prevent automated abuse",
               "Provider-controlled security lifetime",
             ],
             [

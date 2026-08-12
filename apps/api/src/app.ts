@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { env, loadEnv } from "./env.js";
 import { errorHandler } from "./middleware/error.js";
+import { requireHuman } from "./middleware/botid.js";
 import { requestId } from "./middleware/request-id.js";
 import { healthRoutes } from "./routes/health.js";
 import { meRoutes } from "./routes/me.js";
@@ -74,6 +75,7 @@ export function createApp() {
   // Internal routes authenticate with their own secrets. Mount them before the
   // business-route auth middleware, whose wildcard also matches later routes.
   v1.route("/", internalRoutes);
+  v1.use("*", requireHuman);
   v1.route("/", meRoutes);
   v1.route("/", tenantRoutes);
   v1.route("/", membersRoutes);
