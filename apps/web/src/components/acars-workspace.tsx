@@ -289,10 +289,9 @@ export function AcarsWorkspace({
               defaultFlightId={linkedFlightId}
               provider={tenant.data.acarsProvider}
               onSent={async () => {
-                await Promise.all([
-                  queryClient.invalidateQueries({ queryKey: [slug, "acars"] }),
-                  inbox.refetch(),
-                ]);
+                await queryClient.invalidateQueries({
+                  queryKey: [slug, "acars"],
+                });
               }}
             />
           ) : (
@@ -304,10 +303,9 @@ export function AcarsWorkspace({
           {tenant.data.acarsProvider === "mock" ? (
             <MockInboundSimulator
               onQueued={async () => {
-                await Promise.all([
-                  queryClient.invalidateQueries({ queryKey: [slug, "acars"] }),
-                  inbox.refetch(),
-                ]);
+                await queryClient.invalidateQueries({
+                  queryKey: [slug, "acars"],
+                });
               }}
             />
           ) : null}

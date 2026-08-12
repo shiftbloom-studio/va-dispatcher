@@ -4,11 +4,9 @@ import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
-  findMembership,
   findMembershipByCallsign,
   updateMembership,
 } from "../db/repositories/memberships.js";
-import { findTenantById } from "../db/repositories/tenants.js";
 import { acarsStationSchema } from "../domain/acars/validation.js";
 import { AppError } from "../lib/errors.js";
 import { writeAudit } from "../db/repositories/audit.js";
@@ -19,33 +17,25 @@ export const meRoutes = new Hono<{ Variables: AppVariables }>();
 meRoutes.use("*", requireAuth);
 
 meRoutes.get("/me", async (c) => {
-  const auth = c.get("auth");
-  const [membership, tenant] = await Promise.all([
-    findMembership(auth.tenantId, auth.clerkUserId),
-    findTenantById(auth.tenantId),
-  ]);
+  const { clerkUserId, membership, tenant } = c.get("auth");
 
   return c.json({
     user: {
-      clerkUserId: auth.clerkUserId,
+      clerkUserId,
     },
-    membership: membership
-      ? {
-          id: membership.id,
-          role: membership.role,
-          displayName: membership.displayName,
-          pilotCallsign: membership.pilotCallsign,
-          status: membership.status,
-        }
-      : null,
-    tenant: tenant
-      ? {
-          id: tenant.id,
-          slug: tenant.slug,
-          name: tenant.name,
-          hoppieStation: tenant.hoppieStation,
-        }
-      : null,
+    membership: {
+      id: membership.id,
+      role: membership.role,
+      displayName: membership.displayName,
+      pilotCallsign: membership.pilotCallsign,
+      status: membership.status,
+    },
+    tenant: {
+      id: tenant.id,
+      slug: tenant.slug,
+      name: tenant.name,
+      hoppieStation: tenant.hoppieStation,
+    },
   });
 });
 

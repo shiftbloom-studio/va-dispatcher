@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { OrganizationMismatch } from "@/components/organization-mismatch";
+import { QueryProvider } from "@/components/query-provider";
 import { getPublicTenantConfig } from "@/lib/public-tenant";
 import { getServerIdentity } from "@/lib/server-identity";
 import { tenantConfigFromDetail } from "@/lib/tenant";
@@ -29,13 +30,15 @@ export default async function ProtectedLayout({
   const operationalConfig = tenantConfigFromDetail(identity.tenant, tenant);
 
   return (
-    <AppShell
-      slug={slug}
-      tenant={operationalConfig}
-      me={identity.me}
-      role={identity.role}
-    >
-      {children}
-    </AppShell>
+    <QueryProvider>
+      <AppShell
+        slug={slug}
+        tenant={operationalConfig}
+        me={identity.me}
+        role={identity.role}
+      >
+        {children}
+      </AppShell>
+    </QueryProvider>
   );
 }
