@@ -138,6 +138,81 @@ const clerkOrDevSecurity = [
 const cronSecurity = [{ cronBearerAuth: [] }];
 const simulatorDeviceSecurity = [{ simulatorDeviceBearerAuth: [] }];
 
+function adminPrivacyOperation(
+  summary: string,
+  operationId: string,
+  options?: {
+    parameters?: OpenApiObject[];
+    requestBody?: OpenApiObject;
+  },
+): OpenApiObject {
+  return {
+    tags: ["Privacy"],
+    operationId,
+    summary,
+    description:
+      "Requires an active application administrator. Tenant and actor identity come from the authenticated context. Responses are private and no-store.",
+    "x-required-role": "admin",
+    ...(options?.parameters ? { parameters: options.parameters } : {}),
+    ...(options?.requestBody ? { requestBody: options.requestBody } : {}),
+    responses: {
+      "200": jsonResponse("Privacy workflow result.", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      "201": jsonResponse("Privacy workflow created.", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      "202": jsonResponse("Privacy work queued.", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      ...mutationErrors,
+    },
+  };
+}
+
+function adminPrivacyGet(
+  summary: string,
+  operationId: string,
+  options?: Parameters<typeof adminPrivacyOperation>[2],
+): OpenApiObject {
+  return { get: adminPrivacyOperation(summary, operationId, options) };
+}
+
+function adminPrivacyPost(
+  summary: string,
+  operationId: string,
+  options?: Parameters<typeof adminPrivacyOperation>[2],
+): OpenApiObject {
+  return { post: adminPrivacyOperation(summary, operationId, options) };
+}
+
+function cronPath(
+  summary: string,
+  description: string,
+  operationPrefix: string,
+): OpenApiObject {
+  const operation = (method: "Get" | "Post") => ({
+    tags: ["Internal"],
+    operationId: `${operationPrefix}${method}`,
+    summary,
+    description,
+    security: cronSecurity,
+    responses: {
+      "200": jsonResponse("Bounded lifecycle result.", {
+        type: "object",
+        additionalProperties: true,
+      }),
+      "401": responseRef("Unauthorized"),
+      "500": responseRef("InternalError"),
+      "503": responseRef("ServiceUnavailable"),
+    },
+  });
+  return { get: operation("Get"), post: operation("Post") };
+}
+
 const schemas = {
   Uuid: {
     type: "string",
@@ -164,6 +239,134 @@ const schemas = {
   ArbitraryObject: {
     type: "object",
     additionalProperties: true,
+  },
+  PrivacyDeleteRetentionClass: {
+    type: "object",
+    additionalProperties: false,
+    required: ["retentionDays", "action"],
+    properties: {
+      retentionDays: { type: "integer", minimum: 1, maximum: 36_500 },
+      action: { type: "string", enum: ["delete"] },
+    },
+  },
+  PrivacyAnonymizeRetentionClass: {
+    type: "object",
+    additionalProperties: false,
+    required: ["retentionDays", "action"],
+    properties: {
+      retentionDays: { type: "integer", minimum: 1, maximum: 36_500 },
+      action: { type: "string", enum: ["anonymize"] },
+    },
+  },
+  PrivacyExternalRetentionClass: {
+    type: "object",
+    additionalProperties: false,
+    required: ["retentionDays", "action"],
+    properties: {
+      retentionDays: { type: "integer", minimum: 1, maximum: 36_500 },
+      action: { type: "string", enum: ["external"] },
+    },
+  },
+  PrivacyRetentionPolicyConfig: {
+    type: "object",
+    additionalProperties: false,
+    required: ["classes"],
+    properties: {
+      classes: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "memberships",
+          "scheduleRequests",
+          "flights",
+          "simbrief",
+          "acars",
+          "oauth",
+          "audit",
+          "logs",
+          "backups",
+        ],
+        properties: {
+          memberships: schemaRef("PrivacyAnonymizeRetentionClass"),
+          scheduleRequests: schemaRef("PrivacyDeleteRetentionClass"),
+          flights: schemaRef("PrivacyDeleteRetentionClass"),
+          simbrief: schemaRef("PrivacyDeleteRetentionClass"),
+          acars: schemaRef("PrivacyDeleteRetentionClass"),
+          oauth: schemaRef("PrivacyDeleteRetentionClass"),
+          audit: schemaRef("PrivacyDeleteRetentionClass"),
+          logs: schemaRef("PrivacyExternalRetentionClass"),
+          backups: schemaRef("PrivacyExternalRetentionClass"),
+        },
+      },
+      batchSize: { type: "integer", minimum: 1, maximum: 500 },
+      intervalHours: { type: "integer", minimum: 1, maximum: 8_760 },
+      automaticExecution: { type: "boolean" },
+      minimumDryRunAgeHours: {
+        type: "integer",
+        minimum: 1,
+        maximum: 720,
+      },
+    },
+  },
+  PrivacyRetentionRunInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["mode", "idempotencyKey"],
+    properties: {
+      mode: { type: "string", enum: ["dry_run", "execute"] },
+      idempotencyKey: { type: "string", minLength: 8, maxLength: 120 },
+      dryRunId: schemaRef("Uuid"),
+      confirmation: { type: "string" },
+    },
+  },
+  PrivacySubjectRequestInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "scope"],
+    properties: {
+      kind: {
+        type: "string",
+        enum: [
+          "export",
+          "correction",
+          "restriction",
+          "objection",
+          "anonymization",
+          "erasure",
+        ],
+      },
+      scope: { type: "string", enum: ["member", "tenant"] },
+      subjectMembershipId: schemaRef("NullableUuid"),
+      payload: {
+        type: "object",
+        additionalProperties: true,
+        description:
+          "Kind-specific correction, restriction, objection, or verified-destruction fields. Unknown top-level fields are rejected.",
+      },
+    },
+  },
+  PrivacyLegalHoldInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["scope", "reason"],
+    properties: {
+      subjectMembershipId: schemaRef("NullableUuid"),
+      scope: { type: "string", minLength: 1, maxLength: 120 },
+      reason: { type: "string", minLength: 1, maxLength: 2_000 },
+      expiresAt: schemaRef("NullableDateTime"),
+    },
+  },
+  PrivacyExternalTaskUpdateInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["status", "operatorNote"],
+    properties: {
+      status: {
+        type: "string",
+        enum: ["completed", "not_applicable", "failed"],
+      },
+      operatorNote: { type: "string", minLength: 1, maxLength: 2_000 },
+    },
   },
   AcarsStation: {
     type: "string",
@@ -2015,6 +2218,11 @@ export const openApiDocument = {
       description: "Redacted, tenant-scoped administrative audit history.",
     },
     {
+      name: "Privacy",
+      description:
+        "Dual-controlled retention, verified data-subject workflows, legal holds, bounded exports, and provider follow-up.",
+    },
+    {
       name: "Schedule requests",
       description: "Pilot schedule demand and dispatcher review.",
     },
@@ -3404,6 +3612,143 @@ export const openApiDocument = {
           "503": responseRef("ServiceUnavailable"),
         },
       },
+    },
+    "/internal/cron/privacy-lifecycle": cronPath(
+      "Process bounded privacy lifecycle work",
+      "Schedules due dry runs or approved automatic executions and processes a bounded number of resumable checkpoints. Authenticate with CRON_SECRET.",
+      "runPrivacyLifecycle",
+    ),
+    "/privacy/policies/active": adminPrivacyGet(
+      "Get the active retention policy",
+      "getActivePrivacyPolicy",
+    ),
+    "/privacy/policies": adminPrivacyPost(
+      "Create a retention policy draft",
+      "createPrivacyPolicy",
+      {
+        requestBody: jsonRequest({
+          type: "object",
+          additionalProperties: false,
+          required: ["config"],
+          properties: {
+            config: schemaRef("PrivacyRetentionPolicyConfig"),
+          },
+        }),
+      },
+    ),
+    "/privacy/policies/{id}/approve": adminPrivacyPost(
+      "Approve and activate a retention policy",
+      "approvePrivacyPolicy",
+      { parameters: [pathParameter("id", "Privacy policy ID.")] },
+    ),
+    "/privacy/retention/runs": adminPrivacyPost(
+      "Queue a dry run or confirmed execution",
+      "queuePrivacyRetentionRun",
+      {
+        requestBody: jsonRequest(schemaRef("PrivacyRetentionRunInput")),
+      },
+    ),
+    "/privacy/retention/runs/{id}": adminPrivacyGet(
+      "Get retention-run progress and report",
+      "getPrivacyRetentionRun",
+      { parameters: [pathParameter("id", "Privacy retention-run ID.")] },
+    ),
+    "/privacy/retention/runs/{id}/retry": adminPrivacyPost(
+      "Resume a failed retention checkpoint",
+      "retryPrivacyRetentionRun",
+      { parameters: [pathParameter("id", "Privacy retention-run ID.")] },
+    ),
+    "/privacy/requests": adminPrivacyPost(
+      "Create a verified privacy workflow",
+      "createPrivacyRequest",
+      {
+        requestBody: jsonRequest(schemaRef("PrivacySubjectRequestInput")),
+      },
+    ),
+    "/privacy/requests/{id}": adminPrivacyGet(
+      "Get a privacy workflow and provider tasks",
+      "getPrivacyRequest",
+      { parameters: [pathParameter("id", "Privacy request ID.")] },
+    ),
+    "/privacy/requests/{id}/verify": adminPrivacyPost(
+      "Record subject verification",
+      "verifyPrivacyRequest",
+      { parameters: [pathParameter("id", "Privacy request ID.")] },
+    ),
+    "/privacy/requests/{id}/approve": adminPrivacyPost(
+      "Second-approve destructive processing",
+      "approvePrivacyRequest",
+      { parameters: [pathParameter("id", "Privacy request ID.")] },
+    ),
+    "/privacy/requests/{id}/retry": adminPrivacyPost(
+      "Retry a formerly held destructive workflow",
+      "retryPrivacyRequest",
+      { parameters: [pathParameter("id", "Privacy request ID.")] },
+    ),
+    "/privacy/requests/{id}/process": adminPrivacyPost(
+      "Process an approved privacy workflow",
+      "processPrivacyRequest",
+      {
+        parameters: [pathParameter("id", "Privacy request ID.")],
+        requestBody: optionalJsonRequest(
+          {
+            type: "object",
+            additionalProperties: false,
+            properties: { confirmation: { type: "string" } },
+          },
+          "Exact confirmation is required only for destructive processing.",
+        ),
+      },
+    ),
+    "/privacy/requests/{id}/export": adminPrivacyGet(
+      "Export one bounded verified data page",
+      "exportPrivacyRequestPage",
+      {
+        parameters: [
+          pathParameter("id", "Privacy request ID."),
+          queryParameter(
+            "cursor",
+            "Authenticated opaque cursor returned by the previous export page.",
+            {
+              type: "string",
+              maxLength: 1_000,
+            },
+          ),
+          queryParameter("limit", "Maximum records in this export page.", {
+            type: "integer",
+            minimum: 1,
+            maximum: 500,
+            default: 100,
+          }),
+        ],
+      },
+    ),
+    "/privacy/legal-holds": adminPrivacyPost(
+      "Create a pending legal hold",
+      "createPrivacyLegalHold",
+      {
+        requestBody: jsonRequest(schemaRef("PrivacyLegalHoldInput")),
+      },
+    ),
+    "/privacy/legal-holds/{id}/approve": adminPrivacyPost(
+      "Second-approve a legal hold",
+      "approvePrivacyLegalHold",
+      { parameters: [pathParameter("id", "Privacy legal-hold ID.")] },
+    ),
+    "/privacy/legal-holds/{id}/release": adminPrivacyPost(
+      "Release an active legal hold",
+      "releasePrivacyLegalHold",
+      { parameters: [pathParameter("id", "Privacy legal-hold ID.")] },
+    ),
+    "/privacy/external-tasks/{id}": {
+      patch: adminPrivacyOperation(
+        "Record provider or backup follow-up",
+        "updatePrivacyExternalTask",
+        {
+          parameters: [pathParameter("id", "Privacy external-task ID.")],
+          requestBody: jsonRequest(schemaRef("PrivacyExternalTaskUpdateInput")),
+        },
+      ),
     },
     "/internal/seed/vsas": {
       post: {

@@ -1,5 +1,18 @@
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  runPrivacyLifecycleCron: vi.fn(),
+}));
+
+vi.mock("../domain/privacy/service.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../domain/privacy/service.js")>();
+  return {
+    ...actual,
+    runPrivacyLifecycleCron: mocks.runPrivacyLifecycleCron,
+  };
+});
 import { createApp } from "../app.js";
 import { loadEnv, resetEnvCache } from "../env.js";
 import { errorHandler } from "../middleware/error.js";
@@ -16,6 +29,13 @@ describe("ACARS polling cron", () => {
       NODE_ENV: "test",
       ACARS_PROVIDER: "mock",
       CRON_SECRET: "test-cron-secret",
+      DATABASE_URL: "postgresql://example.invalid/test",
+    });
+    mocks.runPrivacyLifecycleCron.mockResolvedValue({
+      scheduled: 1,
+      processed: 1,
+      completed: 0,
+      failed: 0,
     });
   });
 
@@ -49,5 +69,25 @@ describe("ACARS polling cron", () => {
         message: "Invalid cron secret",
       },
     });
+  });
+
+  it("authenticates and bounds the privacy lifecycle cron", async () => {
+    const response = await app.request(
+      "/internal/cron/privacy-lifecycle?maxRuns=7",
+      { headers: { Authorization: "Bearer test-cron-secret" } },
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.runPrivacyLifecycleCron).toHaveBeenCalledWith({ maxRuns: 7 });
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      scheduled: 1,
+      processed: 1,
+      completed: 0,
+      failed: 0,
+    });
+
+    const unauthorized = await app.request("/internal/cron/privacy-lifecycle");
+    expect(unauthorized.status).toBe(401);
+    expect(mocks.runPrivacyLifecycleCron).toHaveBeenCalledTimes(1);
   });
 });

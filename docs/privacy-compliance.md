@@ -31,6 +31,8 @@ operating procedures for the actual deployment with qualified counsel.
 | `memberships`         | Clerk user ID, role, display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, status, timestamps                                                                              |
 | `schedule_requests`   | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                                                                                                         |
 | `flights`             | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                                                                                                        |
+| `dispatch_releases`   | Immutable dispatcher release revisions, operational route/weather, release notes/remarks, dispatcher link                                                                                                                                     |
+| Operational events    | Flight progress source, actor/message links, occurrence time, and event metadata                                                                                                                                                              |
 | OAuth transactions    | Short-lived random state lookup ID, encrypted PKCE verifier, member/tenant link, expiry and consumption times                                                                                                                                 |
 | `simbrief_dispatches` | Flight/material/release snapshot and canonical revision, preparing dispatcher and generating pilot links, trusted dispatcher-name snapshot and remarks, SimBrief Pilot/static/request IDs, planning inputs, generated OFP, errors, timestamps |
 | Simulator devices     | Tenant/member/device link, user-chosen device name, keyed token authenticator, revocation, sequence, and last-seen timestamps                                                                                                                 |
@@ -38,6 +40,7 @@ operating procedures for the actual deployment with qualified counsel.
 | OOOI provenance       | Out/off/on/in value, automatic or manual source, correcting actor or simulator device, reason, and timestamp                                                                                                                                  |
 | `acars_messages`      | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                                                                                                                 |
 | `audit_events`        | Actor, action, entity identifiers, metadata, timestamp                                                                                                                                                                                        |
+| Privacy workflows     | Policy versions, aggregate reports, verified request state, restrictions/objections, legal holds, and provider follow-up tasks                                                                                                                |
 | Infrastructure        | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                                                                                                                   |
 | Vercel telemetry      | Consent-gated aggregated routes, referrers, coarse location/device categories and Web Vitals; essential BotID challenge and security signals                                                                                                  |
 
@@ -118,18 +121,20 @@ this feature must not be presented as optional analytics consent.
 The privacy notice uses retention criteria because this repository cannot
 choose the controller's legally appropriate periods. Before launch, approve a
 written schedule for accounts, operational history, SimBrief dispatches/OFPs,
-ACARS copies, audit events, HTTP/security logs, and backups. Configure provider
-retention and implement a tested recurring deletion or anonymization process
-for each store.
+ACARS copies, audit events, HTTP/security logs, and backups. Configure the
+dual-approved, versioned policy and provider settings by following
+[Privacy lifecycle operations](privacy-operations.md).
 
 Application audit history is admin-only and tenant-scoped. The current
-application retention class for `audit_events` is 365 days; the automated
-lifecycle workflow must enforce it before operators claim automatic expiry.
+application policy template for `audit_events` is 365 days. Automatic execution
+remains off until an approved policy explicitly enables it; inspect completed
+run evidence and external tasks before operators claim automatic expiry.
 Audit export access is itself audited and exported metadata is redacted and
 bounded. This is append-only application history, not a cryptographically
 tamper-evident ledger. See [Administrator control plane](admin-control-plane.md).
 
-Document and test a request workflow that can:
+Use and test the verified workflow in
+[Privacy lifecycle operations](privacy-operations.md) to:
 
 - verify the requester without collecting excessive new data;
 - export the records listed in the inventory above;

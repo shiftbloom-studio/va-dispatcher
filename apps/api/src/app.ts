@@ -19,6 +19,7 @@ import { simbriefPublicRoutes, simbriefRoutes } from "./routes/simbrief.js";
 import { publicRoutes } from "./routes/public.js";
 import { auditRoutes } from "./routes/audit.js";
 import { telemetryClientRoutes, telemetryRoutes } from "./routes/telemetry.js";
+import { privacyRoutes } from "./routes/privacy.js";
 import type { AppVariables } from "./middleware/auth.js";
 
 // Ensure env is loaded once at import for local/dev.
@@ -95,6 +96,7 @@ export function createApp() {
   v1.route("/", tenantRoutes);
   v1.route("/", membersRoutes);
   v1.route("/", auditRoutes);
+  v1.route("/", privacyRoutes);
   v1.route("/", scheduleRequestRoutes);
   v1.route("/", flightRoutes);
   v1.route("/", dispatchRoutes);

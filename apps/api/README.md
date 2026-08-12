@@ -66,7 +66,9 @@ curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
 - ACARS config: `PUT/DELETE /tenant/acars-config`, `POST /tenant/acars-config/test` (admin)
 - SimBrief connection: `GET/PUT/DELETE /simbrief/connection`, `POST /simbrief/oauth/start`
 - SimBrief flight plans: `POST /flights/:id/simbrief/dispatches`, `GET /flights/:id/simbrief`
-- Cron: `POST /internal/cron/acars-poll` (Bearer `CRON_SECRET`)
+- Cron: `GET|POST /internal/cron/acars-poll` (Bearer `CRON_SECRET`)
+- Privacy lifecycle: `GET|POST /internal/cron/privacy-lifecycle` (Bearer
+  `CRON_SECRET`; bounded dry-run/execution checkpoints)
 
 ## Live operations board
 

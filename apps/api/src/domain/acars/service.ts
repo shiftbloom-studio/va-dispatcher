@@ -34,6 +34,7 @@ import {
   applyHoppieProgress,
   assignmentNeedsConfirmation,
 } from "../flights/service.js";
+import { assertOptionalProcessingAllowed } from "../privacy/service.js";
 
 export async function sendTelex(input: {
   tenantId: string;
@@ -43,10 +44,22 @@ export async function sendTelex(input: {
   flightId?: string | null;
 }) {
   const tenant = await requireTenant(input.tenantId);
+  await assertOptionalProcessingAllowed({
+    tenantId: input.tenantId,
+    membershipId: input.membershipId,
+    purpose: "acars",
+  });
   if (input.flightId) {
     const flight = await findFlight(input.tenantId, input.flightId);
     if (!flight) {
       throw new AppError("NOT_FOUND", "Flight not found");
+    }
+    if (flight.pilotMembershipId) {
+      await assertOptionalProcessingAllowed({
+        tenantId: input.tenantId,
+        membershipId: flight.pilotMembershipId,
+        purpose: "acars",
+      });
     }
   }
   const fromStation = tenant.hoppieStation ?? tenant.slug.toUpperCase();
@@ -272,6 +285,16 @@ async function processOperationalInteraction(
     message.fromStation.toUpperCase(),
   );
   if (!membership || membership.status !== "active") return;
+  try {
+    await assertOptionalProcessingAllowed({
+      tenantId: tenant.id,
+      membershipId: membership.id,
+      purpose: "acars",
+    });
+  } catch (error) {
+    if (error instanceof AppError && error.code === "FORBIDDEN") return;
+    throw error;
+  }
   const receivedAt = message.receivedAt ?? message.createdAt;
   const candidates = await listTrackableFlightsForPilot({
     tenantId: tenant.id,

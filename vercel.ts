@@ -36,5 +36,9 @@ export const config = {
       path: "/api/v1/internal/cron/acars-poll",
       schedule: "* * * * *",
     },
+    {
+      path: "/api/v1/internal/cron/privacy-lifecycle",
+      schedule: "0 * * * *",
+    },
   ],
 };

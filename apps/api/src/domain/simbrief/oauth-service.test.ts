@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
   writeAudit: vi.fn(),
   exchangeAuthorizationCode: vi.fn(),
   fetchUserInfo: vi.fn(),
+  assertOptionalProcessingAllowed: vi.fn(),
+}));
+
+vi.mock("../privacy/service.js", () => ({
+  assertOptionalProcessingAllowed: mocks.assertOptionalProcessingAllowed,
 }));
 
 vi.mock("../../db/repositories/memberships.js", () => ({
@@ -88,6 +93,7 @@ describe("Navigraph OAuth service", () => {
       NAVIGRAPH_REDIRECT_URI: redirectUri,
     });
     mocks.findMembershipById.mockResolvedValue(membership);
+    mocks.assertOptionalProcessingAllowed.mockResolvedValue(undefined);
     mocks.updateMembership.mockImplementation(
       async (_tenantId: string, _membershipId: string, patch: object) => ({
         ...membership,

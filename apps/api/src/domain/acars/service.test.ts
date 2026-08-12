@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
   listHoppieTenants: vi.fn(),
   findFlight: vi.fn(),
   providerFactoryError: null as Error | null,
+  assertOptionalProcessingAllowed: vi.fn(),
+}));
+
+vi.mock("../privacy/service.js", () => ({
+  assertOptionalProcessingAllowed: mocks.assertOptionalProcessingAllowed,
 }));
 
 vi.mock("../../acars/factory.js", () => ({
@@ -66,6 +71,7 @@ describe("ACARS service outbound delivery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.providerFactoryError = null;
+    mocks.assertOptionalProcessingAllowed.mockResolvedValue(undefined);
     mocks.findTenantById.mockResolvedValue(tenant);
     mocks.findFlight.mockResolvedValue({ id: "flight_test" });
   });
