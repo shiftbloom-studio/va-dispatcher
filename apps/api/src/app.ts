@@ -14,6 +14,7 @@ import { flightRoutes } from "./routes/flights.js";
 import { dispatchRoutes } from "./routes/dispatch.js";
 import { acarsRoutes } from "./routes/acars.js";
 import { internalRoutes } from "./routes/internal.js";
+import { docsRoutes } from "./routes/docs.js";
 import type { AppVariables } from "./middleware/auth.js";
 
 // Ensure env is loaded once at import for local/dev.
@@ -66,6 +67,11 @@ export function createApp() {
   );
 
   app.onError(errorHandler);
+
+  // Documentation is public and mounted both before and after the Vercel
+  // rewrite boundary, matching the API's dual-path deployment support.
+  app.route("/docs", docsRoutes);
+  app.route("/api/docs", docsRoutes);
 
   // Health at root and under /api for rewrite compatibility
   app.route("/", healthRoutes);

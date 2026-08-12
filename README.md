@@ -37,6 +37,10 @@ pnpm dev              # web :3000 + API :3001
 ```
 
 Open `http://localhost:3000/vsas`. Health check: `GET http://localhost:3001/health`.
+The API reference is available through
+[Swagger UI](http://localhost:3001/docs/swagger),
+[ReDoc](http://localhost:3001/docs/redoc), and the raw
+[OpenAPI document](http://localhost:3001/docs/openapi.json).
 
 The public legal pages are available at `/impressum` and `/privacy`. Configure
 all required `LEGAL_*` values from `apps/web/.env.example` before production;
