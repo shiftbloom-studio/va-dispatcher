@@ -46,8 +46,7 @@ vi.mock("../acars/hoppie-provider.js", () => ({
   },
 }));
 vi.mock("../acars/factory.js", () => ({
-  tenantAcarsProviderName: (tenant: Tenant) =>
-    tenant.hoppieLogonEnc ? "hoppie" : "mock",
+  activeAcarsProviderName: () => "hoppie",
 }));
 vi.mock("../domain/acars/service.js", () => ({
   publicProviderError: (error: unknown) => error,
@@ -100,7 +99,7 @@ describe("tenant Hoppie configuration", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       acarsProvider: "hoppie",
-      hoppiePollingEnabled: false,
+      hoppiePollingEnabled: true,
       hoppieStation: "VSAS",
       hasHoppieLogon: true,
     });
@@ -151,7 +150,7 @@ describe("tenant Hoppie configuration", () => {
     );
     expect(body).toMatchObject({
       acarsProvider: "hoppie",
-      hoppiePollingEnabled: false,
+      hoppiePollingEnabled: true,
       hoppieStation: "SAS",
       hasHoppieLogon: true,
     });
@@ -159,7 +158,7 @@ describe("tenant Hoppie configuration", () => {
     expect(body).not.toHaveProperty("hoppieLogonEnc");
   });
 
-  it("disconnects Hoppie without deleting the station identity", async () => {
+  it("removes Hoppie credentials without falling back to mock", async () => {
     state.role = "admin";
     tenant = { ...tenant, hoppieStation: "SAS", hoppieLogonEnc: "encrypted" };
 
@@ -169,7 +168,7 @@ describe("tenant Hoppie configuration", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      acarsProvider: "mock",
+      acarsProvider: "hoppie",
       hoppiePollingEnabled: false,
       hoppieStation: "SAS",
       hasHoppieLogon: false,

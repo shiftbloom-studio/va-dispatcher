@@ -27,9 +27,9 @@ export const config = {
   ],
   /**
    * Hoppie asks live stations to poll at roughly one-minute intervals. The
-   * handler exits before DB access unless ACARS_PROVIDER=hoppie, then queries
-   * only tenants with an encrypted Hoppie logon. A one-minute Vercel cron
-   * requires Pro.
+   * production handler queries only tenants with an encrypted Hoppie logon.
+   * The mock adapter is restricted to local development and tests. A one-minute
+   * Vercel cron requires Pro.
    */
   crons: [
     {

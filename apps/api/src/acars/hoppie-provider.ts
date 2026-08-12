@@ -15,7 +15,8 @@ import { AcarsProviderError } from "./types.js";
  * Poll etiquette: ~45–75s between polls; 15s HTTP timeout; no hammering.
  * Prefer type=poll for stations; peek only for offline loggers.
  *
- * A tenant uses this provider as soon as an encrypted Hoppie logon is set.
+ * Production uses this provider exclusively. Each tenant supplies its own
+ * encrypted Hoppie ground-station logon.
  */
 const DEFAULT_BASE = "https://www.hoppie.nl/acars/system/connect.html";
 

@@ -151,8 +151,8 @@ export default async function PrivacyPage() {
             .
           </li>
           <li>
-            <strong>Hoppie&apos;s ACARS</strong> — only when a tenant enables
-            the live Hoppie provider. Station identifiers and messages are
+            <strong>Hoppie&apos;s ACARS</strong> — only when a tenant configures
+            its Hoppie ground station. Station identifiers and messages are
             relayed through a Netherlands-hosted hobby network. Hoppie warns
             that ACARS is not a private messaging system and messages may be
             visible to others. Never put personal, confidential, or

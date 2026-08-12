@@ -41,22 +41,23 @@ curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
 - Flights: `POST /flights`, `POST /flights/bulk`, `…/accept|decline|cancel|offer|status`
 - Dispatch: `GET /dispatch/board`, `GET /dispatch/inbox`
 - Profile: `PATCH /me` (display name and own ACARS callsign)
-- ACARS: `GET/POST /acars/messages`, `POST /acars/simulate` (mock only)
+- ACARS: `GET/POST /acars/messages`
+- Development fixture: `POST /acars/simulate` (non-production mock adapter only)
 - ACARS config: `PUT/DELETE /tenant/acars-config`, `POST /tenant/acars-config/test` (admin)
 - Cron: `POST /internal/cron/acars-poll` (Bearer `CRON_SECRET`)
 
 ## ACARS
 
-The provider is selected per tenant. Without an encrypted logon the tenant uses
-the DB-backed mock provider. An admin configures and tests a real ground station
-from the web settings page; the API encrypts its logon using
-`TENANT_SECRETS_KEY` before storage. Generate the required 32-byte base64 key
-with `openssl rand -base64 32`.
+Production uses Hoppie exclusively. An admin configures and tests the tenant's
+ground station from the web settings page; the API encrypts its logon using
+`TENANT_SECRETS_KEY` before storage. Without that configuration, live sends
+return `422 UNPROCESSABLE` and nothing is stored. Generate the required 32-byte
+base64 key with `openssl rand -base64 32`.
 
-`ACARS_PROVIDER=hoppie` enables the deployment's scheduled inbound poll. It is
-an idle-cost gate, not the tenant's outbound provider choice: tenants still use
-Hoppie only when they have their own encrypted configuration. Leave it `mock`
-until at least one tenant is ready, so the cron exits without waking Neon.
+`ACARS_PROVIDER=mock` selects the DB-backed adapter only for local development
+and automated tests. Production always resolves to Hoppie, including when a
+stale environment variable still says `mock`; set `ACARS_PROVIDER=hoppie` in
+Vercel to keep the declared configuration aligned with runtime behavior.
 
 Hoppie's `ping` is used for connection tests because it does not mark or lock
 the station online. A real send is recorded only after Hoppie returns `ok`.
