@@ -83,6 +83,19 @@ async function baseFixtures(page: Page) {
   await page.route("**/api/v1/members", (route) =>
     json(route, { items: [pilot] }),
   );
+  await page.route("**/api/v1/tenant", (route) =>
+    json(route, {
+      id: "tenant-vsas",
+      slug: "vsas",
+      name: "Virtual SAS",
+      hoppieStation: "VSAS",
+      hasHoppieLogon: false,
+      acarsProvider: "mock",
+      hoppiePollingEnabled: false,
+      hoppieLastTestedAt: null,
+      settings: {},
+    }),
+  );
 }
 
 test("pilot requests a UTC schedule and accepts an offer", async ({
@@ -257,10 +270,62 @@ test("dispatcher sends and simulates mock ACARS", async ({ page, context }) => {
   await page.getByLabel("Recipient station").fill("SAS101");
   await page.getByLabel("Message", { exact: true }).fill("CONTACT DISPATCH");
   await page.getByRole("button", { name: "Send telex" }).click();
-  await expect(page.getByText("Telex sent to SAS101.")).toBeVisible();
+  await expect(page.getByText("Mock telex stored for SAS101.")).toBeVisible();
   await page.getByLabel("From station").fill("SAS101");
   await page.getByLabel("Inbound message").fill("WILCO");
   await page.getByRole("button", { name: "Simulate" }).click();
   await expect(page.getByText(/queued.*next ACARS poll/i)).toBeVisible();
   await expect(page.getByText("WILCO")).toBeVisible();
+});
+
+test("admin configures the tenant Hoppie ground station", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    { name: "e2e-role", value: "admin", domain: "127.0.0.1", path: "/" },
+  ]);
+  await baseFixtures(page);
+  await page.route("**/api/v1/me", (route) =>
+    json(route, {
+      user: { clerkUserId: "admin-test" },
+      membership: {
+        ...pilot,
+        id: "admin-membership",
+        role: "admin",
+        displayName: "Test Admin",
+      },
+      tenant: {
+        id: "tenant-vsas",
+        slug: "vsas",
+        name: "Virtual SAS",
+        hoppieStation: "VSAS",
+      },
+    }),
+  );
+  await page.route("**/api/v1/tenant/acars-config", async (route) => {
+    expect(route.request().method()).toBe("PUT");
+    const body = route.request().postDataJSON();
+    expect(body).toEqual({
+      hoppieStation: "SAS",
+      hoppieLogon: "private-logon",
+    });
+    return json(route, {
+      hoppieStation: "SAS",
+      hasHoppieLogon: true,
+      acarsProvider: "hoppie",
+      hoppiePollingEnabled: true,
+      hoppieLastTestedAt: "2026-09-01T08:05:00.000Z",
+    });
+  });
+
+  await page.goto("/vsas/settings");
+  await page.getByLabel("Ground-station callsign").fill("sas");
+  await page.getByLabel("Ground-station Hoppie logon").fill("private-logon");
+  await page.getByRole("button", { name: "Test and save" }).click();
+
+  await expect(
+    page.getByText(/Hoppie accepted the connection test/),
+  ).toBeVisible();
+  await expect(page.getByText("hoppie", { exact: true })).toBeVisible();
 });

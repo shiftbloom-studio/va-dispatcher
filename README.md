@@ -9,7 +9,7 @@ Multi-tenant Virtual Airline Live Dispatch & ACARS tool.
 - **One tenant = one Virtual Airline** (first: **vSAS**)
 - **API**: Hono + TypeScript on Vercel Services (`apps/api`)
 - **Web**: Next.js pilot portal + dispatcher suite (`apps/web`)
-- **ACARS**: Hoppies network via adapter (mock by default)
+- **ACARS**: Hoppie's ACARS via a tenant-scoped adapter (mock until configured)
 
 ## Monorepo
 
@@ -50,10 +50,18 @@ Clerk Organizations must be enabled, organization slugs must be enabled, and the
 
 ## ACARS
 
-```env
-ACARS_PROVIDER=mock   # default — no Hoppie traffic
-# ACARS_PROVIDER=hoppie  # later
-```
+Each Virtual Airline starts on the mock provider. An administrator can open
+`/:slug/settings`, enter the VA ground-station callsign and Hoppie logon code,
+and run a connection test. The code is encrypted with `TENANT_SECRETS_KEY` and
+is never returned by the API. Once saved, only that tenant switches to Hoppie.
+
+Members save their aircraft callsign on the same settings page. Their personal
+Hoppie logon remains in their simulator ACARS client; this application never
+asks for or stores it. The pilot and VA ground-station Hoppie accounts must use
+the same network affiliation.
+
+Hoppie registration is free and self-service; no separate API approval is
+required: <https://www.hoppie.nl/acars/system/register.html>.
 
 Mock mode supports `POST /api/v1/acars/simulate` for demos. Simulation keeps
 the existing queued response contract and completes ingestion during the active
@@ -61,16 +69,20 @@ request, so background mock polling remains disabled for scale-to-zero.
 
 ## Cost model (no idle cost)
 
-| Layer      | Choice                               | Idle behavior                                  |
-| ---------- | ------------------------------------ | ---------------------------------------------- |
-| Postgres   | **Neon Free / scale-to-zero**        | Suspends when unused → **$0 idle**             |
-| Auth       | **Clerk Free**                       | MAU-based free tier; no always-on server       |
-| API        | **Vercel Fluid Compute**             | Active CPU pricing; no charge when not invoked |
-| ACARS cron | Every **5 min**, **no-op when mock** | Does not wake Neon unless Hoppie is configured |
+| Layer      | Choice                                   | Idle behavior                                  |
+| ---------- | ---------------------------------------- | ---------------------------------------------- |
+| Postgres   | **Neon Free / scale-to-zero**            | Suspends when unused → **$0 idle**             |
+| Auth       | **Clerk Free**                           | MAU-based free tier; no always-on server       |
+| API        | **Vercel Fluid Compute**                 | Active CPU pricing; no charge when not invoked |
+| ACARS cron | Every **1 min**, configured tenants only | Required for a live Hoppie ground station      |
 
 Do **not** add Redis/queues for v1 — they would add idle or minimum footprint.
 
-When `ACARS_PROVIDER=mock` (default), the poll cron returns immediately without opening a DB connection.
+The poll cron selects only tenants with an encrypted Hoppie logon. Mock tenants
+never make Hoppie requests. Set `ACARS_PROVIDER=hoppie` on a deployment that has
+at least one configured ground station; while it remains `mock`, the cron exits
+before touching Neon. Vercel Pro is required for the one-minute schedule; slower
+cron schedules delay inbound messages but do not affect outbound sends.
 
 ## Deploy
 
