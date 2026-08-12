@@ -42,7 +42,7 @@ function bearerToken(authorizationHeader: string | undefined): string | null {
  *
  * Production: Clerk JWT with org claim.
  * Dev bypass: AUTH_DEV_BYPASS=true and headers:
- *   X-Dev-User-Id, X-Dev-Org-Id, X-Dev-Role (optional)
+ *   X-Dev-User-Id, X-Dev-Org-Id, X-Dev-Role, X-Dev-Display-Name (optional)
  */
 export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
   async (context, next) => {
@@ -63,6 +63,8 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
         config.VSAS_CLERK_ORG_ID ??
         "org_vsas_dev";
       const role = mapClerkOrgRole(context.req.header("X-Dev-Role") ?? "admin");
+      const displayName =
+        context.req.header("X-Dev-Display-Name") ?? "Dev User";
 
       const tenant = await findTenantByClerkOrgId(clerkOrgId);
       if (!tenant) {
@@ -77,7 +79,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
         tenantId: tenant.id,
         clerkUserId,
         role,
-        displayName: "Dev User",
+        displayName,
       });
 
       context.set("auth", {

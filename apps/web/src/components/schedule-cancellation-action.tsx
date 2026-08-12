@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label, Textarea } from "@/components/ui/fields";
@@ -19,6 +19,7 @@ export function ScheduleCancellationAction({
   ) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   const [linkedFlightAction, setLinkedFlightAction] =
     useState<LinkedFlightCancellationAction>("keep");
   const [reason, setReason] = useState("");
@@ -56,11 +57,12 @@ export function ScheduleCancellationAction({
       <span onClick={() => dialog.current?.showModal()}>{trigger}</span>
       <dialog
         ref={dialog}
+        aria-labelledby={titleId}
         className="m-auto w-[min(36rem,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/60"
       >
         <form method="dialog" onSubmit={(event) => event.preventDefault()}>
           <div className="border-b border-slate-100 p-5">
-            <h2 className="font-display text-xl font-semibold">
+            <h2 id={titleId} className="font-display text-xl font-semibold">
               Cancel this schedule request?
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">

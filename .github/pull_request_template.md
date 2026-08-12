@@ -23,7 +23,7 @@
 
 ## Risk and rollout
 
-<!-- Note migrations, configuration changes, compatibility concerns, or rollback steps. -->
+<!-- Note schema, configuration, compatibility concerns, or rollback steps. -->
 
 ## Checklist
 

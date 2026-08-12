@@ -27,7 +27,7 @@ Each pull request should include:
 - tests for behavior and failure paths;
 - tenant-isolation and authorization cases where relevant;
 - screenshots for visible UI changes;
-- migration/configuration/compatibility/rollout notes;
+- schema/configuration/compatibility/rollout notes;
 - privacy and data-retention impact; and
 - validation that actually ran.
 
@@ -40,7 +40,7 @@ Use concise imperative commit subjects, for example `Document Hoppie polling ope
 | HTTP method/path/body/response | route, OpenAPI, web schema, API Guide, tests                           |
 | Role or ownership              | middleware/service, OpenAPI role note, Product Guide, auth page, tests |
 | Request/flight state           | database enum, transition table, UI actions, diagrams, tests           |
-| Schema or retention            | schema/migration plan, Data Model, Privacy docs, rollout               |
+| Schema or retention            | canonical schema, Data Model, Privacy docs, fresh-database rollout     |
 | Environment variable           | parser, example env, Configuration Reference, deployment docs          |
 | Hoppie/provider behavior       | provider/service, ACARS page, error UX, privacy inventory, tests       |
 | External browser service       | consent implementation, legal notice version, data inventory, tests    |

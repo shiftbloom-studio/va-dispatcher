@@ -10,9 +10,22 @@ import {
   membersSchema,
   scheduleRequestDetailResponseSchema,
   schedulePreferencesSchema,
+  simbriefDispatchListSchema,
 } from "@/lib/api/schemas";
 
 describe("live API contract smoke fixtures", () => {
+  it("parses the server-derived current SimBrief planning revision", () => {
+    expect(
+      simbriefDispatchListSchema.parse({
+        items: [],
+        currentDispatchId: "40000000-0000-4000-8000-000000000001",
+      }).currentDispatchId,
+    ).toBe("40000000-0000-4000-8000-000000000001");
+    expect(
+      simbriefDispatchListSchema.parse({ items: [] }).currentDispatchId,
+    ).toBeNull();
+  });
+
   it("parses the current identity and membership serializer", () => {
     expect(
       meSchema.parse({

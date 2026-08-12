@@ -5,6 +5,7 @@ import { getDb } from "../client.js";
 import {
   auditEvents,
   flights,
+  flightOperationalEvents,
   memberships,
   scheduleFulfillmentAttempts,
   scheduleRequests,
@@ -102,8 +103,8 @@ export async function createFlight(input: CreateFlightInput): Promise<Flight> {
         ${input.flightNumber},
         ${input.depIcao.toUpperCase()},
         ${input.arrIcao.toUpperCase()},
-        ${input.etd},
-        ${input.eta},
+        ${sql.param(input.etd, flights.etd)},
+        ${sql.param(input.eta, flights.eta)},
         ${input.aircraftType ?? null},
         ${input.status ?? "draft"}::flight_status,
         ${input.dispatcherNotes ?? null}
@@ -183,8 +184,8 @@ export async function fulfillScheduleRequest(input: {
         ${flight.flightNumber},
         ${flight.depIcao},
         ${flight.arrIcao},
-        ${flight.etd},
-        ${flight.eta},
+        ${sql.param(flight.etd, flights.etd)}::timestamptz,
+        ${sql.param(flight.eta, flights.eta)}::timestamptz,
         ${flight.aircraftType}
       )`,
     ),
@@ -257,8 +258,8 @@ export async function fulfillScheduleRequest(input: {
         remaining_flight_count
       )
       SELECT
-        ${attemptId},
-        ${input.tenantId},
+        ${attemptId}::uuid,
+        ${input.tenantId}::uuid,
         capacity.id,
         ${input.idempotencyKey},
         ${input.payloadHash},
@@ -311,7 +312,7 @@ export async function fulfillScheduleRequest(input: {
       )
       SELECT
         proposed.id,
-        ${input.tenantId},
+        ${input.tenantId}::uuid,
         capacity.id,
         capacity.pilot_membership_id,
         proposed.flight_number,
@@ -344,13 +345,13 @@ export async function fulfillScheduleRequest(input: {
     ), request_updated AS (
       UPDATE ${scheduleRequests}
       SET
-        ${scheduleRequests.status} = CASE
+        ${sql.identifier(scheduleRequests.status.name)} = CASE
           WHEN batch_checked.cumulative_flight_count >= batch_checked.desired_flight_count
             THEN 'fulfilled'::schedule_request_status
           ELSE 'partially_fulfilled'::schedule_request_status
         END,
-        ${scheduleRequests.version} = ${scheduleRequests.version} + 1,
-        ${scheduleRequests.updatedAt} = NOW()
+        ${sql.identifier(scheduleRequests.version.name)} = ${scheduleRequests.version} + 1,
+        ${sql.identifier(scheduleRequests.updatedAt.name)} = NOW()
       FROM batch_checked
       WHERE
         ${scheduleRequests.tenantId} = ${input.tenantId}
@@ -374,17 +375,17 @@ export async function fulfillScheduleRequest(input: {
         meta
       )
       SELECT
-        ${input.tenantId},
-        ${input.actorMembershipId},
+        ${input.tenantId}::uuid,
+        ${input.actorMembershipId}::uuid,
         'schedule_request.fulfillment_progress',
         'schedule_request',
-        request_updated.id,
+        request_updated.id::text,
         jsonb_build_object(
-          'from', ${input.expectedRequestStatus},
+          'from', ${input.expectedRequestStatus}::text,
           'to', request_updated.status,
-          'fromVersion', ${input.expectedRequestVersion},
-          'toVersion', ${input.expectedRequestVersion + 1},
-          'batchCount', ${proposed.length},
+          'fromVersion', ${input.expectedRequestVersion}::integer,
+          'toVersion', ${input.expectedRequestVersion + 1}::integer,
+          'batchCount', ${proposed.length}::integer,
           'existingFlightCount', request_updated.existing_flight_count,
           'cumulativeFlightCount', request_updated.cumulative_flight_count,
           'remainingFlightCount', greatest(
@@ -395,15 +396,15 @@ export async function fulfillScheduleRequest(input: {
       FROM request_updated
       UNION ALL
       SELECT
-        ${input.tenantId},
-        ${input.actorMembershipId},
+        ${input.tenantId}::uuid,
+        ${input.actorMembershipId}::uuid,
         'flight.bulk_create',
         'schedule_request',
-        request_updated.id,
+        request_updated.id::text,
         jsonb_build_object(
-          'count', ${proposed.length},
-          'requestFromVersion', ${input.expectedRequestVersion},
-          'requestToVersion', ${input.expectedRequestVersion + 1},
+          'count', ${proposed.length}::integer,
+          'requestFromVersion', ${input.expectedRequestVersion}::integer,
+          'requestToVersion', ${input.expectedRequestVersion + 1}::integer,
           'createdFlightVersion', 1,
           'flightIds', to_jsonb(${proposedIdArray})
         )
@@ -655,7 +656,7 @@ export async function updateFlight(input: {
     const column =
       updatableFlightColumns[field as keyof typeof updatableFlightColumns];
     if (!column) throw new Error(`Unsupported flight update field: ${field}`);
-    return sql`${column} = ${value}`;
+    return sql`${sql.identifier(column.name)} = ${sql.param(value, column)}`;
   });
   const auditMeta = JSON.stringify(input.auditMeta);
   const result = await db.execute<{ id: string }>(sql`
@@ -663,8 +664,8 @@ export async function updateFlight(input: {
       UPDATE ${flights}
       SET
         ${sql.join(setClauses, sql`, `)}${setClauses.length ? sql`, ` : sql``}
-        ${flights.version} = ${flights.version} + 1,
-        ${flights.updatedAt} = NOW()
+        ${sql.identifier(flights.version.name)} = ${flights.version} + 1,
+        ${sql.identifier(flights.updatedAt.name)} = NOW()
       WHERE
         ${flights.tenantId} = ${input.tenantId}
         AND ${flights.id} = ${input.id}
@@ -717,6 +718,98 @@ const updatableFlightColumns = {
 } as const;
 
 export type UpdateFlightPatch = Parameters<typeof updateFlight>[0]["patch"];
+
+/**
+ * Advances manual flight progress and records both audit representations in
+ * the same PostgreSQL statement. A stale version returns null; any audit or
+ * operational-event failure aborts the complete state transition.
+ */
+export async function updateFlightWithOperationalEvent(input: {
+  tenantId: string;
+  id: string;
+  expectedVersion: number;
+  actorMembershipId: string;
+  action: string;
+  auditMeta: Record<string, unknown>;
+  patch: UpdateFlightPatch;
+  event: {
+    kind: "manual_start" | "manual_finish";
+    source: "pilot_web" | "dispatcher";
+    occurredAt: Date;
+    meta?: Record<string, unknown>;
+  };
+}): Promise<Flight | null> {
+  const db = getDb();
+  const normalized = { ...input.patch };
+  if (normalized.depIcao) normalized.depIcao = normalized.depIcao.toUpperCase();
+  if (normalized.arrIcao) normalized.arrIcao = normalized.arrIcao.toUpperCase();
+  const setClauses = Object.entries(normalized).map(([field, value]) => {
+    const column =
+      updatableFlightColumns[field as keyof typeof updatableFlightColumns];
+    if (!column) throw new Error(`Unsupported flight update field: ${field}`);
+    return sql`${sql.identifier(column.name)} = ${sql.param(value, column)}`;
+  });
+  const auditMeta = JSON.stringify(input.auditMeta);
+  const eventMeta = JSON.stringify(input.event.meta ?? {});
+  const result = await db.execute<{ id: string }>(sql`
+    WITH updated AS (
+      UPDATE ${flights}
+      SET
+        ${sql.join(setClauses, sql`, `)}${setClauses.length ? sql`, ` : sql``}
+        ${sql.identifier(flights.version.name)} = ${flights.version} + 1,
+        ${sql.identifier(flights.updatedAt.name)} = NOW()
+      WHERE
+        ${flights.tenantId} = ${input.tenantId}
+        AND ${flights.id} = ${input.id}
+        AND ${flights.version} = ${input.expectedVersion}
+      RETURNING ${flights.id}, ${flights.tenantId}
+    ), audited AS (
+      INSERT INTO ${auditEvents} (
+        tenant_id,
+        actor_membership_id,
+        action,
+        entity_type,
+        entity_id,
+        meta
+      )
+      SELECT
+        updated.tenant_id,
+        ${input.actorMembershipId},
+        ${input.action},
+        'flight',
+        updated.id::text,
+        ${auditMeta}::jsonb
+      FROM updated
+      RETURNING id
+    ), event_recorded AS (
+      INSERT INTO ${flightOperationalEvents} (
+        tenant_id,
+        flight_id,
+        kind,
+        source,
+        occurred_at,
+        actor_membership_id,
+        meta
+      )
+      SELECT
+        updated.tenant_id,
+        updated.id,
+        ${input.event.kind}::flight_event_kind,
+        ${input.event.source}::flight_event_source,
+        ${sql.param(input.event.occurredAt, flightOperationalEvents.occurredAt)},
+        ${input.actorMembershipId},
+        ${eventMeta}::jsonb
+      FROM updated
+      RETURNING id
+    )
+    SELECT updated.id
+    FROM updated
+    INNER JOIN audited ON TRUE
+    INNER JOIN event_recorded ON TRUE
+  `);
+  if (!result.rows[0]) return null;
+  return findFlight(input.tenantId, input.id);
+}
 
 /**
  * Creates one history-linked replacement without mutating the declined source

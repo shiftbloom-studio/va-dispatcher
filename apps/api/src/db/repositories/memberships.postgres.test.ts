@@ -15,7 +15,7 @@ import {
 
 const { Pool } = pg;
 const databaseUrl = process.env.TEST_DATABASE_URL;
-const confirmedDatabase = process.env.ADMIN_TEST_CONFIRM_DATABASE;
+const confirmedDatabase = process.env.TEST_CONFIRM_DATABASE;
 const describePostgres = databaseUrl ? describe : describe.skip;
 const dialect = new PgDialect();
 

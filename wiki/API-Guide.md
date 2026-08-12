@@ -29,15 +29,27 @@ Normal requests use a Clerk session JWT:
 Authorization: Bearer <token>
 ```
 
-The token must contain a user subject and active organization. The organization is resolved to a tenant; clients never submit `tenantId`.
+The token must contain a user subject and active organization. The organization
+is resolved to a tenant; clients never submit `tenantId`.
 
-Non-production development bypass accepts `X-Dev-User-Id`, `X-Dev-Org-Id`, and `X-Dev-Role` when `AUTH_DEV_BYPASS=true`. Internal cron and seed operations use `Authorization: Bearer <CRON_SECRET>`.
+Non-production development bypass accepts `X-Dev-User-Id`, `X-Dev-Org-Id`, and
+`X-Dev-Role` when `AUTH_DEV_BYPASS=true`. Narrow exceptions use their own
+credentials instead of Clerk:
+
+- SimBrief and Navigraph callbacks validate one-time state or callback tokens;
+- MSFS telemetry ingestion uses a revocable per-device bearer token; and
+- internal cron operations use `Authorization: Bearer <CRON_SECRET>`.
+
+`/internal/seed/vsas` is a non-production convenience route. Production returns
+not found and bootstraps only the exact `VSAS_CLERK_ORG_ID` through normal
+authentication.
 
 See [Authentication and Multi-Tenancy](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Authentication-and-Multi-Tenancy).
 
 ## BotID and direct clients
 
-Same-origin browser mutations under `/api/v1/*` are protected by Vercel BotID.
+Authenticated same-origin browser mutations under `/api/v1/*` are protected by
+Vercel BotID.
 
 ### Deep Analysis
 
@@ -49,9 +61,16 @@ Same-origin browser mutations under `/api/v1/*` are protected by Vercel BotID.
 
 ### Basic
 
-Every other `POST`, `PUT`, `PATCH`, or `DELETE` under `/api/v1/*`.
+Every other authenticated `POST`, `PUT`, `PATCH`, or `DELETE` mounted after the
+business middleware.
 
-GET requests and `/api/v1/internal/*` are excluded. A direct production `curl` mutation without browser challenge proof is expected to receive `403`, even with a valid Clerk token. Read-only API clients remain possible; non-browser mutation use requires an explicitly designed trusted-client authentication path rather than weakening BotID globally.
+GET requests and `/api/v1/internal/*` are excluded. Public provider callbacks
+and device-bearer telemetry ingestion are mounted before Clerk and BotID and
+validate their own narrow credentials. A direct production `curl` mutation on
+a BotID-protected route is expected to receive `403`, even with a valid Clerk
+token. Read-only API clients remain possible; any other non-browser mutation
+requires an explicitly designed trusted-client authentication path rather than
+weakening BotID globally.
 
 ## Error envelope
 
@@ -115,60 +134,128 @@ Do not parse, modify, or synthesize cursors in a client.
 
 ### Tenant and members
 
-| Method   | Path                        | Minimum access | Purpose                                          |
-| -------- | --------------------------- | -------------- | ------------------------------------------------ |
-| `GET`    | `/tenant`                   | Authenticated  | Current tenant and ACARS configuration state     |
-| `PATCH`  | `/tenant`                   | Admin          | Update tenant name/settings                      |
-| `PUT`    | `/tenant/acars-config`      | Admin          | Test and save station/logon                      |
-| `POST`   | `/tenant/acars-config/test` | Admin          | Test saved configuration                         |
-| `DELETE` | `/tenant/acars-config`      | Admin          | Remove encrypted logon and test timestamp        |
-| `GET`    | `/members`                  | Dispatcher     | List tenant memberships                          |
-| `PATCH`  | `/members/{id}`             | Admin          | Change role, name, callsign, or status           |
-| `POST`   | `/members/sync`             | Dispatcher     | Synchronize up to 100 Clerk organization members |
+| Method   | Path                        | Minimum access | Purpose                                            |
+| -------- | --------------------------- | -------------- | -------------------------------------------------- |
+| `GET`    | `/public/tenants/{slug}`    | Public         | Pre-auth tenant name and brand                     |
+| `GET`    | `/tenant`                   | Authenticated  | Current tenant, brand, and ACARS configuration     |
+| `PATCH`  | `/tenant`                   | Admin          | Update tenant name/settings                        |
+| `PATCH`  | `/tenant/brand`             | Admin          | Update seed color and brand presence               |
+| `POST`   | `/tenant/brand/logo`        | Admin          | Upload and select the tenant logo                  |
+| `DELETE` | `/tenant/brand/logo`        | Admin          | Remove the uploaded tenant logo                    |
+| `PUT`    | `/tenant/acars-config`      | Admin          | Test and save station/logon                        |
+| `POST`   | `/tenant/acars-config/test` | Admin          | Test saved configuration                           |
+| `DELETE` | `/tenant/acars-config`      | Admin          | Remove encrypted logon and test timestamp          |
+| `GET`    | `/members`                  | Dispatcher     | Search/filter tenant memberships                   |
+| `GET`    | `/members/{id}/impact`      | Admin          | Preview assigned work affected by a member change  |
+| `PATCH`  | `/members/{id}`             | Admin          | Change/reassign role, profile, callsign, or status |
+| `POST`   | `/members/sync`             | Admin          | Reconcile the paged Clerk organization directory   |
 
 ### Schedule requests
 
-| Method | Path                             | Minimum access      | Purpose                                            |
-| ------ | -------------------------------- | ------------------- | -------------------------------------------------- |
-| `POST` | `/schedule-requests`             | Authenticated       | Create request owned by caller membership          |
-| `GET`  | `/schedule-requests`             | Authenticated       | Own requests for pilots; tenant queue for dispatch |
-| `GET`  | `/schedule-requests/{id}`        | Owner or dispatcher | Request plus linked flights                        |
-| `POST` | `/schedule-requests/{id}/cancel` | Owner or dispatcher | Cancel in an allowed state                         |
-| `POST` | `/schedule-requests/{id}/review` | Dispatcher          | Start review                                       |
-| `POST` | `/schedule-requests/{id}/reject` | Dispatcher          | Reject with optional reason                        |
+| Method  | Path                             | Minimum access      | Purpose                                              |
+| ------- | -------------------------------- | ------------------- | ---------------------------------------------------- |
+| `POST`  | `/schedule-requests`             | Authenticated       | Create request owned by caller membership            |
+| `GET`   | `/schedule-requests`             | Authenticated       | Own requests for pilots; tenant queue for dispatch   |
+| `GET`   | `/schedule-requests/{id}`        | Owner or dispatcher | Request plus linked and remaining fulfillment counts |
+| `PATCH` | `/schedule-requests/{id}`        | Owning pilot        | Versioned edit while still pending and unlinked      |
+| `POST`  | `/schedule-requests/{id}/cancel` | Owner or dispatcher | Versioned cancel with explicit linked-flight policy  |
+| `POST`  | `/schedule-requests/{id}/review` | Dispatcher          | Versioned start-review transition                    |
+| `POST`  | `/schedule-requests/{id}/reject` | Dispatcher          | Versioned rejection with optional reason             |
 
 ### Flights
 
-| Method  | Path                    | Minimum access                        | Purpose                                                  |
-| ------- | ----------------------- | ------------------------------------- | -------------------------------------------------------- |
-| `POST`  | `/flights`              | Dispatcher                            | Create draft or offered flight                           |
-| `POST`  | `/flights/bulk`         | Dispatcher                            | Create a request-linked offered batch                    |
-| `GET`   | `/flights`              | Authenticated                         | Assigned flights for pilots; tenant flights for dispatch |
-| `GET`   | `/flights/{id}`         | Assigned pilot or dispatcher          | Get flight                                               |
-| `PATCH` | `/flights/{id}`         | Dispatcher                            | Edit non-completed/non-cancelled flight                  |
-| `POST`  | `/flights/{id}/offer`   | Dispatcher                            | Draft to offered                                         |
-| `POST`  | `/flights/{id}/accept`  | Assigned pilot                        | Offered to accepted                                      |
-| `POST`  | `/flights/{id}/decline` | Assigned pilot                        | Offered to declined, optional reason                     |
-| `POST`  | `/flights/{id}/cancel`  | Eligible assigned pilot or dispatcher | Cancel, optional reason                                  |
-| `POST`  | `/flights/{id}/status`  | Dispatcher                            | Brief, activate, complete, or cancel                     |
+Flight mutations after creation require the current `expectedVersion`.
+`POST /flights/bulk` additionally requires an `Idempotency-Key` header and the
+current schedule-request version.
+
+| Method  | Path                               | Minimum access                        | Purpose                                                     |
+| ------- | ---------------------------------- | ------------------------------------- | ----------------------------------------------------------- |
+| `POST`  | `/flights`                         | Dispatcher                            | Create a validated draft or offered flight                  |
+| `POST`  | `/flights/bulk`                    | Dispatcher                            | Idempotently append a request-linked offered batch          |
+| `GET`   | `/flights`                         | Authenticated                         | Assigned flights for pilots; tenant flights for dispatch    |
+| `GET`   | `/flights/{id}`                    | Assigned pilot or dispatcher          | Flight, release revisions, and operational events           |
+| `PATCH` | `/flights/{id}`                    | Dispatcher                            | Versioned non-terminal edit with material-change safeguards |
+| `POST`  | `/flights/{id}/offer`              | Dispatcher                            | Draft to offered                                            |
+| `POST`  | `/flights/{id}/accept`             | Assigned pilot                        | Offered to accepted and confirm assignment                  |
+| `POST`  | `/flights/{id}/decline`            | Assigned pilot                        | Offered to declined, optional reason                        |
+| `POST`  | `/flights/{id}/cancel`             | Eligible assigned pilot or dispatcher | Cancel, optional reason                                     |
+| `POST`  | `/flights/{id}/confirm-assignment` | Assigned pilot                        | Confirm the current assignment revision                     |
+| `POST`  | `/flights/{id}/release`            | Dispatcher                            | Publish immutable release revision and schedule the flight  |
+| `POST`  | `/flights/{id}/start`              | Assigned pilot or dispatcher          | Start a scheduled flight and record actual OUT              |
+| `POST`  | `/flights/{id}/finish`             | Assigned pilot or dispatcher          | Finish an active flight and record actual IN                |
+| `POST`  | `/flights/{id}/status`             | Dispatcher                            | Dispatcher fallback for active, completed, or cancelled     |
+| `POST`  | `/flights/{id}/reoffer`            | Dispatcher                            | Create a history-linked replacement for a declined flight   |
+
+### SimBrief and Navigraph
+
+Navigraph identity linking is optional and separate from the numeric SimBrief
+Pilot ID. A dispatcher prepares the canonical revision without a provider call;
+only the currently assigned pilot can launch that revision in SimBrief.
+
+| Method   | Path                                                      | Minimum access               | Purpose                                      |
+| -------- | --------------------------------------------------------- | ---------------------------- | -------------------------------------------- |
+| `GET`    | `/simbrief/oauth/callback`                                | Public one-time OAuth state  | Complete Navigraph Authorization Code flow   |
+| `GET`    | `/simbrief/callback`                                      | Public one-time callback MAC | Verify and import completed OFP              |
+| `GET`    | `/simbrief/connection`                                    | Authenticated                | Read SimBrief and Navigraph connection state |
+| `POST`   | `/simbrief/oauth/start`                                   | Authenticated                | Start Navigraph S256 PKCE connection         |
+| `PUT`    | `/simbrief/connection`                                    | Authenticated                | Save numeric SimBrief Pilot ID               |
+| `DELETE` | `/simbrief/connection`                                    | Authenticated                | Disconnect local account links               |
+| `POST`   | `/flights/{id}/simbrief/dispatches`                       | Dispatcher                   | Prepare canonical planning revision          |
+| `GET`    | `/flights/{id}/simbrief/dispatches`                       | Assigned pilot or dispatcher | List immutable planning revisions            |
+| `POST`   | `/flights/{id}/simbrief/dispatches/{dispatchId}/generate` | Assigned pilot               | Launch newest valid revision in SimBrief     |
+| `GET`    | `/flights/{id}/simbrief`                                  | Assigned pilot or dispatcher | Read latest planning revision and OFP        |
+| `GET`    | `/flights/{id}/simbrief/dispatches/{dispatchId}`          | Assigned pilot or dispatcher | Read one planning revision                   |
+| `POST`   | `/flights/{id}/simbrief/dispatches/{dispatchId}/sync`     | Assigned pilot or dispatcher | Retry OFP import after interrupted callback  |
+
+### MSFS telemetry and OOOI
+
+| Method   | Path                      | Minimum access               | Purpose                                           |
+| -------- | ------------------------- | ---------------------------- | ------------------------------------------------- |
+| `POST`   | `/telemetry/devices`      | Pilot                        | Issue a named simulator token, shown once         |
+| `GET`    | `/telemetry/devices`      | Authenticated owner          | List owned simulator devices                      |
+| `DELETE` | `/telemetry/devices/{id}` | Authenticated owner          | Revoke owned device and release its live lease    |
+| `POST`   | `/telemetry/ingest`       | Device bearer                | Submit sequenced MSFS phase and position sample   |
+| `GET`    | `/flights/{id}/telemetry` | Assigned pilot or dispatcher | Read current presence, bounded track, and OOOI    |
+| `GET`    | `/dispatch/telemetry`     | Dispatcher                   | Read tenant live-presence and current-flight view |
+| `PATCH`  | `/flights/{id}/oooi`      | Dispatcher                   | Versioned, reasoned manual OOOI correction        |
 
 ### Dispatch and ACARS
 
 | Method | Path                   | Minimum access        | Purpose                                                   |
 | ------ | ---------------------- | --------------------- | --------------------------------------------------------- |
-| `GET`  | `/dispatch/board`      | Dispatcher            | Seven-day operational board and request counts            |
-| `GET`  | `/dispatch/inbox`      | Dispatcher            | Newest 50 ACARS messages                                  |
+| `GET`  | `/dispatch/board`      | Dispatcher            | Bounded live board, monthly KPIs, and request counts      |
+| `GET`  | `/dispatch/inbox`      | Dispatcher            | Newest 50 stored ACARS messages                           |
 | `GET`  | `/acars/messages`      | Dispatcher            | Filter/paginate messages by direction, station, or flight |
-| `POST` | `/acars/messages`      | Dispatcher            | Send and then persist accepted telex                      |
+| `POST` | `/acars/messages`      | Dispatcher            | Send once and store the explicit delivery outcome         |
 | `GET`  | `/acars/messages/{id}` | Dispatcher            | Message detail including raw provider data                |
 | `POST` | `/acars/simulate`      | Dispatcher, mock only | Queue and ingest synthetic inbound message                |
 
+The board includes accepted/briefed flights from 24 hours overdue through seven
+days ahead, all active flights, and completed flights in the current UTC month.
+
+### Audit and privacy administration
+
+These routes are Admin-only. Privacy workflows are bounded and operator-driven;
+external-provider or backup tasks require operator completion evidence and are
+not automatic provider deletion.
+
+| Method family | Path family                    | Purpose                                          |
+| ------------- | ------------------------------ | ------------------------------------------------ |
+| `GET`         | `/audit-events`                | Filter and paginate redacted audit events        |
+| `GET`         | `/audit-events/export`         | Export a bounded redacted audit page             |
+| `GET`, `POST` | `/privacy/policies`            | Read, create, and approve retention policy       |
+| `GET`, `POST` | `/privacy/retention/runs`      | Queue, inspect, and retry bounded retention runs |
+| `GET`, `POST` | `/privacy/requests`            | Verify, approve, process, and export requests    |
+| `GET`, `POST` | `/privacy/legal-holds`         | Create, approve, and release legal holds         |
+| `PATCH`       | `/privacy/external-tasks/{id}` | Record operator completion of external work      |
+
 ### Internal
 
-| Method          | Path                        | Authentication                           | Purpose                               |
-| --------------- | --------------------------- | ---------------------------------------- | ------------------------------------- |
-| `GET` or `POST` | `/internal/cron/acars-poll` | Cron bearer                              | Poll configured Hoppie tenants        |
-| `POST`          | `/internal/seed/vsas`       | Cron bearer or non-production dev bypass | Create/repair vSAS and optional admin |
+| Method          | Path                               | Authentication      | Purpose                                      |
+| --------------- | ---------------------------------- | ------------------- | -------------------------------------------- |
+| `GET` or `POST` | `/internal/cron/acars-poll`        | Cron bearer         | Poll configured Hoppie tenants               |
+| `GET` or `POST` | `/internal/cron/privacy-lifecycle` | Cron bearer         | Process bounded approved lifecycle work      |
+| `POST`          | `/internal/seed/vsas`              | Non-production only | Local create/repair convenience; absent live |
 
 ## Example development call
 

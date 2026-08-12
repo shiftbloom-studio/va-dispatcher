@@ -705,28 +705,30 @@ export async function startFlight(
     patch.assignmentConfirmedRevision = flight.assignmentRevision;
     patch.assignmentConfirmedAt = occurredAt;
   }
-  const updated = await updateFlightWithVersion({
-    actor,
-    flightId,
+  const source = isDispatcher ? "dispatcher" : "pilot_web";
+  const updated = await flightRepo.updateFlightWithOperationalEvent({
+    tenantId: actor.tenantId,
+    id: flightId,
     expectedVersion: expectedVersion ?? flight.version,
+    actorMembershipId: actor.membershipId,
     patch,
     action: "flight.progress",
     auditMeta: {
       kind: "manual_start",
-      source: isDispatcher ? "dispatcher" : "pilot_web",
+      source,
       fromStatus: flight.status,
       toStatus: "active",
+      fromVersion: flight.version,
+      toVersion: flight.version + 1,
+    },
+    event: {
+      kind: "manual_start",
+      source,
+      occurredAt,
+      meta: { fromStatus: flight.status, toStatus: "active" },
     },
   });
-
-  await createFlightEvent({
-    tenantId: actor.tenantId,
-    flightId,
-    kind: "manual_start",
-    source: isDispatcher ? "dispatcher" : "pilot_web",
-    occurredAt,
-    actorMembershipId: actor.membershipId,
-  });
+  if (!updated) return throwLatestFlightConflict(actor.tenantId, flightId);
   return updated;
 }
 
@@ -752,28 +754,30 @@ export async function finishFlight(
     throw new AppError("CONFLICT", "Only an active flight can be finished");
   }
   assertFlightTransition(flight.status, "completed");
-  const updated = await updateFlightWithVersion({
-    actor,
-    flightId,
+  const source = isDispatcher ? "dispatcher" : "pilot_web";
+  const updated = await flightRepo.updateFlightWithOperationalEvent({
+    tenantId: actor.tenantId,
+    id: flightId,
     expectedVersion: expectedVersion ?? flight.version,
+    actorMembershipId: actor.membershipId,
     patch: { status: "completed", inAt: flight.inAt ?? occurredAt },
     action: "flight.progress",
     auditMeta: {
       kind: "manual_finish",
-      source: isDispatcher ? "dispatcher" : "pilot_web",
+      source,
       fromStatus: flight.status,
       toStatus: "completed",
+      fromVersion: flight.version,
+      toVersion: flight.version + 1,
+    },
+    event: {
+      kind: "manual_finish",
+      source,
+      occurredAt,
+      meta: { fromStatus: flight.status, toStatus: "completed" },
     },
   });
-
-  await createFlightEvent({
-    tenantId: actor.tenantId,
-    flightId,
-    kind: "manual_finish",
-    source: isDispatcher ? "dispatcher" : "pilot_web",
-    occurredAt,
-    actorMembershipId: actor.membershipId,
-  });
+  if (!updated) return throwLatestFlightConflict(actor.tenantId, flightId);
   return updated;
 }
 

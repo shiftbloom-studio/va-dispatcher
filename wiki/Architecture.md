@@ -138,10 +138,10 @@ The ACARS provider interface has Hoppie and DB-backed mock implementations. Prod
 The schema lives in `apps/api/src/db/schema.ts`. All operational tables carry `tenant_id`, and repository calls receive a tenant identifier from authenticated context.
 
 The application uses the Neon HTTP driver and does not maintain a persistent
-connection pool, supporting scale-to-zero operation. The repository contains an
-immutable PR29 migration baseline, guarded adoption for exact released legacy
-catalogs, and additive migrations with drift verification. `db:push` is limited
-to disposable development databases. See [Data Model](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Data-Model).
+connection pool, supporting scale-to-zero operation. `schema.ts` is canonical
+while this Shiftbloom project is pre-production. Deployments create an empty
+database and apply it with `db:push`; the command must never target data that
+needs preserving. See [Data Model](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Data-Model).
 
 ## Security boundaries
 

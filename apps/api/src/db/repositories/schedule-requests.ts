@@ -43,8 +43,8 @@ export async function createScheduleRequest(input: {
         ${input.pilotMembershipId},
         ${input.title ?? null},
         ${input.notes ?? null},
-        ${input.windowStart},
-        ${input.windowEnd},
+        ${sql.param(input.windowStart, scheduleRequests.windowStart)},
+        ${sql.param(input.windowEnd, scheduleRequests.windowEnd)},
         ${input.desiredFlightCount},
         ${JSON.stringify(input.preferences ?? {})}::jsonb,
         'pending'
@@ -120,14 +120,14 @@ export async function updateScheduleRequest(input: {
     WITH updated AS (
       UPDATE ${scheduleRequests}
       SET
-        ${scheduleRequests.title} = ${input.patch.title},
-        ${scheduleRequests.notes} = ${input.patch.notes},
-        ${scheduleRequests.windowStart} = ${input.patch.windowStart},
-        ${scheduleRequests.windowEnd} = ${input.patch.windowEnd},
-        ${scheduleRequests.desiredFlightCount} = ${input.patch.desiredFlightCount},
-        ${scheduleRequests.preferences} = ${JSON.stringify(input.patch.preferences)}::jsonb,
-        ${scheduleRequests.version} = ${scheduleRequests.version} + 1,
-        ${scheduleRequests.updatedAt} = NOW()
+        ${sql.identifier(scheduleRequests.title.name)} = ${input.patch.title},
+        ${sql.identifier(scheduleRequests.notes.name)} = ${input.patch.notes},
+        ${sql.identifier(scheduleRequests.windowStart.name)} = ${sql.param(input.patch.windowStart, scheduleRequests.windowStart)},
+        ${sql.identifier(scheduleRequests.windowEnd.name)} = ${sql.param(input.patch.windowEnd, scheduleRequests.windowEnd)},
+        ${sql.identifier(scheduleRequests.desiredFlightCount.name)} = ${input.patch.desiredFlightCount},
+        ${sql.identifier(scheduleRequests.preferences.name)} = ${JSON.stringify(input.patch.preferences)}::jsonb,
+        ${sql.identifier(scheduleRequests.version.name)} = ${scheduleRequests.version} + 1,
+        ${sql.identifier(scheduleRequests.updatedAt.name)} = NOW()
       WHERE
         ${scheduleRequests.tenantId} = ${input.tenantId}
         AND ${scheduleRequests.id} = ${input.id}
@@ -184,10 +184,10 @@ export async function transitionScheduleRequest(input: {
     WITH updated AS (
       UPDATE ${scheduleRequests}
       SET
-        ${scheduleRequests.status} = ${input.status},
-        ${scheduleRequests.rejectReason} = ${input.status === "rejected" ? (input.reason ?? null) : scheduleRequests.rejectReason},
-        ${scheduleRequests.version} = ${scheduleRequests.version} + 1,
-        ${scheduleRequests.updatedAt} = NOW()
+        ${sql.identifier(scheduleRequests.status.name)} = ${input.status},
+        ${sql.identifier(scheduleRequests.rejectReason.name)} = ${input.status === "rejected" ? (input.reason ?? null) : scheduleRequests.rejectReason},
+        ${sql.identifier(scheduleRequests.version.name)} = ${scheduleRequests.version} + 1,
+        ${sql.identifier(scheduleRequests.updatedAt.name)} = NOW()
       WHERE
         ${scheduleRequests.tenantId} = ${input.tenantId}
         AND ${scheduleRequests.id} = ${input.id}
@@ -250,10 +250,10 @@ export async function cancelScheduleRequest(input: {
     WITH request_updated AS (
       UPDATE ${scheduleRequests}
       SET
-        ${scheduleRequests.status} = 'cancelled',
-        ${scheduleRequests.cancelReason} = ${input.reason?.trim() || null},
-        ${scheduleRequests.version} = ${scheduleRequests.version} + 1,
-        ${scheduleRequests.updatedAt} = NOW()
+        ${sql.identifier(scheduleRequests.status.name)} = 'cancelled',
+        ${sql.identifier(scheduleRequests.cancelReason.name)} = ${input.reason?.trim() || null},
+        ${sql.identifier(scheduleRequests.version.name)} = ${scheduleRequests.version} + 1,
+        ${sql.identifier(scheduleRequests.updatedAt.name)} = NOW()
       WHERE
         ${scheduleRequests.tenantId} = ${input.tenantId}
         AND ${scheduleRequests.id} = ${input.id}
@@ -276,10 +276,10 @@ export async function cancelScheduleRequest(input: {
     ), cancelled_flights AS (
       UPDATE ${flights}
       SET
-        ${flights.status} = 'cancelled',
-        ${flights.cancelReason} = ${cancelReason},
-        ${flights.version} = ${flights.version} + 1,
-        ${flights.updatedAt} = NOW()
+        ${sql.identifier(flights.status.name)} = 'cancelled',
+        ${sql.identifier(flights.cancelReason.name)} = ${cancelReason},
+        ${sql.identifier(flights.version.name)} = ${flights.version} + 1,
+        ${sql.identifier(flights.updatedAt.name)} = NOW()
       FROM eligible_flights
       WHERE
         ${flights.tenantId} = ${input.tenantId}
@@ -327,9 +327,9 @@ export async function cancelScheduleRequest(input: {
           'to', 'cancelled',
           'fromVersion', cancelled_flights.from_version,
           'toVersion', cancelled_flights.to_version,
-          'reason', ${input.reason?.trim() || null},
+          'reason', ${input.reason?.trim() || null}::text,
           'source', 'schedule_request_cancellation',
-          'scheduleRequestId', ${input.id}
+          'scheduleRequestId', ${input.id}::uuid
         )
       FROM cancelled_flights
       RETURNING id

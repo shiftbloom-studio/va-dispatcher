@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as scheduleService from "../domain/schedule-requests/service.js";
+import { AppError } from "../lib/errors.js";
 import { paginationQuerySchema } from "../lib/pagination.js";
 
 export const scheduleRequestRoutes = new Hono<{ Variables: AppVariables }>();
@@ -47,9 +48,19 @@ scheduleRequestRoutes.post(
   zValidator("json", createSchema),
   async (c) => {
     const auth = c.get("auth");
+    if (auth.role !== "pilot") {
+      throw new AppError(
+        "FORBIDDEN",
+        "Only pilots can create schedule requests",
+      );
+    }
     const body = c.req.valid("json");
     const scheduleRequest = await scheduleService.createRequest(
-      { tenantId: auth.tenantId, membershipId: auth.membershipId },
+      {
+        tenantId: auth.tenantId,
+        membershipId: auth.membershipId,
+        role: auth.role,
+      },
       body,
     );
     return c.json({ request: serializeRequest(scheduleRequest) }, 201);

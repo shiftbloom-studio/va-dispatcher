@@ -213,6 +213,9 @@ export async function startSimbriefDispatchAtomic(input: {
         AND dispatch.tenant_id = ${input.tenantId}::uuid
         AND dispatch.flight_id = ${input.flightId}::uuid
     ),
+    -- Lock the flight at the launch linearization point. The coarse flight
+    -- version is intentionally not compared here: notes-only edits advance it,
+    -- while the material snapshot checks below protect planning correctness.
     linearized_flight AS (
       UPDATE flights f
       SET version = f.version
@@ -220,7 +223,6 @@ export async function startSimbriefDispatchAtomic(input: {
       WHERE f.id = target.flight_id
         AND f.id = ${input.flightId}::uuid
         AND f.tenant_id = ${input.tenantId}::uuid
-        AND f.version = (target.flight_snapshot ->> 'flightVersion')::integer
         AND f.assignment_revision =
             (target.flight_snapshot ->> 'assignmentRevision')::integer
         AND f.status IN ('accepted', 'briefed')
@@ -285,8 +287,6 @@ export async function startSimbriefDispatchAtomic(input: {
        AND pilot.simbrief_user_id = ${input.simbriefUserId}
       WHERE target.status = 'prepared'
         AND flight.status NOT IN ('declined', 'active', 'completed', 'cancelled')
-        AND (target.flight_snapshot ->> 'flightVersion')::integer =
-            flight.version
         AND (target.flight_snapshot ->> 'assignmentRevision')::integer =
             flight.assignment_revision
         AND (target.flight_snapshot ->> 'dispatchReleaseId')::uuid =

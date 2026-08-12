@@ -62,6 +62,7 @@ export function SimbriefWorkspace({
         const parsed = simbriefDispatchListSchema.safeParse(current);
         if (!parsed.success) return current;
         return {
+          ...parsed.data,
           items: parsed.data.items.map((item) =>
             item.id === data.dispatch.id ? data.dispatch : item,
           ),
@@ -100,12 +101,7 @@ export function SimbriefWorkspace({
   const latest = revisions[0];
   const isConnected = connection.data?.connection.connected ?? false;
   const latestMatchesCurrent = Boolean(
-    latest &&
-    release &&
-    latest.flightVersion === flight.version &&
-    latest.assignmentRevision === flight.assignmentRevision &&
-    latest.releaseId === release.id &&
-    latest.releaseRevision === release.revision,
+    latest && history.data.currentDispatchId === latest.id,
   );
 
   return (
@@ -190,9 +186,9 @@ export function SimbriefWorkspace({
         latest?.status === "prepared" &&
         !latestMatchesCurrent ? (
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
-            The flight assignment or dispatch release changed after this
-            preparation. Dispatch must prepare the current release before you
-            can open SimBrief.
+            The flight assignment, material planning details, or dispatch
+            release changed after this preparation. Dispatch must prepare the
+            current release before you can open SimBrief.
           </p>
         ) : null}
         {generate.isError || sync.isError ? (

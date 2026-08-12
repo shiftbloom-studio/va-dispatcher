@@ -299,6 +299,7 @@ export const simbriefGenerateResponseSchema =
   simbriefDispatchResponseSchema.extend({ dispatchUrl: z.string().url() });
 export const simbriefDispatchListSchema = z.object({
   items: z.array(simbriefDispatchSchema),
+  currentDispatchId: z.string().nullable().optional().default(null),
 });
 
 export const simulatorDeviceSchema = z.object({

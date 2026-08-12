@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -16,6 +13,7 @@ import {
 } from "./simbrief.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
+const confirmedDatabase = process.env.TEST_CONFIRM_DATABASE;
 const postgresDescribe = databaseUrl ? describe : describe.skip;
 const tenantId = "20000000-0000-4000-8000-000000000001";
 const otherTenantId = "20000000-0000-4000-8000-000000000099";
@@ -27,131 +25,7 @@ const dispatchA = "40000000-0000-4000-8000-000000000001";
 const dispatchB = "40000000-0000-4000-8000-000000000002";
 const now = new Date("2026-08-12T12:00:00.000Z");
 
-const baseSchemaSql = `
-  CREATE TYPE member_role AS ENUM ('pilot', 'dispatcher', 'admin');
-  CREATE TYPE member_status AS ENUM ('active', 'invited', 'disabled');
-  CREATE TYPE flight_status AS ENUM (
-    'draft', 'offered', 'accepted', 'declined', 'briefed', 'active',
-    'completed', 'cancelled'
-  );
-  CREATE TYPE simbrief_dispatch_status AS ENUM ('pending', 'ready');
-  CREATE TYPE dispatch_unit AS ENUM ('kg', 'lb');
-
-  CREATE TABLE tenants (
-    id uuid PRIMARY KEY,
-    slug text NOT NULL,
-    name text NOT NULL,
-    clerk_org_id text NOT NULL,
-    created_at timestamptz DEFAULT now() NOT NULL,
-    updated_at timestamptz DEFAULT now() NOT NULL
-  );
-  CREATE TABLE memberships (
-    id uuid PRIMARY KEY,
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    clerk_user_id text NOT NULL,
-    role member_role DEFAULT 'pilot' NOT NULL,
-    display_name text,
-    pilot_callsign text,
-    simbrief_user_id text,
-    simbrief_verified_at timestamptz,
-    navigraph_subject text,
-    navigraph_username text,
-    navigraph_connected_at timestamptz,
-    status member_status DEFAULT 'active' NOT NULL,
-    created_at timestamptz DEFAULT now() NOT NULL,
-    updated_at timestamptz DEFAULT now() NOT NULL
-  );
-  CREATE TABLE flights (
-    id uuid PRIMARY KEY,
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    schedule_request_id uuid,
-    replaces_flight_id uuid,
-    pilot_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
-    flight_number text NOT NULL,
-    dep_icao text NOT NULL,
-    arr_icao text NOT NULL,
-    etd timestamptz NOT NULL,
-    eta timestamptz NOT NULL,
-    aircraft_type text,
-    version integer DEFAULT 1 NOT NULL,
-    assignment_revision integer DEFAULT 1 NOT NULL,
-    assignment_confirmed_revision integer,
-    assignment_confirmed_at timestamptz,
-    status flight_status DEFAULT 'draft' NOT NULL,
-    cancel_reason text,
-    declined_reason text,
-    dispatcher_notes text,
-    out_at timestamptz,
-    off_at timestamptz,
-    on_at timestamptz,
-    in_at timestamptz,
-    out_manual_override boolean DEFAULT false NOT NULL,
-    off_manual_override boolean DEFAULT false NOT NULL,
-    on_manual_override boolean DEFAULT false NOT NULL,
-    in_manual_override boolean DEFAULT false NOT NULL,
-    created_at timestamptz DEFAULT now() NOT NULL,
-    updated_at timestamptz DEFAULT now() NOT NULL
-  );
-  CREATE TABLE dispatch_releases (
-    id uuid PRIMARY KEY,
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    flight_id uuid NOT NULL REFERENCES flights(id) ON DELETE CASCADE,
-    revision integer NOT NULL,
-    operational_route text NOT NULL,
-    sid text,
-    star text,
-    cruise_level integer NOT NULL,
-    alternate_icao text NOT NULL,
-    fuel_unit dispatch_unit NOT NULL,
-    payload_unit dispatch_unit NOT NULL,
-    taxi_fuel integer NOT NULL,
-    trip_fuel integer NOT NULL,
-    contingency_fuel integer NOT NULL,
-    alternate_fuel integer NOT NULL,
-    final_reserve_fuel integer NOT NULL,
-    additional_fuel integer DEFAULT 0 NOT NULL,
-    block_fuel integer NOT NULL,
-    planned_payload integer NOT NULL,
-    weather_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
-    release_notes text,
-    dispatcher_remarks text,
-    released_by_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
-    released_at timestamptz DEFAULT now() NOT NULL,
-    UNIQUE (tenant_id, flight_id, revision)
-  );
-  CREATE TABLE simbrief_dispatches (
-    id uuid PRIMARY KEY,
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    flight_id uuid NOT NULL REFERENCES flights(id) ON DELETE CASCADE,
-    created_by_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
-    simbrief_user_id text NOT NULL,
-    static_id text NOT NULL UNIQUE,
-    callback_token_mac text,
-    status simbrief_dispatch_status DEFAULT 'pending' NOT NULL,
-    request jsonb DEFAULT '{}'::jsonb NOT NULL,
-    ofp jsonb,
-    simbrief_request_id text,
-    generated_at timestamptz,
-    synced_at timestamptz,
-    last_error text,
-    created_at timestamptz DEFAULT now() NOT NULL,
-    updated_at timestamptz DEFAULT now() NOT NULL
-  );
-  CREATE TABLE audit_events (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    actor_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
-    action text NOT NULL,
-    entity_type text NOT NULL,
-    entity_id text NOT NULL,
-    meta jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamptz DEFAULT now() NOT NULL
-  );
-`;
-
 let sqlClient: Sql | undefined;
-let schemaName = "";
-let migratedHistoricalState: Record<string, unknown> | undefined;
 
 function simbriefDb(client: Sql): Db {
   const pgDb = drizzle({ client });
@@ -255,79 +129,20 @@ function publishRelease() {
 
 postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
   beforeAll(async () => {
-    const admin = postgres(databaseUrl!, { max: 1, onnotice: () => undefined });
-    schemaName = `simbrief_contract_${process.pid}_${Date.now()}`;
-    await admin.unsafe(`CREATE SCHEMA "${schemaName}"`);
-    await admin.end();
-
-    const setupClient = postgres(databaseUrl!, {
-      max: 1,
-      onnotice: () => undefined,
-      connection: { search_path: schemaName },
-    });
-    await setupClient.unsafe(baseSchemaSql);
-    await setupClient.unsafe(`
-      INSERT INTO tenants (id, slug, name, clerk_org_id)
-      VALUES ('${tenantId}', 'migration', 'Migration tenant', 'org_migration');
-      INSERT INTO memberships (
-        id, tenant_id, clerk_user_id, role, simbrief_user_id
-      ) VALUES (
-        '${pilotId}', '${tenantId}', 'migration_pilot', 'pilot', '123456'
-      );
-      INSERT INTO flights (
-        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
-        etd, eta, aircraft_type, status
-      ) VALUES (
-        '${flightId}', '${tenantId}', '${pilotId}', 'SK935', 'EKCH', 'KSFO',
-        '2026-08-13T10:05:00.000Z', '2026-08-13T21:35:00.000Z',
-        'A359', 'accepted'
-      );
-      INSERT INTO simbrief_dispatches (
-        id, tenant_id, flight_id, created_by_membership_id,
-        simbrief_user_id, static_id, callback_token_mac, request
-      ) VALUES (
-        '${dispatchA}', '${tenantId}', '${flightId}', '${pilotId}',
-        '123456', 'VAD_MIGRATION', 'legacy-mac', '{}'::jsonb
-      );
-    `);
-    const deltaPath = fileURLToPath(
-      new URL(
-        "../../../../../docs/schema-deltas/issue-21-simbrief-workflow.sql",
-        import.meta.url,
-      ),
-    );
-    await setupClient.unsafe(readFileSync(deltaPath, "utf8"));
-    const [migrationState] = await setupClient.unsafe<
-      Record<string, unknown>[]
-    >(`
-      SELECT generated_by_membership_id, callback_token_mac, flight_snapshot,
-             revision,
-             (SELECT revision FROM simbrief_flight_heads
-              WHERE flight_id = '${flightId}') AS head_revision
-      FROM simbrief_dispatches WHERE id = '${dispatchA}'
-    `);
-    migratedHistoricalState = migrationState;
-    await setupClient.end();
-
     sqlClient = postgres(databaseUrl!, {
       max: 10,
       onnotice: () => undefined,
-      connection: { search_path: schemaName },
     });
+    const [database] = await sqlClient<{ currentDatabase: string }[]>`
+      SELECT current_database() AS "currentDatabase"
+    `;
+    expect(database?.currentDatabase).toBe(confirmedDatabase);
     setDbForTests(simbriefDb(sqlClient));
   }, 30_000);
 
   afterAll(async () => {
     setDbForTests(null);
     await sqlClient?.end();
-    if (databaseUrl && schemaName) {
-      const admin = postgres(databaseUrl, {
-        max: 1,
-        onnotice: () => undefined,
-      });
-      await admin.unsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-      await admin.end();
-    }
   }, 30_000);
 
   beforeEach(async () => {
@@ -377,24 +192,6 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
         62500, 25000, '{}'::jsonb, ${dispatcherId}
       )
     `;
-  });
-
-  it("migrates legacy plans while invalidating callbacks with no immutable expiry", () => {
-    expect(migratedHistoricalState).toMatchObject({
-      generated_by_membership_id: pilotId,
-      callback_token_mac: null,
-      revision: 1,
-      head_revision: 1,
-      flight_snapshot: {
-        pilotMembershipId: pilotId,
-        flightNumber: "SK935",
-        depIcao: "EKCH",
-        arrIcao: "KSFO",
-        etd: "2026-08-13T10:05:00.000Z",
-        eta: "2026-08-13T21:35:00.000Z",
-        aircraftType: "A359",
-      },
-    });
   });
 
   it("atomically prepares and audits a trusted dispatcher-attributed revision", async () => {
@@ -471,6 +268,44 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
     expect(state?.audit_count).toBe(1);
   });
 
+  it("serializes a notes-only version update without invalidating the prepared plan", async () => {
+    await prepare(dispatchA);
+    const editor = postgres(databaseUrl!, {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    let generating: ReturnType<typeof start> | undefined;
+
+    await editor.begin(async (transaction) => {
+      await transaction`
+        UPDATE flights
+        SET dispatcher_notes = 'Gate changed to C12',
+            version = version + 1
+        WHERE id = ${flightId}
+      `;
+      generating = start(dispatchA);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    await editor.end();
+
+    await expect(generating).resolves.toMatchObject({
+      status: "started",
+      latestId: dispatchA,
+      dispatch: { status: "pending" },
+    });
+    const [state] = await sqlClient!`
+      SELECT version, dispatcher_notes,
+        (SELECT count(*)::int FROM audit_events
+          WHERE action = 'simbrief.dispatch_generate') AS generation_audits
+      FROM flights WHERE id = ${flightId}
+    `;
+    expect(state).toMatchObject({
+      version: 2,
+      dispatcher_notes: "Gate changed to C12",
+      generation_audits: 1,
+    });
+  });
+
   it("rolls generation back when its audit insert fails", async () => {
     await prepare(dispatchA);
     await sqlClient!.unsafe(`
@@ -541,7 +376,6 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
     const blocker = postgres(databaseUrl!, {
       max: 1,
       onnotice: () => undefined,
-      connection: { search_path: schemaName },
     });
     let preparing: ReturnType<typeof prepare> | undefined;
     let generating: ReturnType<typeof start> | undefined;
@@ -566,12 +400,29 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
   it("rejects launch after a material flight edit", async () => {
     await prepare(dispatchA);
     await sqlClient!`
-      UPDATE flights SET arr_icao = 'ESSA' WHERE id = ${flightId}
+      UPDATE flights
+      SET arr_icao = 'ESSA', version = version + 1
+      WHERE id = ${flightId}
     `;
 
     await expect(start(dispatchA)).resolves.toMatchObject({
       status: "stale",
       latestId: dispatchA,
+      dispatch: null,
+    });
+  });
+
+  it("rejects launch after the pilot assignment revision changes", async () => {
+    await prepare(dispatchA);
+    await sqlClient!`
+      UPDATE flights
+      SET assignment_revision = assignment_revision + 1,
+          version = version + 1
+      WHERE id = ${flightId}
+    `;
+
+    await expect(start(dispatchA)).resolves.toMatchObject({
+      status: "stale",
       dispatch: null,
     });
   });

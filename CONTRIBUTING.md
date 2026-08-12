@@ -22,13 +22,13 @@ VA Dispatch is a pnpm monorepo and requires Node.js 24 or newer (the version in
 pnpm install
 cp .env.example apps/api/.env
 # Configure apps/web/.env.local from apps/web/.env.example.
-MIGRATION_CONFIRM_DATABASE=va_dispatch pnpm db:migrate
+DATABASE_URL='postgresql://...' pnpm db:push
 pnpm dev
 ```
 
-Use `db:push` only for an empty, disposable development database. Shared and
-production databases follow the reviewed workflow in
-[`docs/database-migrations.md`](docs/database-migrations.md).
+`schema.ts` is canonical while this Shiftbloom project is pre-production.
+Recreate an empty database and use `db:push`; never run it against a database
+containing data that must be preserved.
 
 Never commit credentials, personal data, production database contents, or
 third-party API secrets. Use only synthetic data in tests and bug reports.
@@ -72,7 +72,7 @@ Keep pull requests focused and small enough to review. Include:
 - tests for changed behavior, including tenant-isolation and authorization
   cases where relevant;
 - screenshots for visible interface changes;
-- migration, configuration, compatibility, and rollout notes where relevant;
+- schema, configuration, and rollout notes where relevant;
 - confirmation that no secrets or sensitive production data are included.
 
 Maintainers may ask for changes before merging. A pull request is not accepted

@@ -49,21 +49,25 @@ const fixtureIdentities = {
     clerkUserId: "user_e2e_pilot",
     clerkOrgId: "org_e2e_vsas",
     role: "pilot",
+    displayName: "Integrated Test Pilot",
   },
   dispatcher: {
     clerkUserId: "user_e2e_dispatcher",
     clerkOrgId: "org_e2e_vsas",
     role: "dispatcher",
+    displayName: "Integrated Test Dispatcher",
   },
   admin: {
     clerkUserId: "user_e2e_admin",
     clerkOrgId: "org_e2e_vsas",
     role: "admin",
+    displayName: "Integrated Test Administrator",
   },
   outsider: {
     clerkUserId: "user_e2e_outsider",
     clerkOrgId: "org_e2e_other",
     role: "pilot",
+    displayName: "Outside Test Pilot",
   },
 } as const;
 
@@ -137,6 +141,7 @@ async function fixtureFetch(request: Request): Promise<Response> {
   headers.set("X-Dev-User-Id", identity.clerkUserId);
   headers.set("X-Dev-Org-Id", identity.clerkOrgId);
   headers.set("X-Dev-Role", identity.role);
+  headers.set("X-Dev-Display-Name", identity.displayName);
   headers.delete("X-E2E-Identity");
   return app.fetch(new Request(request, { headers }));
 }

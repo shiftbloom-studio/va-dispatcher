@@ -20,7 +20,7 @@ application on 12 August 2026. Re-verify it whenever behavior changes.
 | ACARS               | Dispatcher-only Hoppie send/poll, stored conversations, bounded inbound deduplication, explicit uncertain outcomes |
 | Administration      | Member role/status controls, Clerk sync, safe work reassignment, audit viewer and bounded export                   |
 | Privacy lifecycle   | Approved retention policies, dry runs, resumable execution, subject workflows, holds, provider tasks               |
-| Data evolution      | Immutable PR29 baseline, guarded legacy adoption, additive migration, drift and rollback checks                    |
+| Schema workflow     | Canonical Drizzle schema, fresh-database push, and real PostgreSQL contract checks                                 |
 | Verification        | Unit/component contracts, real PostgreSQL contracts, fast browser workflows, two integrated app journeys           |
 
 ## Operational boundaries
@@ -69,8 +69,8 @@ application on 12 August 2026. Re-verify it whenever behavior changes.
 
 - The backend is multi-tenant, while the checked-in web presentation registry
   currently contains only vSAS.
-- Production schema changes use reviewed migrations. `db:push` is limited to
-  disposable development databases.
+- The project is pre-production. Schema changes recreate an empty database and
+  apply canonical `schema.ts` with `db:push`; durable data evolution is not yet supported.
 - The integrated E2E authority is deliberately non-production-only and requires
   an explicitly confirmed disposable database.
 - A successful local or CI run is not a substitute for a post-deployment Clerk,
@@ -80,8 +80,7 @@ application on 12 August 2026. Re-verify it whenever behavior changes.
 
 Before calling a deployment fully ready:
 
-1. Apply the reviewed migration to the intended database after backup and
-   rehearsal.
+1. Create an empty database and apply the exact release schema with `db:push`.
 2. Verify Clerk organization roles, legal configuration, BotID, and tenant
    encryption keys.
 3. Complete manual pilot and dispatcher journeys against the deployed UI.

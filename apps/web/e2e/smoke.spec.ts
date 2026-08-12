@@ -41,6 +41,7 @@ function flight(overrides: Record<string, unknown> = {}) {
     assignmentConfirmedRevision: null,
     assignmentConfirmedAt: null,
     assignmentConfirmationRequired: false,
+    latestReleaseRevision: null,
     outAt: null,
     offAt: null,
     onAt: null,
@@ -233,7 +234,17 @@ async function flightFeatureFixtures(
     }),
   );
   await page.route("**/api/v1/flights/*/telemetry?*", (route) =>
-    json(route, telemetry),
+    json(route, {
+      flight: {
+        id: flight().id,
+        version: 1,
+        outAt: null,
+        offAt: null,
+        onAt: null,
+        inAt: null,
+      },
+      ...telemetry,
+    }),
   );
 }
 
@@ -639,10 +650,8 @@ test("dispatcher scans the live board and opens flight planning", async ({
   const planning = page.getByRole("dialog", {
     name: "Flight planning workspace",
   });
-  await expect(planning.getByLabel("Aircraft type")).toHaveAttribute(
-    "readonly",
-    "",
-  );
+  await expect(planning.getByLabel("Aircraft type")).toBeEditable();
+  await expect(planning.getByLabel("Aircraft type")).toHaveValue("A320");
   await expect(planning.getByText("Pilot confirmation required")).toBeVisible();
 });
 
@@ -773,6 +782,14 @@ test("dispatcher monitors MSFS telemetry and records an OOOI correction", async 
     createdAt: "2026-09-10T08:01:00.000Z",
   };
   const liveTelemetry = {
+    flight: {
+      id: currentFlight.id,
+      version: currentFlight.version,
+      outAt: currentFlight.outAt,
+      offAt: null,
+      onAt: null,
+      inAt: null,
+    },
     presence: "online",
     current: {
       flightId: currentFlight.id,
@@ -793,22 +810,25 @@ test("dispatcher monitors MSFS telemetry and records an OOOI correction", async 
 
   await baseFixtures(page);
   await page.route("**/api/v1/flights/*", (route) =>
-    json(route, { flight: currentFlight }),
+    json(route, flightDetail(currentFlight)),
   );
   await flightFeatureFixtures(page, liveTelemetry);
   await page.route("**/api/v1/flights/*/oooi", async (route) => {
     expect(route.request().method()).toBe("PATCH");
     expect(route.request().postDataJSON()).toEqual({
+      expectedVersion: currentFlight.version,
       outAt: "2026-09-10T08:05:00.000Z",
       reason: "Gate release confirmed by dispatch",
     });
     currentFlight = flight({
       status: "active",
+      version: currentFlight.version + 1,
       outAt: "2026-09-10T08:05:00.000Z",
     });
     return json(route, {
       flight: {
         id: currentFlight.id,
+        version: currentFlight.version,
         outAt: currentFlight.outAt,
         offAt: null,
         onAt: null,
@@ -953,7 +973,7 @@ test("dispatcher telemetry workspace fails closed when the flight resource is de
   const currentFlight = flight({ status: "active" });
   await baseFixtures(page);
   await page.route("**/api/v1/flights/*", (route) =>
-    json(route, { flight: currentFlight }),
+    json(route, flightDetail(currentFlight)),
   );
   await flightFeatureFixtures(page);
   await page.route("**/api/v1/flights/*/telemetry?*", (route) =>

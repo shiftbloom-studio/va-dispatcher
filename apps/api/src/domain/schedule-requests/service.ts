@@ -10,6 +10,7 @@ export async function createRequest(
   actor: {
     tenantId: string;
     membershipId: string;
+    role: MemberRole;
   },
   input: {
     title?: string | null;
@@ -20,6 +21,9 @@ export async function createRequest(
     preferences?: Record<string, unknown>;
   },
 ): Promise<ScheduleRequest> {
+  if (actor.role !== "pilot") {
+    throw new AppError("FORBIDDEN", "Only pilots can create schedule requests");
+  }
   if (input.desiredFlightCount < 1 || input.desiredFlightCount > 50) {
     throw new AppError(
       "BAD_REQUEST",

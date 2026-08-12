@@ -17,7 +17,9 @@ describe("ScheduleCancellationAction", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Cancel request" }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = screen.getByRole("dialog", {
+      name: "Cancel this schedule request?",
+    });
     expect(within(dialog).getByLabelText("Keep linked flights")).toBeChecked();
     await user.click(
       within(dialog).getByRole("button", { name: "Cancel request" }),

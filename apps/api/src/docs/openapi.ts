@@ -1076,7 +1076,7 @@ const schemas = {
         minimum: 1,
         nullable: true,
         description:
-          "Flight compare-and-set revision captured when this preparation was created. Null only for legacy rows.",
+          "Flight compare-and-set revision captured when this preparation was created. It is audit metadata, not a planning-freshness signal because non-material edits can advance it. Null only for legacy rows.",
       },
       assignmentRevision: {
         type: "integer",
@@ -1889,9 +1889,14 @@ const schemas = {
   },
   SimbriefDispatchListResponse: {
     type: "object",
-    required: ["items"],
+    required: ["items", "currentDispatchId"],
     properties: {
       items: { type: "array", items: schemaRef("SimbriefDispatch") },
+      currentDispatchId: {
+        ...schemaRef("NullableUuid"),
+        description:
+          "Newest canonical planning revision when its pilot assignment, material flight inputs, and immutable latest release still match the flight. A notes-only flight version change does not invalidate it.",
+      },
     },
   },
   SimbriefCallbackResponse: {
@@ -2695,6 +2700,9 @@ export const openApiDocument = {
         tags: ["Schedule requests"],
         operationId: "createScheduleRequest",
         summary: "Create a schedule request",
+        description:
+          "Creates an availability request owned by the authenticated pilot. Dispatcher and administrator memberships cannot create pilot requests.",
+        "x-required-role": "pilot",
         requestBody: jsonRequest(schemaRef("CreateScheduleRequestInput")),
         responses: {
           "201": jsonResponse(

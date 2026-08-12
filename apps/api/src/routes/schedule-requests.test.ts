@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({
   requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   pilotMembershipId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   dispatcherMembershipId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  adminMembershipId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
 }));
 
 vi.mock("../middleware/auth.js", async (importOriginal) => {
@@ -14,15 +15,19 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
   return {
     ...actual,
     requireAuth: createMiddleware(async (c, next) => {
+      const requestedRole = c.req.header("X-Test-Role");
       const role =
-        c.req.header("X-Test-Role") === "dispatcher" ? "dispatcher" : "pilot";
+        requestedRole === "dispatcher" || requestedRole === "admin"
+          ? requestedRole
+          : "pilot";
       c.set("auth", {
         clerkUserId: `user_${role}`,
         tenantId: fixture.tenantId,
-        membershipId:
-          role === "dispatcher"
-            ? fixture.dispatcherMembershipId
-            : fixture.pilotMembershipId,
+        membershipId: {
+          pilot: fixture.pilotMembershipId,
+          dispatcher: fixture.dispatcherMembershipId,
+          admin: fixture.adminMembershipId,
+        }[role],
         role,
         clerkOrgId: "org_vsas",
       });
@@ -76,6 +81,7 @@ app.route("/", scheduleRequestRoutes);
 describe("schedule request HTTP lifecycle contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    scheduleService.createRequest.mockResolvedValue(storedRequest);
     scheduleService.editRequest.mockResolvedValue({
       ...storedRequest,
       version: 4,
@@ -90,6 +96,46 @@ describe("schedule request HTTP lifecycle contract", () => {
       version: 4,
       status: "in_review",
     });
+  });
+
+  it("allows only the exact pilot role to create a request", async () => {
+    const input = {
+      title: storedRequest.title,
+      windowStart: storedRequest.windowStart.toISOString(),
+      windowEnd: storedRequest.windowEnd.toISOString(),
+      desiredFlightCount: storedRequest.desiredFlightCount,
+      preferences: storedRequest.preferences,
+    };
+    const pilotResponse = await app.request("/schedule-requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+
+    expect(pilotResponse.status).toBe(201);
+    expect(scheduleService.createRequest).toHaveBeenCalledWith(
+      {
+        tenantId: fixture.tenantId,
+        membershipId: fixture.pilotMembershipId,
+        role: "pilot",
+      },
+      expect.objectContaining({ desiredFlightCount: 2 }),
+    );
+
+    for (const role of ["dispatcher", "admin"] as const) {
+      scheduleService.createRequest.mockClear();
+      const privilegedResponse = await app.request("/schedule-requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Test-Role": role,
+        },
+        body: JSON.stringify(input),
+      });
+
+      expect(privilegedResponse.status).toBe(403);
+      expect(scheduleService.createRequest).not.toHaveBeenCalled();
+    }
   });
 
   it("requires optimistic concurrency for pilot edits", async () => {
