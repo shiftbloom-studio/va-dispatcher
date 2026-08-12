@@ -54,8 +54,8 @@ function MessageCard({
   selected?: boolean;
   onStation: (station: string) => void;
 }) {
-  const inbound = message.direction === "inbound";
-  const DirectionIcon = inbound ? ArrowDownLeft : ArrowUpRight;
+  const isInbound = message.direction === "inbound";
+  const DirectionIcon = isInbound ? ArrowDownLeft : ArrowUpRight;
   return (
     <article
       className={`rounded-xl border p-4 ${selected ? "border-[var(--accent)] bg-red-50/40" : "border-slate-200 bg-white"}`}
@@ -66,7 +66,7 @@ function MessageCard({
           className="flex min-h-10 items-center gap-2 rounded-lg text-left font-display font-bold text-slate-950 hover:text-[var(--accent)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
         >
           <span
-            className={`grid size-8 place-items-center rounded-lg ${inbound ? "bg-sky-100 text-sky-800" : "bg-emerald-100 text-emerald-800"}`}
+            className={`grid size-8 place-items-center rounded-lg ${isInbound ? "bg-sky-100 text-sky-800" : "bg-emerald-100 text-emerald-800"}`}
           >
             <DirectionIcon aria-hidden className="size-4" />
           </span>
@@ -123,9 +123,10 @@ export function AcarsWorkspace({
   const conversation = useQuery({
     queryKey: [slug, "acars", "conversation", station],
     queryFn: () =>
-      api(`/acars/messages?station=${encodeURIComponent(station!)}&limit=100`, {
-        schema: acarsMessagePageSchema,
-      }),
+      api(
+        `/acars/messages?station=${encodeURIComponent(station ?? "")}&limit=100`,
+        { schema: acarsMessagePageSchema },
+      ),
     enabled: Boolean(station),
     refetchInterval: 10_000,
   });
@@ -349,8 +350,8 @@ function ComposeTelex({
   const [recipient, setRecipient] = useState(defaultRecipient);
   const [body, setBody] = useState("");
   const [flightId, setFlightId] = useState("");
-  const [success, setSuccess] = useState<string | null>(null);
-  const send = useMutation({
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const sendMessageMutation = useMutation({
     mutationFn: () =>
       api("/acars/messages", {
         method: "POST",
@@ -362,7 +363,7 @@ function ComposeTelex({
         }),
       }),
     onSuccess: async () => {
-      setSuccess(
+      setSuccessMessage(
         provider === "hoppie"
           ? `Hoppie accepted the telex to ${recipient.trim().toUpperCase()} for store-and-forward. This is not a delivery or read receipt.`
           : `The development adapter stored the telex to ${recipient.trim().toUpperCase()}. No Hoppie traffic was sent.`,
@@ -385,8 +386,8 @@ function ComposeTelex({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          setSuccess(null);
-          if (recipient.trim() && body.trim()) send.mutate();
+          setSuccessMessage(null);
+          if (recipient.trim() && body.trim()) sendMessageMutation.mutate();
         }}
         className="space-y-4 p-5"
       >
@@ -458,32 +459,34 @@ function ComposeTelex({
             ))}
           </Select>
         </div>
-        {success ? (
+        {successMessage ? (
           <p
             role="status"
             className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800"
           >
-            {success}
+            {successMessage}
           </p>
         ) : null}
-        {send.isError ? (
+        {sendMessageMutation.isError ? (
           <p
             role="alert"
             className="rounded-lg bg-red-50 p-3 text-sm text-red-800"
           >
-            {apiErrorMessage(send.error)} Your draft is retained; retry manually
-            when ready.
+            {apiErrorMessage(sendMessageMutation.error)} Your draft is retained;
+            retry manually when ready.
           </p>
         ) : null}
         <Button
           type="submit"
           className="w-full"
-          disabled={send.isPending || !recipient.trim() || !body.trim()}
+          disabled={
+            sendMessageMutation.isPending || !recipient.trim() || !body.trim()
+          }
         >
           <Send aria-hidden className="size-4" />{" "}
-          {send.isPending
+          {sendMessageMutation.isPending
             ? "Sending…"
-            : send.isError
+            : sendMessageMutation.isError
               ? "Retry send"
               : "Send telex"}
         </Button>

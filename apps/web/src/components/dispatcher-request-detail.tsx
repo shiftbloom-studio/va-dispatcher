@@ -101,26 +101,31 @@ export function DispatcherRequestDetail({
       />
     );
 
-  const item = request.data.request;
+  const scheduleRequest = request.data.request;
   const pilot = members.data.items.find(
-    (member) => member.id === item.pilotMembershipId,
+    (member) => member.id === scheduleRequest.pilotMembershipId,
   );
-  const availability = availabilityFromPreferences(item.preferences);
-  const canBuild = item.status === "pending" || item.status === "in_review";
+  const availability = availabilityFromPreferences(scheduleRequest.preferences);
+  const canBuild =
+    scheduleRequest.status === "pending" ||
+    scheduleRequest.status === "in_review";
 
   return (
     <>
       <Link
-        href={`/${slug}/dispatch?view=requests&status=${item.status}`}
+        href={`/${slug}/dispatch?view=requests&status=${scheduleRequest.status}`}
         className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950"
       >
         <ArrowLeft aria-hidden className="size-4" /> Back to queue
       </Link>
       <PageHeading
         eyebrow="Dispatcher request"
-        title={item.title || `${item.desiredFlightCount}-flight request`}
-        description={`${memberLabel(pilot)} · submitted ${formatUtc(item.createdAt)}`}
-        action={<StatusBadge status={item.status} />}
+        title={
+          scheduleRequest.title ||
+          `${scheduleRequest.desiredFlightCount}-flight request`
+        }
+        description={`${memberLabel(pilot)} · submitted ${formatUtc(scheduleRequest.createdAt)}`}
+        action={<StatusBadge status={scheduleRequest.status} />}
       />
 
       <div className="mb-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -134,7 +139,7 @@ export function DispatcherRequestDetail({
                 Flight count
               </dt>
               <dd className="mt-1 text-lg font-bold text-slate-950">
-                {item.desiredFlightCount}
+                {scheduleRequest.desiredFlightCount}
               </dd>
             </div>
             <div className="sm:col-span-2">
@@ -142,7 +147,8 @@ export function DispatcherRequestDetail({
                 Overall UTC window
               </dt>
               <dd className="mt-1 font-semibold text-slate-950">
-                {formatUtc(item.windowStart)} – {formatUtc(item.windowEnd)}
+                {formatUtc(scheduleRequest.windowStart)} –{" "}
+                {formatUtc(scheduleRequest.windowEnd)}
               </dd>
             </div>
           </dl>
@@ -153,7 +159,12 @@ export function DispatcherRequestDetail({
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {(availability.length
                 ? availability
-                : [{ startAt: item.windowStart, endAt: item.windowEnd }]
+                : [
+                    {
+                      startAt: scheduleRequest.windowStart,
+                      endAt: scheduleRequest.windowEnd,
+                    },
+                  ]
               ).map((interval, index) => (
                 <div
                   key={`${interval.startAt}-${index}`}
@@ -166,13 +177,13 @@ export function DispatcherRequestDetail({
               ))}
             </div>
           </div>
-          {item.notes ? (
+          {scheduleRequest.notes ? (
             <div className="mt-5 border-t border-slate-100 pt-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Notes
               </h3>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                {item.notes}
+                {scheduleRequest.notes}
               </p>
             </div>
           ) : null}
@@ -180,7 +191,7 @@ export function DispatcherRequestDetail({
         <Card className="h-fit overflow-hidden">
           <CardHeader title="Request actions" />
           <div className="space-y-3 p-5">
-            {item.status === "pending" ? (
+            {scheduleRequest.status === "pending" ? (
               <Button
                 className="w-full"
                 disabled={transition.isPending}
@@ -189,7 +200,8 @@ export function DispatcherRequestDetail({
                 <SearchCheck aria-hidden className="size-4" /> Start review
               </Button>
             ) : null}
-            {item.status === "pending" || item.status === "in_review" ? (
+            {scheduleRequest.status === "pending" ||
+            scheduleRequest.status === "in_review" ? (
               <ReasonAction
                 trigger={
                   <Button variant="secondary" className="w-full text-red-700">
@@ -200,14 +212,12 @@ export function DispatcherRequestDetail({
                 detail="The pilot will see this as a terminal decision. Add an optional explanation."
                 confirmLabel="Reject request"
                 danger
-                onConfirm={(reason) =>
-                  transition
-                    .mutateAsync({ action: "reject", reason })
-                    .then(() => undefined)
-                }
+                onConfirm={async (reason) => {
+                  await transition.mutateAsync({ action: "reject", reason });
+                }}
               />
             ) : null}
-            {canCancelScheduleRequest(item.status) ? (
+            {canCancelScheduleRequest(scheduleRequest.status) ? (
               <ConfirmAction
                 trigger={
                   <Button variant="secondary" className="w-full text-red-700">
@@ -218,16 +228,14 @@ export function DispatcherRequestDetail({
                 detail="This makes the request terminal. Existing flight records remain unchanged."
                 confirmLabel="Cancel request"
                 danger
-                onConfirm={() =>
-                  transition
-                    .mutateAsync({ action: "cancel" })
-                    .then(() => undefined)
-                }
+                onConfirm={async () => {
+                  await transition.mutateAsync({ action: "cancel" });
+                }}
               />
             ) : null}
             {!canBuild &&
-            !canCancelScheduleRequest(item.status) &&
-            item.status !== "pending" ? (
+            !canCancelScheduleRequest(scheduleRequest.status) &&
+            scheduleRequest.status !== "pending" ? (
               <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
                 This request is read-only in its current state.
               </p>
@@ -240,11 +248,11 @@ export function DispatcherRequestDetail({
         <OfferBuilder
           slug={slug}
           requestId={requestId}
-          desiredFlightCount={item.desiredFlightCount}
+          desiredFlightCount={scheduleRequest.desiredFlightCount}
           onOffered={refresh}
         />
       ) : null}
-      {item.status === "partially_fulfilled" ? (
+      {scheduleRequest.status === "partially_fulfilled" ? (
         <p
           role="status"
           className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"

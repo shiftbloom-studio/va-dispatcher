@@ -86,6 +86,7 @@ export function RequestQueue({ slug }: { slug: string }) {
   const memberMap = new Map(
     members.data.items.map((member) => [member.id, member]),
   );
+  const nextCursor = requests.data.nextCursor;
 
   return (
     <>
@@ -169,13 +170,13 @@ export function RequestQueue({ slug }: { slug: string }) {
           {apiErrorMessage(review.error)}
         </p>
       ) : null}
-      {requests.data.nextCursor ? (
+      {nextCursor ? (
         <div className="mt-4 flex justify-end">
           <Button
             variant="secondary"
             onClick={() => {
               const params = new URLSearchParams(search.toString());
-              params.set("cursor", requests.data.nextCursor!);
+              params.set("cursor", nextCursor);
               router.push(`/${slug}/dispatch?${params.toString()}`);
             }}
           >

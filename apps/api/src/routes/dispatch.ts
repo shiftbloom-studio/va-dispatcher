@@ -17,16 +17,16 @@ dispatchRoutes.get("/dispatch/board", async (c) => {
     countScheduleRequestsByStatus(auth.tenantId),
   ]);
   return c.json({
-    flights: board.flights.map((f) => ({
-      id: f.id,
-      flightNumber: f.flightNumber,
-      depIcao: f.depIcao,
-      arrIcao: f.arrIcao,
-      etd: f.etd.toISOString(),
-      eta: f.eta.toISOString(),
-      status: f.status,
-      pilotMembershipId: f.pilotMembershipId,
-      aircraftType: f.aircraftType,
+    flights: board.flights.map((flight) => ({
+      id: flight.id,
+      flightNumber: flight.flightNumber,
+      depIcao: flight.depIcao,
+      arrIcao: flight.arrIcao,
+      etd: flight.etd.toISOString(),
+      eta: flight.eta.toISOString(),
+      status: flight.status,
+      pilotMembershipId: flight.pilotMembershipId,
+      aircraftType: flight.aircraftType,
     })),
     scheduleRequestCounts: requestCounts,
   });
@@ -39,18 +39,18 @@ dispatchRoutes.get("/dispatch/inbox", async (c) => {
     limit: 50,
   });
   return c.json({
-    items: page.items.map((m) => ({
-      id: m.id,
-      direction: m.direction,
-      msgType: m.msgType,
-      fromStation: m.fromStation,
-      toStation: m.toStation,
-      body: m.body,
-      flightId: m.flightId,
-      provider: m.provider,
-      createdAt: m.createdAt.toISOString(),
-      receivedAt: m.receivedAt?.toISOString() ?? null,
-      sentAt: m.sentAt?.toISOString() ?? null,
+    items: page.items.map((message) => ({
+      id: message.id,
+      direction: message.direction,
+      msgType: message.msgType,
+      fromStation: message.fromStation,
+      toStation: message.toStation,
+      body: message.body,
+      flightId: message.flightId,
+      provider: message.provider,
+      createdAt: message.createdAt.toISOString(),
+      receivedAt: message.receivedAt?.toISOString() ?? null,
+      sentAt: message.sentAt?.toISOString() ?? null,
     })),
     nextCursor: page.nextCursor,
   });

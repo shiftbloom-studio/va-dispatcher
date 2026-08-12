@@ -70,7 +70,7 @@ export function DispatcherFlightDetail({
     staleTime: Number.POSITIVE_INFINITY,
   });
 
-  async function refreshAll(message?: string) {
+  async function refreshFlightData(message?: string) {
     await Promise.all([
       flight.refetch(),
       queryClient.invalidateQueries({ queryKey: [slug, "dispatch", "board"] }),
@@ -101,16 +101,16 @@ export function DispatcherFlightDetail({
       });
     },
     onSuccess: () =>
-      refreshAll("Flight state updated from the latest server record."),
+      refreshFlightData("Flight state updated from the latest server record."),
   });
 
-  async function advance(target: DispatchTransition, reason?: string) {
+  async function advanceFlight(target: DispatchTransition, reason?: string) {
     setNotice(null);
     try {
       await transition.mutateAsync({ target, reason });
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        await refreshAll(
+        await refreshFlightData(
           "This flight changed while you were viewing it. Current state reloaded.",
         );
       }
@@ -128,10 +128,10 @@ export function DispatcherFlightDetail({
       />
     );
 
-  const item = flight.data.flight;
-  const actions = flightActions("dispatcher", item.status);
+  const currentFlight = flight.data.flight;
+  const actions = flightActions("dispatcher", currentFlight.status);
   const pilot = members.data.items.find(
-    (member) => member.id === item.pilotMembershipId,
+    (member) => member.id === currentFlight.pilotMembershipId,
   );
 
   return (
@@ -144,9 +144,9 @@ export function DispatcherFlightDetail({
       </Link>
       <PageHeading
         eyebrow="Dispatcher flight"
-        title={item.flightNumber}
-        description={`${memberLabel(pilot)} · ${item.depIcao} to ${item.arrIcao}`}
-        action={<StatusBadge status={item.status} />}
+        title={currentFlight.flightNumber}
+        description={`${memberLabel(pilot)} · ${currentFlight.depIcao} to ${currentFlight.arrIcao}`}
+        action={<StatusBadge status={currentFlight.status} />}
       />
       {notice ? (
         <p
@@ -167,10 +167,10 @@ export function DispatcherFlightDetail({
                     ETD
                   </p>
                   <p className="mt-1 font-display text-5xl font-semibold">
-                    {item.depIcao}
+                    {currentFlight.depIcao}
                   </p>
                   <p className="mt-2 text-sm text-slate-300">
-                    {formatUtc(item.etd)}
+                    {formatUtc(currentFlight.etd)}
                   </p>
                 </div>
                 <div className="flex min-w-16 flex-1 items-center gap-3 text-slate-500">
@@ -183,10 +183,10 @@ export function DispatcherFlightDetail({
                     ETA
                   </p>
                   <p className="mt-1 font-display text-5xl font-semibold">
-                    {item.arrIcao}
+                    {currentFlight.arrIcao}
                   </p>
                   <p className="mt-2 text-sm text-slate-300">
-                    {formatUtc(item.eta)}
+                    {formatUtc(currentFlight.eta)}
                   </p>
                 </div>
               </div>
@@ -197,7 +197,7 @@ export function DispatcherFlightDetail({
                   Aircraft
                 </dt>
                 <dd className="mt-1 font-semibold">
-                  {item.aircraftType || "TBA"}
+                  {currentFlight.aircraftType || "TBA"}
                 </dd>
               </div>
               <div className="bg-white p-5">
@@ -211,37 +211,39 @@ export function DispatcherFlightDetail({
                   Updated
                 </dt>
                 <dd className="mt-1 font-semibold">
-                  {formatUtc(item.updatedAt)}
+                  {formatUtc(currentFlight.updatedAt)}
                 </dd>
               </div>
             </dl>
-            {item.dispatcherNotes ? (
+            {currentFlight.dispatcherNotes ? (
               <div className="border-t border-slate-100 p-5">
                 <h2 className="font-display text-lg font-semibold">
                   Dispatcher notes
                 </h2>
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                  {item.dispatcherNotes}
+                  {currentFlight.dispatcherNotes}
                 </p>
               </div>
             ) : null}
-            {item.declinedReason ? (
+            {currentFlight.declinedReason ? (
               <div className="border-t border-slate-100 bg-red-50 p-5 text-sm text-red-900">
-                <strong>Pilot decline reason:</strong> {item.declinedReason}
+                <strong>Pilot decline reason:</strong>{" "}
+                {currentFlight.declinedReason}
               </div>
             ) : null}
-            {item.cancelReason ? (
+            {currentFlight.cancelReason ? (
               <div className="border-t border-slate-100 bg-red-50 p-5 text-sm text-red-900">
-                <strong>Cancellation reason:</strong> {item.cancelReason}
+                <strong>Cancellation reason:</strong>{" "}
+                {currentFlight.cancelReason}
               </div>
             ) : null}
           </Card>
           {editing ? (
             <FlightEditor
-              flight={item}
+              flight={currentFlight}
               members={members.data.items}
               onClose={() => setEditing(false)}
-              onRefresh={refreshAll}
+              onRefresh={refreshFlightData}
             />
           ) : null}
         </div>
@@ -266,7 +268,9 @@ export function DispatcherFlightDetail({
               <Button
                 className="w-full"
                 disabled={transition.isPending}
-                onClick={() => void advance("offer").catch(() => undefined)}
+                onClick={() =>
+                  void advanceFlight("offer").catch(() => undefined)
+                }
               >
                 <Send aria-hidden className="size-4" /> Offer to pilot
               </Button>
@@ -275,7 +279,9 @@ export function DispatcherFlightDetail({
               <Button
                 className="w-full"
                 disabled={transition.isPending}
-                onClick={() => void advance("briefed").catch(() => undefined)}
+                onClick={() =>
+                  void advanceFlight("briefed").catch(() => undefined)
+                }
               >
                 <ClipboardCheck aria-hidden className="size-4" /> Mark briefed
               </Button>
@@ -284,7 +290,9 @@ export function DispatcherFlightDetail({
               <Button
                 className="w-full"
                 disabled={transition.isPending}
-                onClick={() => void advance("active").catch(() => undefined)}
+                onClick={() =>
+                  void advanceFlight("active").catch(() => undefined)
+                }
               >
                 <Play aria-hidden className="size-4" /> Activate flight
               </Button>
@@ -300,7 +308,7 @@ export function DispatcherFlightDetail({
                 title="Complete this flight?"
                 detail="Completion is terminal and cannot be reversed from the dispatcher UI."
                 confirmLabel="Complete flight"
-                onConfirm={() => advance("completed")}
+                onConfirm={() => advanceFlight("completed")}
               />
             ) : null}
             {actions.includes("cancel") ? (
@@ -314,7 +322,7 @@ export function DispatcherFlightDetail({
                 detail="Cancellation is terminal. Add an optional operational reason."
                 confirmLabel="Cancel flight"
                 danger
-                onConfirm={(reason) => advance("cancelled", reason)}
+                onConfirm={(reason) => advanceFlight("cancelled", reason)}
               />
             ) : null}
             {!actions.length ? (

@@ -28,7 +28,7 @@ export function ConfirmAction({
       detail={detail}
       confirmLabel={confirmLabel}
       danger={danger}
-      onConfirm={async () => onConfirm()}
+      onConfirm={onConfirm}
     />
   );
 }
@@ -91,12 +91,12 @@ function ActionDialog({
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
-    const clear = () => {
+    const resetDialogState = () => {
       setPending(false);
       setError(null);
     };
-    element.addEventListener("close", clear);
-    return () => element.removeEventListener("close", clear);
+    element.addEventListener("close", resetDialogState);
+    return () => element.removeEventListener("close", resetDialogState);
   }, []);
 
   async function submit() {
@@ -106,8 +106,8 @@ function ActionDialog({
       await onConfirm(reason.trim());
       dialog.current?.close();
       setReason("");
-    } catch (caught) {
-      setError(apiErrorMessage(caught));
+    } catch (caughtError) {
+      setError(apiErrorMessage(caughtError));
     } finally {
       setPending(false);
     }

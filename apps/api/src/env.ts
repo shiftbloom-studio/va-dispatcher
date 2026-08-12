@@ -18,38 +18,38 @@ const envSchema = z.object({
   SEED_DEMO_DATA: z
     .enum(["true", "false"])
     .default("false")
-    .transform((v) => v === "true"),
+    .transform((value) => value === "true"),
   VSAS_CLERK_ORG_ID: z.string().optional(),
   /** When true, skip Clerk and use X-Dev-* headers (local/dev only). */
   AUTH_DEV_BYPASS: z
     .enum(["true", "false"])
     .default("false")
-    .transform((v) => v === "true"),
+    .transform((value) => value === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;
 
-let cached: Env | null = null;
+let cachedEnv: Env | null = null;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
-    const msg = parsed.error.issues
-      .map((i) => `${i.path.join(".")}: ${i.message}`)
+    const validationMessage = parsed.error.issues
+      .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
       .join("; ");
-    throw new Error(`Invalid environment: ${msg}`);
+    throw new Error(`Invalid environment: ${validationMessage}`);
   }
-  cached = parsed.data;
+  cachedEnv = parsed.data;
   return parsed.data;
 }
 
 export function env(): Env {
-  if (!cached) {
+  if (!cachedEnv) {
     return loadEnv();
   }
-  return cached;
+  return cachedEnv;
 }
 
 export function resetEnvCache(): void {
-  cached = null;
+  cachedEnv = null;
 }

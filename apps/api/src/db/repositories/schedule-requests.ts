@@ -72,13 +72,13 @@ export async function listScheduleRequests(input: {
     conditions.push(eq(scheduleRequests.status, input.status));
   }
   if (input.cursor) {
-    const c = decodeCursor(input.cursor);
+    const cursor = decodeCursor(input.cursor);
     conditions.push(
       or(
-        lt(scheduleRequests.createdAt, new Date(c.createdAt)),
+        lt(scheduleRequests.createdAt, new Date(cursor.createdAt)),
         and(
-          eq(scheduleRequests.createdAt, new Date(c.createdAt)),
-          lt(scheduleRequests.id, c.id),
+          eq(scheduleRequests.createdAt, new Date(cursor.createdAt)),
+          lt(scheduleRequests.id, cursor.id),
         ),
       )!,
     );
@@ -93,12 +93,12 @@ export async function listScheduleRequests(input: {
 
   const hasMore = rows.length > input.limit;
   const items = hasMore ? rows.slice(0, input.limit) : rows;
-  const last = items[items.length - 1];
+  const lastItem = items.at(-1);
   const nextCursor =
-    hasMore && last
+    hasMore && lastItem
       ? encodeCursor({
-          createdAt: last.createdAt.toISOString(),
-          id: last.id,
+          createdAt: lastItem.createdAt.toISOString(),
+          id: lastItem.id,
         })
       : null;
 
@@ -139,9 +139,9 @@ export async function countScheduleRequestsByStatus(
     .where(eq(scheduleRequests.tenantId, tenantId))
     .groupBy(scheduleRequests.status);
 
-  const out: Record<string, number> = {};
-  for (const r of rows) {
-    out[r.status] = r.count;
+  const countsByStatus: Record<string, number> = {};
+  for (const row of rows) {
+    countsByStatus[row.status] = row.count;
   }
-  return out;
+  return countsByStatus;
 }

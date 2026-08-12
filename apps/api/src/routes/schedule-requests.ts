@@ -25,11 +25,11 @@ scheduleRequestRoutes.post(
   async (c) => {
     const auth = c.get("auth");
     const body = c.req.valid("json");
-    const row = await scheduleService.createRequest(
+    const scheduleRequest = await scheduleService.createRequest(
       { tenantId: auth.tenantId, membershipId: auth.membershipId },
       body,
     );
-    return c.json({ request: serializeRequest(row) }, 201);
+    return c.json({ request: serializeRequest(scheduleRequest) }, 201);
   },
 );
 
@@ -70,20 +70,20 @@ scheduleRequestRoutes.get(
 
 scheduleRequestRoutes.get("/schedule-requests/:id", async (c) => {
   const auth = c.get("auth");
-  const result = await scheduleService.getRequest(
+  const requestDetail = await scheduleService.getRequest(
     auth.tenantId,
     c.req.param("id"),
     { membershipId: auth.membershipId, role: auth.role },
   );
   return c.json({
-    request: serializeRequest(result.request),
-    flights: result.flights,
+    request: serializeRequest(requestDetail.request),
+    flights: requestDetail.flights,
   });
 });
 
 scheduleRequestRoutes.post("/schedule-requests/:id/cancel", async (c) => {
   const auth = c.get("auth");
-  const row = await scheduleService.transitionRequest(
+  const scheduleRequest = await scheduleService.transitionRequest(
     {
       tenantId: auth.tenantId,
       membershipId: auth.membershipId,
@@ -92,7 +92,7 @@ scheduleRequestRoutes.post("/schedule-requests/:id/cancel", async (c) => {
     c.req.param("id"),
     "cancelled",
   );
-  return c.json({ request: serializeRequest(row) });
+  return c.json({ request: serializeRequest(scheduleRequest) });
 });
 
 scheduleRequestRoutes.post(
@@ -100,7 +100,7 @@ scheduleRequestRoutes.post(
   requireRole("dispatcher"),
   async (c) => {
     const auth = c.get("auth");
-    const row = await scheduleService.transitionRequest(
+    const scheduleRequest = await scheduleService.transitionRequest(
       {
         tenantId: auth.tenantId,
         membershipId: auth.membershipId,
@@ -109,7 +109,7 @@ scheduleRequestRoutes.post(
       c.req.param("id"),
       "in_review",
     );
-    return c.json({ request: serializeRequest(row) });
+    return c.json({ request: serializeRequest(scheduleRequest) });
   },
 );
 
@@ -123,7 +123,7 @@ scheduleRequestRoutes.post(
   async (c) => {
     const auth = c.get("auth");
     const body = c.req.valid("json") ?? {};
-    const row = await scheduleService.transitionRequest(
+    const scheduleRequest = await scheduleService.transitionRequest(
       {
         tenantId: auth.tenantId,
         membershipId: auth.membershipId,
@@ -133,11 +133,11 @@ scheduleRequestRoutes.post(
       "rejected",
       { reason: body.reason },
     );
-    return c.json({ request: serializeRequest(row) });
+    return c.json({ request: serializeRequest(scheduleRequest) });
   },
 );
 
-function serializeRequest(row: {
+function serializeRequest(scheduleRequest: {
   id: string;
   pilotMembershipId: string;
   title: string | null;
@@ -152,17 +152,17 @@ function serializeRequest(row: {
   updatedAt: Date;
 }) {
   return {
-    id: row.id,
-    pilotMembershipId: row.pilotMembershipId,
-    title: row.title,
-    notes: row.notes,
-    windowStart: row.windowStart.toISOString(),
-    windowEnd: row.windowEnd.toISOString(),
-    desiredFlightCount: row.desiredFlightCount,
-    preferences: row.preferences,
-    status: row.status,
-    rejectReason: row.rejectReason,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    id: scheduleRequest.id,
+    pilotMembershipId: scheduleRequest.pilotMembershipId,
+    title: scheduleRequest.title,
+    notes: scheduleRequest.notes,
+    windowStart: scheduleRequest.windowStart.toISOString(),
+    windowEnd: scheduleRequest.windowEnd.toISOString(),
+    desiredFlightCount: scheduleRequest.desiredFlightCount,
+    preferences: scheduleRequest.preferences,
+    status: scheduleRequest.status,
+    rejectReason: scheduleRequest.rejectReason,
+    createdAt: scheduleRequest.createdAt.toISOString(),
+    updatedAt: scheduleRequest.updatedAt.toISOString(),
   };
 }

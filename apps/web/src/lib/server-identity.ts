@@ -20,6 +20,12 @@ type IdentityResult =
   | { kind: "ready"; me: Me; role: Role; tenant: TenantDetail };
 
 function e2eIdentity(slug: string, role: Role): IdentityResult {
+  const tenant = {
+    id: `tenant-${slug}`,
+    slug,
+    name: "Virtual SAS",
+    hoppieStation: "VSAS",
+  };
   const me: Me = {
     user: { clerkUserId: `e2e-${role}` },
     membership: {
@@ -29,19 +35,14 @@ function e2eIdentity(slug: string, role: Role): IdentityResult {
       displayName: role === "pilot" ? "Test Pilot" : "Test Dispatcher",
       status: "active",
     },
-    tenant: {
-      id: `tenant-${slug}`,
-      slug,
-      name: "Virtual SAS",
-      hoppieStation: "VSAS",
-    },
+    tenant,
   };
   return {
     kind: "ready",
     me,
     role,
     tenant: {
-      ...me.tenant!,
+      ...tenant,
       hasHoppieLogon: false,
       acarsProvider: "mock",
       hoppiePollingEnabled: false,

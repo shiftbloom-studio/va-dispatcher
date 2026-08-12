@@ -1,7 +1,7 @@
 import type { FlightStatus } from "../../db/schema.js";
 import { AppError } from "../../lib/errors.js";
 
-const ALLOWED: Record<FlightStatus, readonly FlightStatus[]> = {
+const ALLOWED_TRANSITIONS: Record<FlightStatus, readonly FlightStatus[]> = {
   draft: ["offered", "cancelled"],
   offered: ["accepted", "declined", "cancelled"],
   accepted: ["briefed", "cancelled"],
@@ -13,21 +13,27 @@ const ALLOWED: Record<FlightStatus, readonly FlightStatus[]> = {
 };
 
 export function canTransition(
-  from: FlightStatus,
-  to: FlightStatus,
+  currentStatus: FlightStatus,
+  nextStatus: FlightStatus,
 ): boolean {
-  return ALLOWED[from].includes(to);
+  return ALLOWED_TRANSITIONS[currentStatus].includes(nextStatus);
 }
 
 export function assertFlightTransition(
-  from: FlightStatus,
-  to: FlightStatus,
+  currentStatus: FlightStatus,
+  nextStatus: FlightStatus,
 ): void {
-  if (!canTransition(from, to)) {
+  if (!canTransition(currentStatus, nextStatus)) {
     throw new AppError(
       "INVALID_TRANSITION",
-      `Cannot transition flight from ${from} to ${to}`,
-      { details: { from, to, allowed: ALLOWED[from] } },
+      `Cannot transition flight from ${currentStatus} to ${nextStatus}`,
+      {
+        details: {
+          from: currentStatus,
+          to: nextStatus,
+          allowed: ALLOWED_TRANSITIONS[currentStatus],
+        },
+      },
     );
   }
 }
