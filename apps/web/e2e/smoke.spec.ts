@@ -341,6 +341,7 @@ test("dispatcher simulates inbound ACARS with the development adapter", async ({
   });
 
   await page.goto("/vsas/dispatch/acars");
+  await continueWithoutAnalytics(page);
   await page.getByLabel("Simulated sender").fill("sas404");
   await page.getByLabel("Simulated message").fill("REQUESTING GATE");
   await page.getByRole("button", { name: "Simulate inbound" }).click();
