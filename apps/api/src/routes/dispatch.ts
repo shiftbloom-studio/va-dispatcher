@@ -17,17 +17,27 @@ dispatchRoutes.get("/dispatch/board", async (c) => {
     countScheduleRequestsByStatus(auth.tenantId),
   ]);
   return c.json({
-    flights: board.flights.map((flight) => ({
-      id: flight.id,
-      flightNumber: flight.flightNumber,
-      depIcao: flight.depIcao,
-      arrIcao: flight.arrIcao,
-      etd: flight.etd.toISOString(),
-      eta: flight.eta.toISOString(),
-      status: flight.status,
-      pilotMembershipId: flight.pilotMembershipId,
-      aircraftType: flight.aircraftType,
+    flights: board.flights.map((item) => ({
+      id: item.flight.id,
+      flightNumber: item.flight.flightNumber,
+      depIcao: item.flight.depIcao,
+      arrIcao: item.flight.arrIcao,
+      etd: item.flight.etd.toISOString(),
+      eta: item.flight.eta.toISOString(),
+      status: item.flight.status,
+      pilotMembershipId: item.flight.pilotMembershipId,
+      aircraftType: item.flight.aircraftType,
+      dispatcherNotes: item.flight.dispatcherNotes,
+      assignmentRevision: item.flight.assignmentRevision,
+      assignmentConfirmedRevision: item.flight.assignmentConfirmedRevision,
+      assignmentConfirmedAt:
+        item.flight.assignmentConfirmedAt?.toISOString() ?? null,
+      assignmentConfirmationRequired: item.assignmentConfirmationRequired,
+      latestReleaseRevision: item.latestReleaseRevision,
+      outAt: item.flight.outAt?.toISOString() ?? null,
+      inAt: item.flight.inAt?.toISOString() ?? null,
     })),
+    metrics: board.metrics,
     scheduleRequestCounts: requestCounts,
   });
 });

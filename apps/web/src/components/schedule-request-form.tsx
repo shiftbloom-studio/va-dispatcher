@@ -102,7 +102,7 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
                 return (
                   <fieldset
                     key={field.id}
-                    className="rounded-xl border border-slate-200 p-4"
+                    className="rounded-[2px] border border-slate-200 p-4"
                   >
                     <legend className="px-1 text-sm font-bold text-slate-700">
                       Interval {index + 1}
@@ -228,7 +228,7 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
             {mutation.isError ? (
               <div
                 role="alert"
-                className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"
+                className="rounded-[2px] border border-red-200 bg-red-50 p-4 text-sm text-red-900"
               >
                 {apiErrorMessage(mutation.error)}
               </div>

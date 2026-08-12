@@ -134,7 +134,7 @@ export function ScheduleRequestDetail({
               ).map((interval, index) => (
                 <div
                   key={`${interval.startAt}-${index}`}
-                  className="flex gap-3 rounded-xl bg-slate-50 p-3"
+                  className="flex gap-3 rounded-[2px] bg-slate-50 p-3"
                 >
                   <CalendarDays
                     aria-hidden
@@ -167,7 +167,7 @@ export function ScheduleRequestDetail({
           {scheduleRequest.rejectReason ? (
             <div
               role="status"
-              className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"
+              className="rounded-[2px] border border-red-200 bg-red-50 p-4 text-sm text-red-900"
             >
               <strong>Dispatch response:</strong> {scheduleRequest.rejectReason}
             </div>

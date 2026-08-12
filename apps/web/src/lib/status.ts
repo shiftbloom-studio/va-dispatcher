@@ -51,6 +51,8 @@ export function canCancelScheduleRequest(
 }
 
 export function statusLabel(status: string): string {
+  if (status === "briefed") return "Scheduled";
+  if (status === "completed") return "Finished";
   return status
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

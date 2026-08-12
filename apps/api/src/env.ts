@@ -23,6 +23,17 @@ const envSchema = z.object({
   NAVIGRAPH_CLIENT_SECRET: z.string().min(1).optional(),
   /** Exact registered Authorization Code redirect URI. */
   NAVIGRAPH_REDIRECT_URI: z.string().url().optional(),
+  BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
+  AVIATION_WEATHER_API_ORIGIN: z
+    .string()
+    .url()
+    .default("https://aviationweather.gov/api/data"),
+  AVIATION_WEATHER_USER_AGENT: z
+    .string()
+    .min(1)
+    .default(
+      "va-dispatch/0.1 (+https://github.com/shiftbloom-studio/va-dispatcher)",
+    ),
   CRON_SECRET: z.string().min(1).default("dev-cron-secret-change-me"),
   SEED_DEMO_DATA: z
     .enum(["true", "false"])

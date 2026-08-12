@@ -35,6 +35,12 @@ vi.mock("../db/repositories/flights.js", () => ({
   findFlight,
   listFlights,
 }));
+vi.mock("../db/repositories/dispatch-releases.js", () => ({
+  listDispatchReleaseRevisions: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("../db/repositories/flight-events.js", () => ({
+  listFlightEvents: vi.fn().mockResolvedValue([]),
+}));
 
 import { flightRoutes } from "./flights.js";
 import { errorHandler } from "../middleware/error.js";
@@ -54,6 +60,9 @@ const storedFlight = {
   cancelReason: null,
   declinedReason: null,
   dispatcherNotes: null,
+  assignmentRevision: 1,
+  assignmentConfirmedRevision: null,
+  assignmentConfirmedAt: null,
   outAt: null,
   offAt: null,
   onAt: null,

@@ -6,7 +6,7 @@ import {
   TenantAuthShell,
 } from "@/components/tenant-auth-shell";
 import { getTenantAuthRoutes } from "@/lib/auth-routes";
-import { getTenantConfig } from "@/lib/tenant";
+import { getPublicTenantConfig } from "@/lib/public-tenant";
 
 export default async function SignInPage({
   params,
@@ -14,7 +14,7 @@ export default async function SignInPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const tenant = getTenantConfig(slug);
+  const tenant = await getPublicTenantConfig(slug);
   if (!tenant) notFound();
   const routes = getTenantAuthRoutes(tenant.slug);
 

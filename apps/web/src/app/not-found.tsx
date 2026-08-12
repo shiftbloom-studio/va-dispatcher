@@ -18,7 +18,7 @@ export default function NotFound() {
         </p>
         <Link
           href="/vsas"
-          className="mt-6 inline-flex min-h-11 items-center rounded-lg bg-white px-4 py-2 font-bold text-slate-950"
+          className="mt-6 inline-flex min-h-11 items-center rounded-[2px] bg-white px-4 py-2 font-bold text-slate-950"
         >
           Return to vSAS
         </Link>

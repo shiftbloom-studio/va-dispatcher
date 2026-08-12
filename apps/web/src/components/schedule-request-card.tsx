@@ -15,9 +15,9 @@ export function ScheduleRequestCard({
   return (
     <Link
       href={href}
-      className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      className="flex items-center gap-4 rounded-[2px] border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
     >
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-red-50 text-[var(--accent)]">
+      <span className="grid size-10 shrink-0 place-items-center rounded-[2px] bg-red-50 text-[var(--accent)]">
         <CalendarRange aria-hidden className="size-5" />
       </span>
       <div className="min-w-0 flex-1">

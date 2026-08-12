@@ -47,6 +47,11 @@ function e2eIdentity(slug: string, role: Role): IdentityResult {
       acarsProvider: "mock",
       hoppiePollingEnabled: false,
       hoppieLastTestedAt: null,
+      brand: {
+        seedColor: "#e64646",
+        presence: "balanced",
+        logoUrl: null,
+      },
       settings: {},
     },
   };

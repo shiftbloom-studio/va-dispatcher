@@ -111,7 +111,7 @@ export function OfferBuilder({
             return (
               <fieldset
                 key={row.id}
-                className="rounded-xl border border-slate-200 p-4"
+                className="rounded-[2px] border border-slate-200 p-4"
               >
                 <legend className="px-1 text-sm font-bold text-slate-700">
                   Flight {index + 1} of {desiredFlightCount}
@@ -195,7 +195,7 @@ export function OfferBuilder({
         {conflict ? (
           <p
             role="alert"
-            className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+            className="mt-4 rounded-[2px] bg-amber-50 p-3 text-sm text-amber-900"
           >
             {conflict}
           </p>
@@ -203,7 +203,7 @@ export function OfferBuilder({
         {mutation.isError && !conflict ? (
           <p
             role="alert"
-            className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+            className="mt-4 rounded-[2px] bg-red-50 p-3 text-sm text-red-800"
           >
             {apiErrorMessage(mutation.error)}
           </p>

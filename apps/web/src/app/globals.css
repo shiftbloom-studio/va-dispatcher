@@ -2,8 +2,16 @@
 
 :root {
   --accent: #e64646;
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --brand: #e64646;
+  --brand-action: #b52424;
+  --brand-on-action: #ffffff;
+  --brand-strong: #631919;
+  --brand-soft: #fbe9e9;
+  --brand-faint: #fdf5f5;
+  --brand-border: #efadad;
+  --brand-complement: #276c6c;
+  --background: #f7f7f5;
+  --foreground: #17213d;
 }
 
 * {
@@ -13,7 +21,11 @@
 html {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: Aptos, "Helvetica Neue", Arial, Helvetica, sans-serif;
+  font-feature-settings:
+    "tnum" 1,
+    "ss01" 1;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -21,13 +33,95 @@ body {
   margin: 0;
 }
 
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline-color: var(--brand-action);
+}
+
 .font-display {
-  font-family: Arial, Helvetica, sans-serif;
-  letter-spacing: -0.02em;
+  font-family: "Helvetica Neue", Aptos, Arial, Helvetica, sans-serif;
+  letter-spacing: -0.025em;
+}
+
+.brand-sidebar::before {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 2;
+  width: 2px;
+  content: "";
+  background: var(--brand);
+  transition: width 180ms ease;
+}
+
+[data-brand-presence="restrained"] .brand-sidebar::before {
+  width: 1px;
+}
+
+[data-brand-presence="high"] .brand-sidebar::before {
+  width: 6px;
+}
+
+.auth-flight-path {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--brand) 12%,
+    var(--brand) 66%,
+    transparent 100%
+  );
+}
+
+.auth-flight-path::after {
+  position: absolute;
+  right: 30%;
+  top: -3px;
+  width: 7px;
+  height: 7px;
+  content: "";
+  background: var(--brand);
+  transform: rotate(45deg);
+}
+
+.board-card {
+  animation: board-card-enter 220ms ease-out both;
+}
+
+.board-card::before {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 2px;
+  content: "";
+  background: var(--lane-accent, var(--brand));
+  transition: width 140ms ease;
+}
+
+.board-card:hover::before,
+.board-card:focus-within::before {
+  width: 5px;
+}
+
+@keyframes board-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 25%, white);
+  background: var(--brand-soft);
+  color: var(--foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {

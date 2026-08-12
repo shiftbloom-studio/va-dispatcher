@@ -17,8 +17,8 @@ export function OrganizationMismatch({
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-white">
       <main id="main-content" className="grid flex-1 place-items-center p-6">
-        <section className="w-full max-w-lg rounded-3xl bg-white p-6 text-slate-950 shadow-2xl sm:p-8">
-          <div className="grid size-12 place-items-center rounded-2xl bg-red-100 text-red-700">
+        <section className="w-full max-w-lg rounded-[2px] bg-white p-6 text-slate-950 shadow-2xl sm:p-8">
+          <div className="grid size-12 place-items-center rounded-[2px] bg-red-100 text-red-700">
             <ShieldAlert aria-hidden className="size-6" />
           </div>
           <h1 className="mt-5 font-display text-3xl font-semibold">
@@ -28,11 +28,11 @@ export function OrganizationMismatch({
             {reason} No {tenantName} operational data was loaded.
           </p>
           {bypass ? (
-            <p className="mt-6 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="mt-6 rounded-[2px] bg-amber-50 p-3 text-sm text-amber-900">
               Organization selection is unavailable in fixture mode.
             </p>
           ) : (
-            <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 p-2">
+            <div className="mt-6 overflow-hidden rounded-[2px] border border-slate-200 p-2">
               <OrganizationList
                 hidePersonal
                 afterSelectOrganizationUrl="/:slug"

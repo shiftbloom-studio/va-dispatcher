@@ -50,7 +50,7 @@ export function AccountSettings({ slug }: { slug: string }) {
           me.data.membership.role === "admin" ? (
             <Link
               href={`/${slug}/settings/organization`}
-              className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              className="inline-flex min-h-11 items-center rounded-[2px] border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
               Organization settings
             </Link>
@@ -150,7 +150,7 @@ function ProfileCard({
               : "Use no more than 20 letters, numbers, or hyphens."}
           </p>
         </div>
-        <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-950">
+        <div className="rounded-[2px] border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-950">
           <p className="font-semibold">
             Your personal logon code stays private
           </p>
@@ -214,7 +214,7 @@ function HoppieGuide() {
           href={HOPPIE_REGISTRATION_URL}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 font-semibold text-slate-900 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          className="inline-flex min-h-11 items-center gap-2 rounded-[2px] border border-slate-300 px-4 py-2 font-semibold text-slate-900 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
           Request a Hoppie logon
           <ExternalLink aria-hidden className="size-4" />
@@ -235,7 +235,7 @@ function GuideStep({
 }) {
   return (
     <li className="flex gap-3">
-      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-900 text-xs font-bold text-white">
+      <span className="grid size-7 shrink-0 place-items-center rounded-[2px] bg-slate-900 text-xs font-bold text-white">
         {number}
       </span>
       <div>

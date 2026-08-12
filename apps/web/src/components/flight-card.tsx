@@ -9,11 +9,11 @@ export function FlightCard({ flight, href }: { flight: Flight; href: string }) {
   return (
     <Link
       href={href}
-      className="group block rounded-xl border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      className="group block rounded-[2px] border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="grid size-9 place-items-center rounded-lg bg-slate-100 text-slate-700">
+          <span className="grid size-9 place-items-center rounded-[2px] bg-slate-100 text-slate-700">
             <Plane aria-hidden className="size-4" />
           </span>
           <div>

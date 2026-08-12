@@ -12,14 +12,14 @@ export function PageHeading({
   action?: ReactNode;
 }) {
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <header className="mb-7 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
       <div>
         {eyebrow ? (
-          <p className="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
+          <p className="mb-1 text-[11px] font-black uppercase tracking-[0.2em] text-[var(--brand-action)]">
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+        <h1 className="font-display text-3xl font-black tracking-tight text-[#17213d] sm:text-4xl">
           {title}
         </h1>
         {description ? (
