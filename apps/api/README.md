@@ -9,6 +9,22 @@ Hono REST API for Virtual Airline Live Dispatch & ACARS.
 | `GET /health` | Liveness                                         |
 | `/api/v1/*`   | Versioned API (public rewrite from Vercel)       |
 | `/v1/*`       | Same routes (if `/api` is stripped by a rewrite) |
+| `/api/docs/*` | Public API documentation                         |
+| `/docs/*`     | Same docs when addressed as a standalone service |
+
+## API documentation
+
+Run `pnpm dev:api`, then open one of the interactive references:
+
+- Swagger UI: <http://localhost:3001/docs/swagger>
+- ReDoc: <http://localhost:3001/docs/redoc>
+- OpenAPI JSON: <http://localhost:3001/docs/openapi.json>
+
+On the same-origin Vercel deployment, use `/api/docs/swagger`,
+`/api/docs/redoc`, and `/api/docs/openapi.json`. The specification uses
+`/api/v1` as its primary server and also exposes the service-scoped `/v1`
+alias. Swagger UI and ReDoc load version-pinned renderer assets from their
+public CDNs; the OpenAPI JSON endpoint has no external runtime dependency.
 
 ## Auth
 
