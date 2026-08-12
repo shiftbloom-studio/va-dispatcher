@@ -49,6 +49,7 @@ const storedFlight = {
   id: fixture.flightId,
   tenantId: fixture.tenantId,
   scheduleRequestId: null,
+  replacesFlightId: null,
   pilotMembershipId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
   flightNumber: "SK101",
   depIcao: "EKCH",
@@ -56,6 +57,7 @@ const storedFlight = {
   etd: new Date("2026-09-10T08:00:00.000Z"),
   eta: new Date("2026-09-10T09:20:00.000Z"),
   aircraftType: "A320",
+  version: 1,
   status: "offered" as const,
   cancelReason: null,
   declinedReason: null,
@@ -123,6 +125,40 @@ describe("API tenant isolation", () => {
     await expect(otherTenantResponse.json()).resolves.toEqual({
       items: [],
       nextCursor: null,
+    });
+  });
+
+  it("requires and enforces the flight mutation version contract", async () => {
+    const missingVersion = await app.request(
+      `/flights/${fixture.flightId}/accept`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Test-Clerk-Org": "org_vsas",
+        },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(missingVersion.status).toBe(400);
+
+    const staleVersion = await app.request(
+      `/flights/${fixture.flightId}/accept`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Test-Clerk-Org": "org_vsas",
+        },
+        body: JSON.stringify({ expectedVersion: 2 }),
+      },
+    );
+    expect(staleVersion.status).toBe(409);
+    await expect(staleVersion.json()).resolves.toMatchObject({
+      error: {
+        code: "CONFLICT",
+        details: { latest: { id: fixture.flightId, version: 1 } },
+      },
     });
   });
 });

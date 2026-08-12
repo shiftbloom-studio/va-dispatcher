@@ -481,6 +481,7 @@ const schemas = {
     required: [
       "id",
       "scheduleRequestId",
+      "replacesFlightId",
       "pilotMembershipId",
       "flightNumber",
       "depIcao",
@@ -488,6 +489,7 @@ const schemas = {
       "etd",
       "eta",
       "aircraftType",
+      "version",
       "status",
       "cancelReason",
       "declinedReason",
@@ -506,6 +508,7 @@ const schemas = {
     properties: {
       id: schemaRef("Uuid"),
       scheduleRequestId: schemaRef("NullableUuid"),
+      replacesFlightId: schemaRef("NullableUuid"),
       pilotMembershipId: schemaRef("NullableUuid"),
       flightNumber: { type: "string", minLength: 2, maxLength: 12 },
       depIcao: {
@@ -523,6 +526,12 @@ const schemas = {
       etd: schemaRef("DateTime"),
       eta: schemaRef("DateTime"),
       aircraftType: schemaRef("NullableString"),
+      version: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "Optimistic-concurrency version. Supply this as expectedVersion for every flight mutation.",
+      },
       status: schemaRef("FlightStatus"),
       cancelReason: schemaRef("NullableString"),
       declinedReason: schemaRef("NullableString"),
@@ -891,6 +900,30 @@ const schemas = {
       reason: { type: "string", maxLength: 500 },
     },
   },
+  ExpectedFlightVersionInput: {
+    type: "object",
+    required: ["expectedVersion"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+    },
+  },
+  VersionedFlightReasonInput: {
+    type: "object",
+    required: ["expectedVersion"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      reason: { type: "string", maxLength: 500 },
+    },
+  },
+  ReofferFlightInput: {
+    type: "object",
+    required: ["expectedVersion", "reason"],
+    properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      pilotMembershipId: schemaRef("NullableUuid"),
+      reason: { type: "string", minLength: 1, maxLength: 500 },
+    },
+  },
   CreateFlightInput: {
     type: "object",
     required: ["flightNumber", "depIcao", "arrIcao", "etd", "eta"],
@@ -946,7 +979,15 @@ const schemas = {
   },
   UpdateFlightInput: {
     type: "object",
+    required: ["expectedVersion"],
     properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
+      changeReason: {
+        type: "string",
+        maxLength: 500,
+        description:
+          "Required when changing flight number, route, schedule, equipment, or pilot assignment.",
+      },
       flightNumber: { type: "string", minLength: 2, maxLength: 12 },
       depIcao: { type: "string", minLength: 4, maxLength: 4 },
       arrIcao: { type: "string", minLength: 4, maxLength: 4 },
@@ -967,8 +1008,9 @@ const schemas = {
   },
   UpdateFlightStatusInput: {
     type: "object",
-    required: ["status"],
+    required: ["expectedVersion", "status"],
     properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
       status: {
         type: "string",
         enum: ["active", "completed", "cancelled"],
@@ -1968,7 +2010,7 @@ export const openApiDocument = {
         operationId: "updateFlight",
         summary: "Update a flight",
         description:
-          "Requires dispatcher. Aircraft type is immutable. The merged flight must retain ETA after ETD, an active-pilot assignment when operational, and request-owner plus detailed-availability invariants when request-linked. Pilot or time changes create a new assignment revision; expectedUpdatedAt prevents lost concurrent edits.",
+          "Requires the dispatcher role or higher and expectedVersion. The merged flight must retain ETA after ETD, an active-pilot assignment when operational, and request-owner plus detailed-availability invariants when request-linked. Flight number, route, schedule, equipment, and pilot assignment changes are material: accepted and scheduled flights return to offered for renewed pilot acceptance, pilot/time changes advance the assignment revision, and material active-flight edits are blocked. Dispatcher-notes-only edits remain accepted or scheduled and are audited. Terminal flights are immutable.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
         requestBody: jsonRequest(schemaRef("UpdateFlightInput")),
@@ -1986,6 +2028,7 @@ export const openApiDocument = {
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
+        requestBody: jsonRequest(schemaRef("ExpectedFlightVersionInput")),
         responses: {
           "200": jsonResponse("Offered flight.", schemaRef("FlightResponse")),
           ...mutationErrors,
@@ -1999,6 +2042,7 @@ export const openApiDocument = {
         summary: "Accept an assigned flight",
         description: "Only the assigned pilot can accept the flight.",
         parameters: [pathParameter("id", "Flight ID.")],
+        requestBody: jsonRequest(schemaRef("ExpectedFlightVersionInput")),
         responses: {
           "200": jsonResponse("Accepted flight.", schemaRef("FlightResponse")),
           ...mutationErrors,
@@ -2012,10 +2056,7 @@ export const openApiDocument = {
         summary: "Decline an assigned flight",
         description: "Only the assigned pilot can decline the flight.",
         parameters: [pathParameter("id", "Flight ID.")],
-        requestBody: optionalJsonRequest(
-          schemaRef("ReasonInput"),
-          "Optional decline reason.",
-        ),
+        requestBody: jsonRequest(schemaRef("VersionedFlightReasonInput")),
         responses: {
           "200": jsonResponse("Declined flight.", schemaRef("FlightResponse")),
           ...mutationErrors,
@@ -2030,10 +2071,7 @@ export const openApiDocument = {
         description:
           "Dispatchers and admins may cancel tenant flights. An assigned pilot may cancel only in an allowed lifecycle state.",
         parameters: [pathParameter("id", "Flight ID.")],
-        requestBody: optionalJsonRequest(
-          schemaRef("ReasonInput"),
-          "Optional cancellation reason.",
-        ),
+        requestBody: jsonRequest(schemaRef("VersionedFlightReasonInput")),
         responses: {
           "200": jsonResponse("Cancelled flight.", schemaRef("FlightResponse")),
           ...mutationErrors,
@@ -2053,6 +2091,25 @@ export const openApiDocument = {
         responses: {
           "200": jsonResponse(
             "Updated flight status.",
+            schemaRef("FlightResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/flights/{id}/reoffer": {
+      post: {
+        tags: ["Flights"],
+        operationId: "reofferDeclinedFlight",
+        summary: "Create a replacement offer for a declined flight",
+        description:
+          "Requires the dispatcher role or higher. The declined source remains immutable. A new offered flight links back through replacesFlightId. Request-linked replacements remain assigned to the requesting pilot; ad-hoc replacements may choose another active pilot.",
+        "x-required-role": "dispatcher",
+        parameters: [pathParameter("id", "Declined source flight ID.")],
+        requestBody: jsonRequest(schemaRef("ReofferFlightInput")),
+        responses: {
+          "201": jsonResponse(
+            "Created replacement offer.",
             schemaRef("FlightResponse"),
           ),
           ...mutationErrors,

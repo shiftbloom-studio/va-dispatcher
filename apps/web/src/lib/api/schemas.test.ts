@@ -57,6 +57,7 @@ describe("live API contract smoke fixtures", () => {
     const flight = {
       id: "f1",
       scheduleRequestId: "r1",
+      replacesFlightId: null,
       pilotMembershipId: "m1",
       flightNumber: "SK100",
       depIcao: "EKCH",
@@ -64,6 +65,7 @@ describe("live API contract smoke fixtures", () => {
       etd: "2026-09-01T08:00:00.000Z",
       eta: "2026-09-01T09:00:00.000Z",
       aircraftType: "A320",
+      version: 1,
       status: "offered",
       cancelReason: null,
       declinedReason: null,

@@ -21,6 +21,7 @@ function flight(overrides: Record<string, unknown> = {}) {
   return {
     id: "22222222-2222-4222-8222-222222222222",
     scheduleRequestId: "33333333-3333-4333-8333-333333333333",
+    replacesFlightId: null,
     pilotMembershipId: pilot.id,
     flightNumber: "SK101",
     depIcao: "EKCH",
@@ -28,6 +29,7 @@ function flight(overrides: Record<string, unknown> = {}) {
     etd: "2026-09-10T08:00:00.000Z",
     eta: "2026-09-10T09:20:00.000Z",
     aircraftType: "A320",
+    version: 1,
     status: "offered",
     cancelReason: null,
     declinedReason: null,

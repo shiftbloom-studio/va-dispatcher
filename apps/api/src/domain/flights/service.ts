@@ -264,10 +264,27 @@ export async function transitionFlight(
   actor: Actor,
   flightId: string,
   to: FlightStatus,
-  extra?: { reason?: string },
+  transitionDetails: {
+    expectedVersion: number;
+    reason?: string;
+  },
 ): Promise<Flight> {
-  if (to === "active") return startFlight(actor, flightId);
-  if (to === "completed") return finishFlight(actor, flightId);
+  if (to === "active") {
+    return startFlight(
+      actor,
+      flightId,
+      new Date(),
+      transitionDetails.expectedVersion,
+    );
+  }
+  if (to === "completed") {
+    return finishFlight(
+      actor,
+      flightId,
+      new Date(),
+      transitionDetails.expectedVersion,
+    );
+  }
   if (to === "briefed") {
     throw new AppError(
       "UNPROCESSABLE",
@@ -276,6 +293,7 @@ export async function transitionFlight(
   }
 
   const flight = await requireFlight(actor.tenantId, flightId);
+  assertExpectedFlightVersion(flight, transitionDetails.expectedVersion);
   assertFlightTransition(flight.status, to);
 
   if (to === "offered") {
@@ -311,64 +329,60 @@ export async function transitionFlight(
     requireDispatcher(actor);
   }
 
-  const patch: Parameters<typeof flightRepo.updateFlight>[2] = { status: to };
+  const patch: flightRepo.UpdateFlightPatch = { status: to };
   if (to === "accepted") {
     patch.assignmentConfirmedRevision = flight.assignmentRevision;
     patch.assignmentConfirmedAt = new Date();
   }
-  if (to === "cancelled") patch.cancelReason = extra?.reason ?? null;
-  if (to === "declined") patch.declinedReason = extra?.reason ?? null;
+  if (to === "cancelled") {
+    patch.cancelReason = transitionDetails.reason ?? null;
+  }
+  if (to === "declined") {
+    patch.declinedReason = transitionDetails.reason ?? null;
+  }
 
-  const updated = await flightRepo.updateFlight(
-    actor.tenantId,
+  const updatedFlight = await updateFlightWithVersion({
+    actor,
     flightId,
+    expectedVersion: transitionDetails.expectedVersion,
     patch,
-  );
-  if (!updated) throw new AppError("NOT_FOUND", "Flight not found");
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
     action: `flight.${to}`,
-    entityType: "flight",
-    entityId: flightId,
-    meta: {
+    auditMeta: {
       from: flight.status,
       to,
-      reason: extra?.reason,
+      reason: transitionDetails.reason,
     },
   });
-  return updated;
+  return updatedFlight;
 }
 
 export async function patchFlight(
   actor: Actor,
   flightId: string,
+  expectedVersion: number,
+  changeReason: string | undefined,
   patch: {
     flightNumber?: string;
     depIcao?: string;
     arrIcao?: string;
     etd?: Date;
     eta?: Date;
+    aircraftType?: string | null;
     pilotMembershipId?: string | null;
     dispatcherNotes?: string | null;
-    expectedUpdatedAt?: Date;
   },
 ): Promise<Flight> {
   requireDispatcher(actor);
   const flight = await requireFlight(actor.tenantId, flightId);
+  assertExpectedFlightVersion(flight, expectedVersion);
   if (
-    patch.expectedUpdatedAt &&
-    patch.expectedUpdatedAt.getTime() !== flight.updatedAt.getTime()
+    flight.status === "declined" ||
+    flight.status === "completed" ||
+    flight.status === "cancelled"
   ) {
     throw new AppError(
       "CONFLICT",
-      "This flight changed while you were planning; reload and review it",
-    );
-  }
-  if (flight.status === "completed" || flight.status === "cancelled") {
-    throw new AppError(
-      "CONFLICT",
-      "Cannot edit a completed or cancelled flight",
+      "Terminal flights are immutable; create a replacement offer for a declined flight",
     );
   }
   if (
@@ -381,7 +395,29 @@ export async function patchFlight(
     );
   }
 
-  const resultingFlight = { ...flight, ...patch };
+  const changedFields = changedPatchFields(flight, patch);
+  const materialChange = changedFields.some((field) =>
+    materialFlightFields.has(field),
+  );
+  if (materialChange && !changeReason?.trim()) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "A reason is required for material flight changes",
+    );
+  }
+  if (flight.status === "active" && materialChange) {
+    throw new AppError(
+      "CONFLICT",
+      "An active flight cannot be materially edited; cancel it and create a replacement",
+      { details: { latest: safeFlightRepresentation(flight) } },
+    );
+  }
+  const status =
+    materialChange &&
+    (flight.status === "accepted" || flight.status === "briefed")
+      ? "offered"
+      : flight.status;
+  const resultingFlight = { ...flight, ...patch, status };
   assertFlightTimes(resultingFlight.etd, resultingFlight.eta);
   let scheduleRequest: ScheduleRequest | null = null;
   if (resultingFlight.scheduleRequestId) {
@@ -408,61 +444,77 @@ export async function patchFlight(
     );
   }
 
-  const { expectedUpdatedAt, ...flightPatch } = patch;
+  const validatedPatch: flightRepo.UpdateFlightPatch = {
+    ...patch,
+  };
+  if (status !== flight.status) {
+    validatedPatch.status = status;
+  }
   if (resultingFlight.pilotMembershipId !== pilotMembershipId) {
-    flightPatch.pilotMembershipId = pilotMembershipId;
+    validatedPatch.pilotMembershipId = pilotMembershipId;
   }
   const changedPilot =
-    flightPatch.pilotMembershipId !== undefined &&
-    flightPatch.pilotMembershipId !== flight.pilotMembershipId;
+    validatedPatch.pilotMembershipId !== undefined &&
+    validatedPatch.pilotMembershipId !== flight.pilotMembershipId;
   const changedTime =
-    (flightPatch.etd !== undefined &&
-      flightPatch.etd.getTime() !== flight.etd.getTime()) ||
-    (flightPatch.eta !== undefined &&
-      flightPatch.eta.getTime() !== flight.eta.getTime());
+    (validatedPatch.etd !== undefined &&
+      validatedPatch.etd.getTime() !== flight.etd.getTime()) ||
+    (validatedPatch.eta !== undefined &&
+      validatedPatch.eta.getTime() !== flight.eta.getTime());
   const requiresReconfirmation =
     (changedPilot || changedTime) &&
     ["accepted", "briefed", "active"].includes(flight.status);
-  const persistedPatch: Parameters<typeof flightRepo.updateFlight>[2] = {
-    ...flightPatch,
-  };
   if (requiresReconfirmation) {
-    persistedPatch.assignmentRevision = flight.assignmentRevision + 1;
+    validatedPatch.assignmentRevision = flight.assignmentRevision + 1;
   }
 
-  const updated = await flightRepo.updateFlight(
-    actor.tenantId,
-    flightId,
-    persistedPatch,
-    { expectedUpdatedAt: expectedUpdatedAt ?? flight.updatedAt },
-  );
-  if (!updated) {
-    throw new AppError(
-      "CONFLICT",
-      "This flight changed while you were planning; reload and review it",
-    );
-  }
-
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
-    action: "flight.patch",
-    entityType: "flight",
-    entityId: flightId,
-    meta: {
-      fields: Object.keys(flightPatch),
-      requiresPilotConfirmation: requiresReconfirmation,
-      assignmentRevision: updated.assignmentRevision,
+  const auditMeta = {
+    fields: Object.keys(validatedPatch),
+    changedFields,
+    oldAssignment: flight.pilotMembershipId,
+    newAssignment: pilotMembershipId,
+    oldSchedule: {
+      flightNumber: flight.flightNumber,
+      depIcao: flight.depIcao,
+      arrIcao: flight.arrIcao,
+      etd: flight.etd.toISOString(),
+      eta: flight.eta.toISOString(),
+      aircraftType: flight.aircraftType,
     },
+    newSchedule: {
+      flightNumber: resultingFlight.flightNumber,
+      depIcao: resultingFlight.depIcao,
+      arrIcao: resultingFlight.arrIcao,
+      etd: resultingFlight.etd.toISOString(),
+      eta: resultingFlight.eta.toISOString(),
+      aircraftType: resultingFlight.aircraftType,
+    },
+    oldStatus: flight.status,
+    newStatus: status,
+    acceptanceInvalidated: status !== flight.status,
+    requiresPilotConfirmation: requiresReconfirmation,
+    assignmentRevision:
+      validatedPatch.assignmentRevision ?? flight.assignmentRevision,
+    reason: changeReason?.trim(),
+  };
+  const updatedFlight = await updateFlightWithVersion({
+    actor,
+    flightId,
+    expectedVersion,
+    patch: validatedPatch,
+    action: "flight.patch",
+    auditMeta,
   });
-  return updated;
+  return updatedFlight;
 }
 
 export async function confirmAssignment(
   actor: Actor,
   flightId: string,
+  expectedVersion: number,
 ): Promise<Flight> {
   const flight = await requireFlight(actor.tenantId, flightId);
+  assertExpectedFlightVersion(flight, expectedVersion);
   if (flight.pilotMembershipId !== actor.membershipId) {
     throw new AppError("FORBIDDEN", "Only the assigned pilot can confirm");
   }
@@ -476,10 +528,12 @@ export async function confirmAssignment(
 export async function publishDispatchRelease(
   actor: Actor,
   flightId: string,
+  expectedVersion: number,
   draft: DispatchReleaseDraft,
 ): Promise<{ flight: Flight; release: DispatchRelease }> {
   requireDispatcher(actor);
   const flight = await requireFlight(actor.tenantId, flightId);
+  assertExpectedFlightVersion(flight, expectedVersion);
   if (flight.status !== "accepted" && flight.status !== "briefed") {
     throw new AppError(
       "CONFLICT",
@@ -496,25 +550,13 @@ export async function publishDispatchRelease(
   // transient status-update failure. Retry by scheduling that exact revision
   // instead of creating a duplicate release.
   if (flight.status === "accepted" && latest) {
-    const recovered = await flightRepo.updateFlight(
-      actor.tenantId,
+    const recovered = await updateFlightWithVersion({
+      actor,
       flightId,
-      { status: "briefed" },
-      { expectedUpdatedAt: flight.updatedAt },
-    );
-    if (!recovered) {
-      throw new AppError(
-        "CONFLICT",
-        "This flight changed while the release was being scheduled; reload it",
-      );
-    }
-    await writeAudit({
-      tenantId: actor.tenantId,
-      actorMembershipId: actor.membershipId,
+      expectedVersion,
+      patch: { status: "briefed" },
       action: "flight.release_schedule_recover",
-      entityType: "flight",
-      entityId: flightId,
-      meta: { revision: latest.revision },
+      auditMeta: { revision: latest.revision },
     });
     return { flight: recovered, release: latest };
   }
@@ -541,33 +583,31 @@ export async function publishDispatchRelease(
 
   const updated =
     flight.status === "accepted"
-      ? await flightRepo.updateFlight(
-          actor.tenantId,
+      ? await updateFlightWithVersion({
+          actor,
           flightId,
-          {
-            status: "briefed",
+          expectedVersion,
+          patch: { status: "briefed" },
+          action: "flight.release_publish",
+          auditMeta: {
+            revision: release.revision,
+            weatherUnavailable: weatherSnapshot.unavailable,
           },
-          { expectedUpdatedAt: flight.updatedAt },
-        )
+        })
       : flight;
-  if (!updated) {
-    throw new AppError(
-      "CONFLICT",
-      "This flight changed while the release was being scheduled; reload it",
-    );
+  if (flight.status === "briefed") {
+    await writeAudit({
+      tenantId: actor.tenantId,
+      actorMembershipId: actor.membershipId,
+      action: "flight.release_publish",
+      entityType: "flight",
+      entityId: flightId,
+      meta: {
+        revision: release.revision,
+        weatherUnavailable: weatherSnapshot.unavailable,
+      },
+    });
   }
-
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
-    action: "flight.release_publish",
-    entityType: "flight",
-    entityId: flightId,
-    meta: {
-      revision: release.revision,
-      weatherUnavailable: weatherSnapshot.unavailable,
-    },
-  });
   return { flight: updated, release };
 }
 
@@ -575,8 +615,12 @@ export async function startFlight(
   actor: Actor,
   flightId: string,
   occurredAt = new Date(),
+  expectedVersion?: number,
 ): Promise<Flight> {
   const flight = await requireFlight(actor.tenantId, flightId);
+  if (expectedVersion !== undefined) {
+    assertExpectedFlightVersion(flight, expectedVersion);
+  }
   const isDispatcher = roleAtLeast(actor.role, "dispatcher");
   if (!isDispatcher && flight.pilotMembershipId !== actor.membershipId) {
     throw new AppError(
@@ -594,7 +638,7 @@ export async function startFlight(
   await requireRelease(actor.tenantId, flightId);
   assertFlightTransition(flight.status, "active");
 
-  const patch: Parameters<typeof flightRepo.updateFlight>[2] = {
+  const patch: flightRepo.UpdateFlightPatch = {
     status: "active",
     outAt: flight.outAt ?? occurredAt,
   };
@@ -602,12 +646,19 @@ export async function startFlight(
     patch.assignmentConfirmedRevision = flight.assignmentRevision;
     patch.assignmentConfirmedAt = occurredAt;
   }
-  const updated = await flightRepo.updateFlight(
-    actor.tenantId,
+  const updated = await updateFlightWithVersion({
+    actor,
     flightId,
+    expectedVersion: expectedVersion ?? flight.version,
     patch,
-  );
-  if (!updated) throw new AppError("NOT_FOUND", "Flight not found");
+    action: "flight.progress",
+    auditMeta: {
+      kind: "manual_start",
+      source: isDispatcher ? "dispatcher" : "pilot_web",
+      fromStatus: flight.status,
+      toStatus: "active",
+    },
+  });
 
   await createFlightEvent({
     tenantId: actor.tenantId,
@@ -617,10 +668,6 @@ export async function startFlight(
     occurredAt,
     actorMembershipId: actor.membershipId,
   });
-  await writeProgressAudit(actor.tenantId, actor.membershipId, updated, {
-    kind: "manual_start",
-    source: isDispatcher ? "dispatcher" : "pilot_web",
-  });
   return updated;
 }
 
@@ -628,8 +675,12 @@ export async function finishFlight(
   actor: Actor,
   flightId: string,
   occurredAt = new Date(),
+  expectedVersion?: number,
 ): Promise<Flight> {
   const flight = await requireFlight(actor.tenantId, flightId);
+  if (expectedVersion !== undefined) {
+    assertExpectedFlightVersion(flight, expectedVersion);
+  }
   const isDispatcher = roleAtLeast(actor.role, "dispatcher");
   if (!isDispatcher && flight.pilotMembershipId !== actor.membershipId) {
     throw new AppError(
@@ -642,11 +693,19 @@ export async function finishFlight(
     throw new AppError("CONFLICT", "Only an active flight can be finished");
   }
   assertFlightTransition(flight.status, "completed");
-  const updated = await flightRepo.updateFlight(actor.tenantId, flightId, {
-    status: "completed",
-    inAt: flight.inAt ?? occurredAt,
+  const updated = await updateFlightWithVersion({
+    actor,
+    flightId,
+    expectedVersion: expectedVersion ?? flight.version,
+    patch: { status: "completed", inAt: flight.inAt ?? occurredAt },
+    action: "flight.progress",
+    auditMeta: {
+      kind: "manual_finish",
+      source: isDispatcher ? "dispatcher" : "pilot_web",
+      fromStatus: flight.status,
+      toStatus: "completed",
+    },
   });
-  if (!updated) throw new AppError("NOT_FOUND", "Flight not found");
 
   await createFlightEvent({
     tenantId: actor.tenantId,
@@ -655,10 +714,6 @@ export async function finishFlight(
     source: isDispatcher ? "dispatcher" : "pilot_web",
     occurredAt,
     actorMembershipId: actor.membershipId,
-  });
-  await writeProgressAudit(actor.tenantId, actor.membershipId, updated, {
-    kind: "manual_finish",
-    source: isDispatcher ? "dispatcher" : "pilot_web",
   });
   return updated;
 }
@@ -671,7 +726,7 @@ export async function applyHoppieProgress(input: {
   acarsMessageId: string;
 }): Promise<Flight | null> {
   const { flight, kind, occurredAt } = input;
-  const patch: Parameters<typeof flightRepo.updateFlight>[2] = {};
+  const patch: flightRepo.UpdateFlightPatch = {};
 
   if (kind === "flt_init" || kind === "out" || kind === "off") {
     if (flight.status !== "briefed" && flight.status !== "active") return null;
@@ -698,11 +753,20 @@ export async function applyHoppieProgress(input: {
     if (!flight.inAt) patch.inAt = occurredAt;
   }
 
-  const updated = await flightRepo.updateFlight(
-    input.tenantId,
-    flight.id,
+  const updated = await flightRepo.updateFlight({
+    tenantId: input.tenantId,
+    id: flight.id,
+    expectedVersion: flight.version,
+    actorMembershipId: null,
+    action: "flight.progress",
+    auditMeta: {
+      kind,
+      source: "hoppie",
+      acarsMessageId: input.acarsMessageId,
+      fromStatus: flight.status,
+    },
     patch,
-  );
+  });
   if (!updated) return null;
   await createFlightEvent({
     tenantId: input.tenantId,
@@ -712,11 +776,6 @@ export async function applyHoppieProgress(input: {
     occurredAt,
     acarsMessageId: input.acarsMessageId,
     meta: { fromStatus: flight.status, toStatus: updated.status },
-  });
-  await writeProgressAudit(input.tenantId, null, updated, {
-    kind,
-    source: "hoppie",
-    acarsMessageId: input.acarsMessageId,
   });
   return updated;
 }
@@ -804,11 +863,17 @@ async function recordAssignmentConfirmation(
   source: "pilot_web",
   occurredAt: Date,
 ): Promise<Flight> {
-  const updated = await flightRepo.updateFlight(actor.tenantId, flight.id, {
-    assignmentConfirmedRevision: flight.assignmentRevision,
-    assignmentConfirmedAt: occurredAt,
+  const updated = await updateFlightWithVersion({
+    actor,
+    flightId: flight.id,
+    expectedVersion: flight.version,
+    patch: {
+      assignmentConfirmedRevision: flight.assignmentRevision,
+      assignmentConfirmedAt: occurredAt,
+    },
+    action: "flight.assignment_confirm",
+    auditMeta: { revision: flight.assignmentRevision, source },
   });
-  if (!updated) throw new AppError("NOT_FOUND", "Flight not found");
   await createFlightEvent({
     tenantId: actor.tenantId,
     flightId: flight.id,
@@ -817,14 +882,6 @@ async function recordAssignmentConfirmation(
     occurredAt,
     actorMembershipId: actor.membershipId,
     meta: { revision: flight.assignmentRevision },
-  });
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
-    action: "flight.assignment_confirm",
-    entityType: "flight",
-    entityId: flight.id,
-    meta: { revision: flight.assignmentRevision, source },
   });
   return updated;
 }
@@ -892,20 +949,90 @@ function assertFlightVisibleToActor(
   }
 }
 
-async function writeProgressAudit(
-  tenantId: string,
-  actorMembershipId: string | null,
-  flight: Flight,
-  meta: Record<string, unknown>,
-): Promise<void> {
-  await writeAudit({
-    tenantId,
-    actorMembershipId,
-    action: "flight.progress",
-    entityType: "flight",
-    entityId: flight.id,
-    meta: { ...meta, status: flight.status },
+// Dispatcher notes are operational annotations and intentionally do not revoke
+// an accepted/briefed offer. Assignment, route, time, and equipment changes do.
+const materialFlightFields = new Set([
+  "pilotMembershipId",
+  "flightNumber",
+  "depIcao",
+  "arrIcao",
+  "etd",
+  "eta",
+  "aircraftType",
+]);
+
+export async function reofferDeclinedFlight(
+  actor: {
+    tenantId: string;
+    membershipId: string;
+    role: MemberRole;
+  },
+  sourceFlightId: string,
+  input: {
+    expectedVersion: number;
+    pilotMembershipId?: string | null;
+    reason: string;
+  },
+): Promise<Flight> {
+  if (!roleAtLeast(actor.role, "dispatcher")) {
+    throw new AppError("FORBIDDEN", "Dispatchers only");
+  }
+  const source = await flightRepo.findFlight(actor.tenantId, sourceFlightId);
+  if (!source) {
+    throw new AppError("NOT_FOUND", "Flight not found");
+  }
+  assertExpectedFlightVersion(source, input.expectedVersion);
+  if (source.status !== "declined") {
+    throw new AppError(
+      "CONFLICT",
+      "Only a declined flight can be replaced through the re-offer workflow",
+      { details: { latest: safeFlightRepresentation(source) } },
+    );
+  }
+
+  let scheduleRequest: ScheduleRequest | null = null;
+  if (source.scheduleRequestId) {
+    scheduleRequest = await findScheduleRequest(
+      actor.tenantId,
+      source.scheduleRequestId,
+    );
+    if (!scheduleRequest) {
+      throw new AppError("NOT_FOUND", "Schedule request not found");
+    }
+  }
+  const pilotMembershipId = resolveRequestAssignment(
+    input.pilotMembershipId ?? source.pilotMembershipId,
+    scheduleRequest,
+  );
+  await assertActivePilot(actor.tenantId, pilotMembershipId, {
+    required: true,
   });
+  assertFlightTimes(source.etd, source.eta);
+  if (scheduleRequest) {
+    assertFlightInsideAvailability(source.etd, source.eta, scheduleRequest);
+  }
+
+  const replacement = await flightRepo.createReplacementFlight({
+    tenantId: actor.tenantId,
+    sourceFlightId,
+    expectedVersion: input.expectedVersion,
+    actorMembershipId: actor.membershipId,
+    scheduleRequestId: source.scheduleRequestId,
+    oldPilotMembershipId: source.pilotMembershipId,
+    pilotMembershipId: pilotMembershipId!,
+    flightNumber: source.flightNumber,
+    depIcao: source.depIcao,
+    arrIcao: source.arrIcao,
+    etd: source.etd,
+    eta: source.eta,
+    aircraftType: source.aircraftType,
+    dispatcherNotes: source.dispatcherNotes,
+    reason: input.reason,
+  });
+  if (!replacement) {
+    return throwLatestFlightConflict(actor.tenantId, sourceFlightId);
+  }
+  return replacement;
 }
 
 function assertFlightTimes(etd: Date, eta: Date): void {
@@ -965,4 +1092,83 @@ async function assertActivePilot(
       "The assigned membership must be an active pilot",
     );
   }
+}
+
+function assertExpectedFlightVersion(
+  flight: Flight,
+  expectedVersion: number,
+): void {
+  if (flight.version !== expectedVersion) {
+    throw new AppError("CONFLICT", "Flight changed since it was loaded", {
+      details: { latest: safeFlightRepresentation(flight) },
+    });
+  }
+}
+
+async function updateFlightWithVersion(input: {
+  actor: { tenantId: string; membershipId: string };
+  flightId: string;
+  expectedVersion: number;
+  patch: flightRepo.UpdateFlightPatch;
+  action: string;
+  auditMeta: Record<string, unknown>;
+}): Promise<Flight> {
+  const updated = await flightRepo.updateFlight({
+    tenantId: input.actor.tenantId,
+    id: input.flightId,
+    expectedVersion: input.expectedVersion,
+    actorMembershipId: input.actor.membershipId,
+    action: input.action,
+    auditMeta: input.auditMeta,
+    patch: input.patch,
+  });
+  if (updated) return updated;
+  return throwLatestFlightConflict(input.actor.tenantId, input.flightId);
+}
+
+async function throwLatestFlightConflict(
+  tenantId: string,
+  flightId: string,
+): Promise<never> {
+  const latest = await flightRepo.findFlight(tenantId, flightId);
+  if (!latest) {
+    throw new AppError("NOT_FOUND", "Flight not found");
+  }
+  throw new AppError("CONFLICT", "Flight changed since it was loaded", {
+    details: { latest: safeFlightRepresentation(latest) },
+  });
+}
+
+function changedPatchFields(
+  flight: Flight,
+  patch: flightRepo.UpdateFlightPatch,
+): string[] {
+  return Object.entries(patch)
+    .filter(([field, nextValue]) => {
+      const currentValue = flight[field as keyof Flight];
+      if (currentValue instanceof Date && nextValue instanceof Date) {
+        return currentValue.getTime() !== nextValue.getTime();
+      }
+      return currentValue !== nextValue;
+    })
+    .map(([field]) => field);
+}
+
+function safeFlightRepresentation(flight: Flight) {
+  return {
+    id: flight.id,
+    scheduleRequestId: flight.scheduleRequestId,
+    replacesFlightId: flight.replacesFlightId,
+    pilotMembershipId: flight.pilotMembershipId,
+    flightNumber: flight.flightNumber,
+    depIcao: flight.depIcao,
+    arrIcao: flight.arrIcao,
+    etd: flight.etd.toISOString(),
+    eta: flight.eta.toISOString(),
+    aircraftType: flight.aircraftType,
+    status: flight.status,
+    dispatcherNotes: flight.dispatcherNotes,
+    version: flight.version,
+    updatedAt: flight.updatedAt.toISOString(),
+  };
 }

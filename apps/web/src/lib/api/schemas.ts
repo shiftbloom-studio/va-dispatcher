@@ -141,6 +141,7 @@ export const scheduleRequestDetailResponseSchema = z.object({
 export const flightSchema = z.object({
   id: z.string(),
   scheduleRequestId: z.string().nullish(),
+  replacesFlightId: z.string().nullish(),
   pilotMembershipId: z.string().nullable(),
   flightNumber: z.string(),
   depIcao: z.string(),
@@ -148,6 +149,7 @@ export const flightSchema = z.object({
   etd: z.string(),
   eta: z.string(),
   aircraftType: z.string().nullish(),
+  version: z.number().int().min(1),
   status: flightStatusSchema,
   cancelReason: z.string().nullish(),
   declinedReason: z.string().nullish(),
