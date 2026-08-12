@@ -160,4 +160,11 @@ describe("dispatch board route", () => {
     expect(response.status).toBe(403);
     expect(mocks.getDispatchBoard).not.toHaveBeenCalled();
   });
+
+  it("keeps the dispatcher inbox out of shared caches", async () => {
+    const response = await app.request("/dispatch/inbox");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
 });

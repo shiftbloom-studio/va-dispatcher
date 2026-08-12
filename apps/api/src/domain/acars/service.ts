@@ -13,6 +13,7 @@ import {
   listAcarsMessages,
   enqueueMockAcars,
   linkAcarsMessageToFlight,
+  updateAcarsDelivery,
 } from "../../db/repositories/acars.js";
 import { writeAudit } from "../../db/repositories/audit.js";
 import {
@@ -64,9 +65,28 @@ export async function sendTelex(input: {
   }
   const fromStation = tenant.hoppieStation ?? tenant.slug.toUpperCase();
   let provider: AcarsProvider;
-  let sendResult: SendResult;
   try {
     provider = createAcarsProvider(tenant);
+  } catch (error) {
+    throw publicProviderError(error);
+  }
+
+  const pending = await insertAcarsMessage({
+    tenantId: input.tenantId,
+    direction: "outbound",
+    msgType: "telex",
+    fromStation,
+    toStation: input.to.toUpperCase(),
+    body: input.body,
+    provider: provider.name,
+    deliveryStatus: "pending",
+    flightId: input.flightId ?? null,
+    createdByMembershipId: input.membershipId,
+  });
+
+  let sendResult: SendResult | null = null;
+  let deliveryStatus: "accepted" | "rejected" | "ambiguous";
+  try {
     sendResult = await provider.sendTelex({
       from: fromStation,
       to: input.to.toUpperCase(),
@@ -78,24 +98,25 @@ export async function sendTelex(input: {
         "The ACARS provider rejected the message.",
       );
     }
+    deliveryStatus = "accepted";
   } catch (error) {
-    throw publicProviderError(error);
+    deliveryStatus = isAmbiguousDeliveryError(error) ? "ambiguous" : "rejected";
   }
 
-  const message = await insertAcarsMessage({
+  const message = await updateAcarsDelivery({
     tenantId: input.tenantId,
-    direction: "outbound",
-    msgType: "telex",
-    fromStation,
-    toStation: input.to.toUpperCase(),
-    body: input.body,
-    hoppieRaw: sendResult.raw,
-    provider: provider.name,
-    providerMessageId: sendResult.providerMessageId ?? null,
-    flightId: input.flightId ?? null,
-    createdByMembershipId: input.membershipId,
-    sentAt: new Date(),
+    id: pending.id,
+    status: deliveryStatus,
+    providerMessageId: sendResult?.providerMessageId ?? null,
+    hoppieRaw: deliveryStatus === "accepted" ? sendResult?.raw : null,
+    sentAt: deliveryStatus === "accepted" ? new Date() : null,
   });
+  if (!message) {
+    throw new AppError(
+      "INTERNAL",
+      "The ACARS outcome could not be recorded; check the inbox before resending",
+    );
+  }
 
   await writeAudit({
     tenantId: input.tenantId,
@@ -103,10 +124,15 @@ export async function sendTelex(input: {
     action: "acars.send_telex",
     entityType: "acars_message",
     entityId: message.id,
-    meta: { to: input.to, provider: provider.name },
+    meta: { to: input.to, provider: provider.name, deliveryStatus },
   });
 
   return message;
+}
+
+function isAmbiguousDeliveryError(error: unknown): boolean {
+  if (!(error instanceof AcarsProviderError)) return true;
+  return ["timeout", "unavailable", "invalid_response"].includes(error.code);
 }
 
 export async function listMessages(input: {

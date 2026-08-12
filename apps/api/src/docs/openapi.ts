@@ -423,6 +423,13 @@ const schemas = {
     type: "string",
     enum: ["mock", "hoppie"],
   },
+  AcarsDeliveryStatus: {
+    type: "string",
+    enum: ["pending", "accepted", "rejected", "ambiguous"],
+    nullable: true,
+    description:
+      "Outbound provider outcome. Ambiguous means the request may have reached Hoppie and must not be retried blindly; inbound messages use null.",
+  },
   SimbriefDispatchStatus: {
     type: "string",
     enum: ["prepared", "pending", "ready"],
@@ -950,6 +957,7 @@ const schemas = {
       "body",
       "flightId",
       "provider",
+      "deliveryStatus",
       "createdAt",
     ],
     properties: {
@@ -965,6 +973,7 @@ const schemas = {
       },
       flightId: schemaRef("NullableUuid"),
       provider: schemaRef("AcarsProvider"),
+      deliveryStatus: schemaRef("AcarsDeliveryStatus"),
       createdAt: schemaRef("DateTime"),
       receivedAt: schemaRef("NullableDateTime"),
       sentAt: schemaRef("NullableDateTime"),
@@ -979,6 +988,7 @@ const schemas = {
       "toStation",
       "body",
       "provider",
+      "deliveryStatus",
       "sentAt",
     ],
     properties: {
@@ -988,6 +998,7 @@ const schemas = {
       toStation: { type: "string" },
       body: { type: "string" },
       provider: schemaRef("AcarsProvider"),
+      deliveryStatus: schemaRef("AcarsDeliveryStatus"),
       sentAt: schemaRef("NullableDateTime"),
     },
   },

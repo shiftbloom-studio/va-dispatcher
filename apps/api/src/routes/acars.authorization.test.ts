@@ -86,6 +86,7 @@ describe("ACARS route authorization", () => {
     const response = await app.request("/acars/messages");
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     await expect(response.json()).resolves.toEqual({
       items: [],
       nextCursor: null,
