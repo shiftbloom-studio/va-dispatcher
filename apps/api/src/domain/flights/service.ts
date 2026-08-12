@@ -1030,6 +1030,22 @@ export async function reofferDeclinedFlight(
     reason: input.reason,
   });
   if (!replacement) {
+    const existingReplacement = await flightRepo.findReplacementFlight(
+      actor.tenantId,
+      sourceFlightId,
+    );
+    if (existingReplacement) {
+      throw new AppError(
+        "CONFLICT",
+        "A replacement offer already exists for this declined flight",
+        {
+          details: {
+            latest: safeFlightRepresentation(source),
+            replacement: safeFlightRepresentation(existingReplacement),
+          },
+        },
+      );
+    }
     return throwLatestFlightConflict(actor.tenantId, sourceFlightId);
   }
   return replacement;
