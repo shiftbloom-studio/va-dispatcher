@@ -52,7 +52,8 @@ cp apps/api/.env.local apps/api/.env
 #         ACARS_PROVIDER=hoppie (production; tenants configure credentials in Settings)
 #         CRON_SECRET=...
 
-pnpm db:push
+export MIGRATION_CONFIRM_DATABASE='va_dispatch'
+pnpm db:migrate
 curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
   -H "Authorization: Bearer $CRON_SECRET" \
   -H "Content-Type: application/json" \

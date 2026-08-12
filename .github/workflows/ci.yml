@@ -14,6 +14,160 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  migrations:
+    name: Database migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: va_dispatch_fresh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d va_dispatch_fresh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check migration snapshots and schema drift
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/va_dispatch_fresh
+        run: pnpm db:check
+
+      - name: Migrate a fresh database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/va_dispatch_fresh
+          MIGRATION_CONFIRM_DATABASE: va_dispatch_fresh
+        run: pnpm db:migrate
+
+      - name: Adopt an exact ledger-less PR29 schema
+        run: |
+          createdb va_dispatch_adopt_pr29
+          psql --dbname va_dispatch_adopt_pr29 --set ON_ERROR_STOP=1 --file apps/api/drizzle/adoption/pr29_schema.sql
+          psql --dbname va_dispatch_adopt_pr29 --tuples-only --no-align --file apps/api/drizzle/adoption/schema_signature.sql > /tmp/pr29-before-adoption.txt
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_adopt_pr29 \
+            MIGRATION_CONFIRM_DATABASE=va_dispatch_adopt_pr29 \
+            ADOPT_PR29_BASELINE=I_HAVE_A_VERIFIED_BACKUP \
+            pnpm db:adopt:pr29
+          psql --dbname va_dispatch_adopt_pr29 --tuples-only --no-align --file apps/api/drizzle/adoption/schema_signature.sql > /tmp/pr29-after-adoption.txt
+          diff --unified /tmp/pr29-before-adoption.txt /tmp/pr29-after-adoption.txt
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_adopt_pr29 \
+            MIGRATION_CONFIRM_DATABASE=va_dispatch_adopt_pr29 \
+            pnpm db:migrate
+
+      - name: Upgrade post-PR14 and pre-PR14 released schemas
+        run: |
+          createdb va_dispatch_upgrade_post
+          psql --dbname va_dispatch_upgrade_post --set ON_ERROR_STOP=1 --file apps/api/drizzle/adoption/post_pr14_schema.sql
+          psql --dbname va_dispatch_upgrade_post --set ON_ERROR_STOP=1 --command "INSERT INTO tenants (slug, name, clerk_org_id) VALUES ('upgrade-post', 'Upgrade Post', 'org_upgrade_post')"
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_upgrade_post \
+            MIGRATION_CONFIRM_DATABASE=va_dispatch_upgrade_post \
+            ADOPT_PR29_BASELINE=I_HAVE_A_VERIFIED_BACKUP \
+            pnpm db:adopt:pr29
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_upgrade_post \
+            MIGRATION_CONFIRM_DATABASE=va_dispatch_upgrade_post \
+            pnpm db:migrate
+
+          createdb va_dispatch_upgrade_pre
+          psql --dbname va_dispatch_upgrade_pre --set ON_ERROR_STOP=1 --file apps/api/drizzle/adoption/pre_pr14_schema.sql
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_upgrade_pre \
+            MIGRATION_CONFIRM_DATABASE=va_dispatch_upgrade_pre \
+            ADOPT_PR29_BASELINE=I_HAVE_A_VERIFIED_BACKUP \
+            pnpm db:adopt:pr29
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_upgrade_pre \
+            MIGRATION_CONFIRM_DATABASE=va_dispatch_upgrade_pre \
+            pnpm db:migrate
+
+      - name: Verify all adoption paths match the fresh catalog and ledger
+        run: |
+          for database in va_dispatch_fresh va_dispatch_adopt_pr29 va_dispatch_upgrade_post va_dispatch_upgrade_pre; do
+            psql --dbname "$database" --set ON_ERROR_STOP=1 --file apps/api/drizzle/verify_current_schema.sql
+            psql --dbname "$database" --tuples-only --no-align --file apps/api/drizzle/adoption/schema_signature.sql > "/tmp/$database-schema.txt"
+            diff --unified /tmp/va_dispatch_fresh-schema.txt "/tmp/$database-schema.txt"
+          done
+
+      - name: Reject drift in every released ledger-less source shape
+        run: |
+          createdb va_dispatch_drift_pre
+          psql --dbname va_dispatch_drift_pre --set ON_ERROR_STOP=1 --file apps/api/drizzle/adoption/pre_pr14_schema.sql
+          psql --dbname va_dispatch_drift_pre --set ON_ERROR_STOP=1 --command 'DROP INDEX memberships_tenant_idx'
+          if DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_drift_pre MIGRATION_CONFIRM_DATABASE=va_dispatch_drift_pre ADOPT_PR29_BASELINE=I_HAVE_A_VERIFIED_BACKUP pnpm db:adopt:pr29; then exit 1; fi
+          test "$(psql --dbname va_dispatch_drift_pre --tuples-only --no-align --command "SELECT to_regclass('public.simbrief_dispatches') IS NULL")" = "t"
+          test "$(psql --dbname va_dispatch_drift_pre --tuples-only --no-align --command "SELECT to_regclass('drizzle.__drizzle_migrations') IS NULL")" = "t"
+
+          createdb va_dispatch_drift_post
+          psql --dbname va_dispatch_drift_post --set ON_ERROR_STOP=1 --file apps/api/drizzle/adoption/post_pr14_schema.sql
+          psql --dbname va_dispatch_drift_post --set ON_ERROR_STOP=1 --command 'DROP INDEX memberships_tenant_idx'
+          if DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_drift_post MIGRATION_CONFIRM_DATABASE=va_dispatch_drift_post ADOPT_PR29_BASELINE=I_HAVE_A_VERIFIED_BACKUP pnpm db:adopt:pr29; then exit 1; fi
+          test "$(psql --dbname va_dispatch_drift_post --tuples-only --no-align --command "SELECT to_regclass('public.dispatch_releases') IS NULL")" = "t"
+          test "$(psql --dbname va_dispatch_drift_post --tuples-only --no-align --command "SELECT to_regclass('drizzle.__drizzle_migrations') IS NULL")" = "t"
+
+          createdb va_dispatch_drift_pr29
+          psql --dbname va_dispatch_drift_pr29 --set ON_ERROR_STOP=1 --file apps/api/drizzle/adoption/pr29_schema.sql
+          psql --dbname va_dispatch_drift_pr29 --set ON_ERROR_STOP=1 --command 'DROP INDEX memberships_tenant_idx'
+          psql --dbname va_dispatch_drift_pr29 --tuples-only --no-align --file apps/api/drizzle/adoption/schema_signature.sql > /tmp/drift-pr29-before.txt
+          if DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_drift_pr29 MIGRATION_CONFIRM_DATABASE=va_dispatch_drift_pr29 ADOPT_PR29_BASELINE=I_HAVE_A_VERIFIED_BACKUP pnpm db:adopt:pr29; then exit 1; fi
+          psql --dbname va_dispatch_drift_pr29 --tuples-only --no-align --file apps/api/drizzle/adoption/schema_signature.sql > /tmp/drift-pr29-after.txt
+          diff --unified /tmp/drift-pr29-before.txt /tmp/drift-pr29-after.txt
+          test "$(psql --dbname va_dispatch_drift_pr29 --tuples-only --no-align --command "SELECT to_regclass('drizzle.__drizzle_migrations') IS NULL")" = "t"
+
+      - name: Prove failed adoption rolls back DDL and ledger
+        run: |
+          createdb va_dispatch_adoption_rollback
+          psql --dbname va_dispatch_adoption_rollback --set ON_ERROR_STOP=1 --file apps/api/drizzle/adoption/post_pr14_schema.sql
+          if DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_adoption_rollback \
+            MIGRATION_CONFIRM_DATABASE=va_dispatch_adoption_rollback \
+            ADOPT_PR29_BASELINE=I_HAVE_A_VERIFIED_BACKUP \
+            MIGRATION_TEST_MODE=true \
+            ADOPTION_TEST_FAIL_AFTER_UPGRADE=true \
+            pnpm db:adopt:pr29; then
+            echo "Intentional adoption failure unexpectedly succeeded"
+            exit 1
+          fi
+          test "$(psql --dbname va_dispatch_adoption_rollback --tuples-only --no-align --command "SELECT to_regclass('public.dispatch_releases') IS NULL")" = "t"
+          test "$(psql --dbname va_dispatch_adoption_rollback --tuples-only --no-align --command "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='tenants' AND column_name='brand_seed_color')")" = "f"
+          test "$(psql --dbname va_dispatch_adoption_rollback --tuples-only --no-align --command "SELECT to_regclass('drizzle.__drizzle_migrations') IS NULL")" = "t"
+
+      - name: Prove failed migrations roll back
+        run: |
+          createdb va_dispatch_rollback
+          if DATABASE_URL=postgresql://postgres:postgres@localhost:5432/va_dispatch_rollback \
+            MIGRATION_CONFIRM_DATABASE=va_dispatch_rollback \
+            MIGRATION_TEST_MODE=true \
+            MIGRATIONS_FOLDER=drizzle/test-fixtures/transaction-rollback \
+            pnpm db:migrate; then
+            echo "Intentional migration failure unexpectedly succeeded"
+            exit 1
+          fi
+          test "$(psql --dbname va_dispatch_rollback --tuples-only --no-align --command "SELECT to_regclass('public.migration_partial_execution_probe') IS NULL")" = "t"
+          test "$(psql --dbname va_dispatch_rollback --tuples-only --no-align --command "SELECT count(*) FROM drizzle.__drizzle_migrations")" = "0"
+
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25

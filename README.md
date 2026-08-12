@@ -32,7 +32,7 @@ cp .env.example apps/api/.env
 # configure apps/web/.env.local from apps/web/.env.example
 # fill DATABASE_URL, CLERK_SECRET_KEY, etc.
 
-pnpm db:push          # apply schema to Neon
+MIGRATION_CONFIRM_DATABASE=va_dispatch pnpm db:migrate
 pnpm dev              # web :3000 + API :3001
 ```
 
@@ -110,7 +110,7 @@ vercel integration add neon
 vercel integration add clerk
 vercel env pull apps/api/.env.local --yes
 # copy DATABASE_URL + CLERK_* into apps/api/.env for local
-pnpm db:push
+MIGRATION_CONFIRM_DATABASE=va_dispatch pnpm db:migrate
 vercel deploy
 ```
 
@@ -126,9 +126,16 @@ vercel deploy
 | `pnpm test:coverage`                      | Full-source tests and coverage    |
 | `pnpm security:audit`                     | High-severity dependency audit    |
 | `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests |
-| `pnpm db:generate`                        | Drizzle migrations                |
-| `pnpm db:push`                            | Push schema to DB                 |
+| `pnpm db:generate`                        | Generate a reviewed migration     |
+| `pnpm db:check`                           | Check migration history and drift |
+| `pnpm db:migrate`                         | Apply confirmed migrations        |
+| `pnpm db:signature`                       | Print a public catalog signature  |
+| `pnpm db:adopt:pr29`                      | Guarded ledger-less DB adoption   |
 | `pnpm typecheck`                          | TypeScript check                  |
+
+Production databases use the versioned workflow in
+[`docs/database-migrations.md`](docs/database-migrations.md). `db:push` is for
+empty, disposable development databases only.
 
 ## Contributing
 
