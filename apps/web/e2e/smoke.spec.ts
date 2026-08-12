@@ -252,7 +252,7 @@ test("dispatcher builds the exact offer and advances a flight", async ({
   await expect(page.getByText("Completed", { exact: true })).toBeVisible();
 });
 
-test("dispatcher sends and simulates mock ACARS", async ({ page, context }) => {
+test("dispatcher sends Hoppie ACARS", async ({ page, context }) => {
   await context.addCookies([
     { name: "e2e-role", value: "dispatcher", domain: "127.0.0.1", path: "/" },
   ]);
@@ -264,6 +264,19 @@ test("dispatcher sends and simulates mock ACARS", async ({ page, context }) => {
   await page.route("**/api/v1/dispatch/inbox", (route) =>
     json(route, { items: messages, nextCursor: null }),
   );
+  await page.route("**/api/v1/tenant", (route) =>
+    json(route, {
+      id: "tenant-vsas",
+      slug: "vsas",
+      name: "Virtual SAS",
+      hoppieStation: "VSAS",
+      hasHoppieLogon: true,
+      acarsProvider: "hoppie",
+      hoppiePollingEnabled: true,
+      hoppieLastTestedAt: timestamp,
+      settings: {},
+    }),
+  );
   await page.route("**/api/v1/acars/messages", async (route) => {
     const body = route.request().postDataJSON();
     const message = {
@@ -273,7 +286,7 @@ test("dispatcher sends and simulates mock ACARS", async ({ page, context }) => {
       fromStation: "VSAS",
       toStation: body.to,
       body: body.body,
-      provider: "mock",
+      provider: "hoppie",
       flightId: null,
       createdAt: timestamp,
       sentAt: timestamp,
@@ -282,34 +295,13 @@ test("dispatcher sends and simulates mock ACARS", async ({ page, context }) => {
     messages.unshift(message);
     return json(route, { message }, 201);
   });
-  await page.route("**/api/v1/acars/simulate", async (route) => {
-    const body = route.request().postDataJSON();
-    messages.unshift({
-      id: "inbound-1",
-      direction: "inbound",
-      msgType: body.msgType,
-      fromStation: body.from,
-      toStation: "VSAS",
-      body: body.body,
-      provider: "mock",
-      flightId: null,
-      createdAt: timestamp,
-      sentAt: null,
-      receivedAt: timestamp,
-    });
-    return json(route, { queued: true, to: "VSAS" }, 201);
-  });
-
   await page.goto("/vsas/dispatch/acars");
   await page.getByLabel("Recipient station").fill("SAS101");
   await page.getByLabel("Message", { exact: true }).fill("CONTACT DISPATCH");
   await page.getByRole("button", { name: "Send telex" }).click();
-  await expect(page.getByText("Mock telex stored for SAS101.")).toBeVisible();
-  await page.getByLabel("From station").fill("SAS101");
-  await page.getByLabel("Inbound message").fill("WILCO");
-  await page.getByRole("button", { name: "Simulate" }).click();
-  await expect(page.getByText(/queued.*next ACARS poll/i)).toBeVisible();
-  await expect(page.getByText("WILCO")).toBeVisible();
+  await expect(
+    page.getByText(/Hoppie accepted the telex to SAS101/),
+  ).toBeVisible();
 });
 
 test("admin configures the tenant Hoppie ground station", async ({
@@ -361,5 +353,5 @@ test("admin configures the tenant Hoppie ground station", async ({
   await expect(
     page.getByText(/Hoppie accepted the connection test/),
   ).toBeVisible();
-  await expect(page.getByText("hoppie", { exact: true })).toBeVisible();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
 });

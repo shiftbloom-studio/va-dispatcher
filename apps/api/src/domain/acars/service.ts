@@ -1,8 +1,8 @@
 import {
   createAcarsProvider,
-  tenantAcarsProviderName,
+  isMockAcarsEnabled,
 } from "../../acars/factory.js";
-import { AcarsProviderError } from "../../acars/types.js";
+import { AcarsProviderError, type AcarsProvider } from "../../acars/types.js";
 import {
   findAcarsMessage,
   insertAcarsMessage,
@@ -14,7 +14,6 @@ import {
   findTenantById,
   listHoppieTenants,
 } from "../../db/repositories/tenants.js";
-import { env } from "../../env.js";
 import { AppError } from "../../lib/errors.js";
 import { isUniqueViolation } from "../../lib/postgres.js";
 import type { Tenant } from "../../db/schema.js";
@@ -28,9 +27,10 @@ export async function sendTelex(input: {
 }) {
   const tenant = await requireTenant(input.tenantId);
   const from = tenant.hoppieStation ?? tenant.slug.toUpperCase();
-  const provider = createAcarsProvider(tenant);
+  let provider: AcarsProvider;
   let result;
   try {
+    provider = createAcarsProvider(tenant);
     result = await provider.sendTelex({
       from,
       to: input.to.toUpperCase(),
@@ -99,13 +99,13 @@ export async function simulateInbound(input: {
   body: string;
   msgType?: "telex" | "progress" | "cpdlc" | "position" | "other";
 }) {
-  const tenant = await requireTenant(input.tenantId);
-  if (tenantAcarsProviderName(tenant) !== "mock") {
+  if (!isMockAcarsEnabled()) {
     throw new AppError(
-      "UNPROCESSABLE",
-      "ACARS simulate is only available while this Virtual Airline uses the mock provider",
+      "NOT_FOUND",
+      "ACARS simulation is only available in local development and automated tests",
     );
   }
+  const tenant = await requireTenant(input.tenantId);
   const to =
     input.to?.toUpperCase() ??
     tenant.hoppieStation ??
@@ -159,15 +159,15 @@ export async function pollTenantAcars(tenant: Tenant): Promise<number> {
 /**
  * Poll ACARS for tenants that actually need network I/O.
  *
- * Only tenants with an encrypted Hoppie logon need network polling. Mock
- * tenants are drained synchronously by the simulator and never polled here.
+ * Only tenants with an encrypted Hoppie logon need network polling. The local
+ * test adapter is drained synchronously by its API fixture and never polled.
  */
 export async function pollAllTenants(): Promise<{
   tenants: number;
   messages: number;
   skipped: string | null;
 }> {
-  if (env().ACARS_PROVIDER === "mock") {
+  if (isMockAcarsEnabled()) {
     return {
       tenants: 0,
       messages: 0,
@@ -197,10 +197,14 @@ export async function pollAllTenants(): Promise<{
 
 export function publicProviderError(error: unknown): AppError {
   if (error instanceof AcarsProviderError) {
-    return new AppError("UPSTREAM", error.message, {
-      details: { provider: "hoppie", reason: error.code },
-      cause: error,
-    });
+    return new AppError(
+      error.code === "not_configured" ? "UNPROCESSABLE" : "UPSTREAM",
+      error.message,
+      {
+        details: { provider: "hoppie", reason: error.code },
+        cause: error,
+      },
+    );
   }
   throw error;
 }
