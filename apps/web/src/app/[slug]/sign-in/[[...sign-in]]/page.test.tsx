@@ -8,7 +8,20 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@clerk/nextjs", () => ({
-  SignIn: () => <div data-testid="clerk-sign-in" />,
+  SignIn: (props: {
+    fallbackRedirectUrl: string;
+    path: string;
+    signUpFallbackRedirectUrl: string;
+    signUpUrl: string;
+  }) => (
+    <div
+      data-fallback-url={props.fallbackRedirectUrl}
+      data-path={props.path}
+      data-sign-up-fallback-url={props.signUpFallbackRedirectUrl}
+      data-sign-up-url={props.signUpUrl}
+      data-testid="clerk-sign-in"
+    />
+  ),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -31,7 +44,18 @@ describe("tenant sign-in", () => {
         "A real-time human dispatch layer for Virtual SAS, where dispatchers build individual pilot schedules and coordinate every flight together.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
+    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
+      "data-sign-up-url",
+      "/vsas/sign-up",
+    );
+    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
+      "data-fallback-url",
+      "/vsas",
+    );
+    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
+      "data-sign-up-fallback-url",
+      "/vsas",
+    );
   });
 
   it("rejects an unknown tenant", async () => {
