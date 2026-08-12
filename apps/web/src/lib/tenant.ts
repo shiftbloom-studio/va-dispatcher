@@ -9,9 +9,11 @@ export type TenantConfig = {
   };
 };
 
+export const DEFAULT_TENANT_SLUG = "vsas";
+
 const tenants: Record<string, TenantConfig> = {
-  vsas: {
-    slug: "vsas",
+  [DEFAULT_TENANT_SLUG]: {
+    slug: DEFAULT_TENANT_SLUG,
     name: "Virtual SAS",
     shortName: "vSAS",
     accent: "#e64646",

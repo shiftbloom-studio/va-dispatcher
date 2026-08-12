@@ -1,4 +1,4 @@
-import { SignIn } from "@clerk/nextjs";
+import { SignUp } from "@clerk/nextjs";
 import { notFound } from "next/navigation";
 
 import {
@@ -8,7 +8,7 @@ import {
 import { getTenantAuthRoutes } from "@/lib/auth-routes";
 import { getTenantConfig } from "@/lib/tenant";
 
-export default async function SignInPage({
+export default async function SignUpPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
@@ -20,12 +20,12 @@ export default async function SignInPage({
 
   return (
     <TenantAuthShell tenant={tenant}>
-      <SignIn
-        path={routes.signIn}
+      <SignUp
+        path={routes.signUp}
         routing="path"
         fallbackRedirectUrl={routes.home}
-        signUpFallbackRedirectUrl={routes.home}
-        signUpUrl={routes.signUp}
+        signInFallbackRedirectUrl={routes.home}
+        signInUrl={routes.signIn}
         appearance={TENANT_AUTH_APPEARANCE}
       />
     </TenantAuthShell>
