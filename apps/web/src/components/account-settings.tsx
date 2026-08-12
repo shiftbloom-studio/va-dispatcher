@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { PageHeading } from "@/components/page-heading";
+import { SimbriefAccount } from "@/components/simbrief-account";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/fields";
@@ -59,6 +60,7 @@ export function AccountSettings({ slug }: { slug: string }) {
       />
       <div className="grid gap-6 xl:grid-cols-2">
         <ProfileCard slug={slug} membership={me.data.membership} />
+        <SimbriefAccount slug={slug} />
         <HoppieGuide />
       </div>
     </>

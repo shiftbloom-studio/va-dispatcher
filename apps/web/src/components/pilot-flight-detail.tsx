@@ -18,6 +18,7 @@ import { useState } from "react";
 import { ReasonAction } from "@/components/action-dialog";
 import { DispatchReleaseSnapshot } from "@/components/flight-planning-workspace";
 import { PageHeading } from "@/components/page-heading";
+import { SimbriefWorkspace } from "@/components/simbrief-workspace";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -241,6 +242,8 @@ export function PilotFlightDetail({
               started from the portal until dispatch schedules it.
             </div>
           )}
+
+          <SimbriefWorkspace slug={slug} flight={flight} mode="pilot" />
 
           {detail.data.events.length ? (
             <Card className="overflow-hidden">

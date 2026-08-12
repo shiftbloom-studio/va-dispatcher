@@ -94,6 +94,7 @@ Once Navigraph issues the credentials, configure these backend-only values:
 NAVIGRAPH_CLIENT_ID=...
 NAVIGRAPH_CLIENT_SECRET=...
 NAVIGRAPH_REDIRECT_URI=https://www.va-dispatcher.world/api/v1/simbrief/oauth/callback
+APP_ORIGIN=https://www.va-dispatcher.world
 ```
 
 `TENANT_SECRETS_KEY` must also be configured. It encrypts each short-lived PKCE

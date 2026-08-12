@@ -246,6 +246,56 @@ export const bulkFlightResponseSchema = z.object({
   }),
 });
 
+export const simbriefConnectionSchema = z.object({
+  connected: z.boolean(),
+  userId: z.string().nullable(),
+  verified: z.boolean(),
+  verifiedAt: z.string().nullable(),
+  oauth: z.object({
+    configured: z.boolean(),
+    connected: z.boolean(),
+    username: z.string().nullable(),
+    connectedAt: z.string().nullable(),
+  }),
+});
+export type SimbriefConnection = z.infer<typeof simbriefConnectionSchema>;
+export const simbriefConnectionResponseSchema = z.object({
+  connection: simbriefConnectionSchema,
+});
+export const simbriefOauthStartSchema = z.object({
+  authorizationUrl: z.string().url(),
+  redirectUri: z.string().url(),
+  expiresAt: z.string(),
+});
+
+export const simbriefDispatchSchema = z.object({
+  id: z.string(),
+  flightId: z.string(),
+  preparedByMembershipId: z.string().nullable(),
+  generatedByMembershipId: z.string().nullable(),
+  dispatcherName: z.string(),
+  dispatcherRemarks: z.string().nullable(),
+  staticId: z.string(),
+  status: z.enum(["prepared", "pending", "ready"]),
+  request: z.record(z.string(), z.string()),
+  ofp: z.record(z.string(), z.unknown()).nullable(),
+  simbriefRequestId: z.string().nullable(),
+  generatedAt: z.string().nullable(),
+  syncedAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type SimbriefDispatch = z.infer<typeof simbriefDispatchSchema>;
+export const simbriefDispatchResponseSchema = z.object({
+  dispatch: simbriefDispatchSchema,
+});
+export const simbriefGenerateResponseSchema =
+  simbriefDispatchResponseSchema.extend({ dispatchUrl: z.string().url() });
+export const simbriefDispatchListSchema = z.object({
+  items: z.array(simbriefDispatchSchema),
+});
+
 export const memberSchema = z.object({
   id: z.string(),
   clerkUserId: z.string(),

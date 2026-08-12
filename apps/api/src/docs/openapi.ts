@@ -219,7 +219,7 @@ const schemas = {
   },
   SimbriefDispatchStatus: {
     type: "string",
-    enum: ["pending", "ready"],
+    enum: ["prepared", "pending", "ready"],
   },
   BrandPresence: {
     type: "string",
@@ -796,7 +796,10 @@ const schemas = {
     required: [
       "id",
       "flightId",
-      "createdByMembershipId",
+      "preparedByMembershipId",
+      "generatedByMembershipId",
+      "dispatcherName",
+      "dispatcherRemarks",
       "staticId",
       "status",
       "request",
@@ -811,7 +814,14 @@ const schemas = {
     properties: {
       id: schemaRef("Uuid"),
       flightId: schemaRef("Uuid"),
-      createdByMembershipId: schemaRef("NullableUuid"),
+      preparedByMembershipId: schemaRef("NullableUuid"),
+      generatedByMembershipId: schemaRef("NullableUuid"),
+      dispatcherName: {
+        type: "string",
+        description:
+          "Trusted snapshot derived from the authenticated member who prepared this revision.",
+      },
+      dispatcherRemarks: schemaRef("NullableString"),
       staticId: { type: "string", example: "VAD_0123456789abcdef" },
       status: schemaRef("SimbriefDispatchStatus"),
       request: {
@@ -1206,7 +1216,6 @@ const schemas = {
       passengers: { type: "integer", minimum: 0, maximum: 1000 },
       cargo: { type: "number", minimum: 0, maximum: 9999 },
       captainName: { type: "string", minLength: 1, maxLength: 120 },
-      dispatcherName: { type: "string", minLength: 1, maxLength: 120 },
       customRemarks: { type: "string", maxLength: 2000 },
       units: { type: "string", enum: ["KGS", "LBS"], default: "KGS" },
       planFormat: { type: "string", minLength: 1, maxLength: 32 },
@@ -1518,6 +1527,13 @@ const schemas = {
         description:
           "Signed SimBrief Dispatch Redirect URL. Open it directly in the user's browser; do not proxy it through the API.",
       },
+    },
+  },
+  SimbriefDispatchListResponse: {
+    type: "object",
+    required: ["items"],
+    properties: {
+      items: { type: "array", items: schemaRef("SimbriefDispatch") },
     },
   },
   SimbriefCallbackResponse: {
@@ -2670,12 +2686,25 @@ export const openApiDocument = {
       },
     },
     "/flights/{flightId}/simbrief/dispatches": {
+      get: {
+        tags: ["SimBrief"],
+        operationId: "listSimbriefDispatchRevisions",
+        summary: "List SimBrief planning revisions for a flight",
+        parameters: [pathParameter("flightId", "Flight ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Newest-first immutable preparation and OFP history.",
+            schemaRef("SimbriefDispatchListResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
       post: {
         tags: ["SimBrief"],
-        operationId: "createSimbriefDispatch",
-        summary: "Create a SimBrief flight-plan dispatch",
+        operationId: "prepareSimbriefDispatch",
+        summary: "Save a dispatcher planning revision",
         description:
-          "The assigned pilot may create a plan for their own flight; dispatchers and admins may create one for any tenant flight. The creator must have a connected numeric SimBrief Pilot ID. Open the returned signed dispatchUrl directly in a browser so SimBrief can authenticate the person generating the plan.",
+          "Dispatchers and admins save canonical planning inputs without using a personal SimBrief account. Dispatcher attribution is derived and snapshotted from authenticated server context; dispatcherName is not accepted from the client.",
         parameters: [pathParameter("flightId", "Flight ID.")],
         requestBody: optionalJsonRequest(
           schemaRef("CreateSimbriefDispatchInput"),
@@ -2683,7 +2712,28 @@ export const openApiDocument = {
         ),
         responses: {
           "201": jsonResponse(
-            "Created pending dispatch and signed browser URL.",
+            "Created prepared planning revision.",
+            schemaRef("SimbriefDispatchResponse"),
+          ),
+          ...mutationErrors,
+          "422": responseRef("UnprocessableEntity"),
+        },
+      },
+    },
+    "/flights/{flightId}/simbrief/dispatches/{dispatchId}/generate": {
+      post: {
+        tags: ["SimBrief"],
+        operationId: "generatePreparedSimbriefDispatch",
+        summary: "Launch a prepared plan in the assigned pilot's account",
+        description:
+          "Only the assigned pilot may attach their connected numeric Pilot ID and receive the signed SimBrief Dispatch Redirect URL. Hoppie, Navigraph, or SimBrief provider traffic is never proxied through a browser API client.",
+        parameters: [
+          pathParameter("flightId", "Flight ID."),
+          pathParameter("dispatchId", "Prepared SimBrief revision ID."),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Pending dispatch and signed browser URL.",
             schemaRef("CreateSimbriefDispatchResponse"),
           ),
           ...mutationErrors,

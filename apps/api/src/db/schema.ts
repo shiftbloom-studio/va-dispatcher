@@ -61,6 +61,7 @@ export const acarsMsgTypeEnum = pgEnum("acars_msg_type", [
 export const acarsProviderEnum = pgEnum("acars_provider", ["mock", "hoppie"]);
 
 export const simbriefDispatchStatusEnum = pgEnum("simbrief_dispatch_status", [
+  "prepared",
   "pending",
   "ready",
 ]);
@@ -478,7 +479,11 @@ export const simbriefDispatches = pgTable(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    simbriefUserId: text("simbrief_user_id").notNull(),
+    generatedByMembershipId: uuid("generated_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    simbriefUserId: text("simbrief_user_id"),
     staticId: text("static_id").notNull(),
     callbackTokenMac: text("callback_token_mac"),
     status: simbriefDispatchStatusEnum("status").notNull().default("pending"),
