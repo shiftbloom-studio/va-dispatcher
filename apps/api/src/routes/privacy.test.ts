@@ -64,6 +64,7 @@ import { privacyRoutes } from "./privacy.js";
 const app = new Hono();
 app.onError(errorHandler);
 app.route("/", privacyRoutes);
+app.get("/non-privacy-probe", (context) => context.json({ ok: true }));
 
 const config = {
   classes: {
@@ -113,6 +114,14 @@ describe("privacy control-plane routes", () => {
     });
     expect(allowed.status).toBe(200);
     expect(allowed.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("does not leak admin middleware onto routes mounted after privacy", async () => {
+    const response = await app.request("/non-privacy-probe", {
+      headers: { "x-test-role": "pilot" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBeNull();
   });
 
   it("derives tenant and actor identity when creating a policy", async () => {
