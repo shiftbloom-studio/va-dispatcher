@@ -1229,7 +1229,12 @@ export async function correctMembershipForPrivacy(input: {
 
 export type PrivacyDestructionResult = {
   request: PrivacySubjectRequest;
-  localRecords: { flights: number; requests: number; messages: number };
+  localRecords: {
+    flights: number;
+    requests: number;
+    messages: number;
+    telemetry: number;
+  };
 };
 
 export async function anonymizePrivacySubject(input: {
@@ -1247,6 +1252,7 @@ export async function anonymizePrivacySubject(input: {
       localFlights: number;
       localRequests: number;
       localMessages: number;
+      localTelemetry: number;
     }
   >(sql`
     with subject as materialized (
@@ -1295,6 +1301,40 @@ export async function anonymizePrivacySubject(input: {
       where not open_work.present
         and f.tenant_id = ${input.tenantId}::uuid
         and f.pilot_membership_id = subject.id
+    ), subject_devices as materialized (
+      select device.id
+      from simulator_devices device, subject
+      where device.tenant_id = ${input.tenantId}::uuid
+        and device.membership_id = subject.id
+    ), telemetry_records as materialized (
+      select device.id
+      from simulator_devices device, subject
+      where device.tenant_id = ${input.tenantId}::uuid
+        and device.membership_id = subject.id
+      union all
+      select telemetry_current.flight_id
+      from flight_telemetry_current telemetry_current, subject
+      where telemetry_current.tenant_id = ${input.tenantId}::uuid
+        and telemetry_current.membership_id = subject.id
+      union all
+      select lease.flight_id
+      from flight_telemetry_leases lease, subject
+      where lease.tenant_id = ${input.tenantId}::uuid
+        and lease.membership_id = subject.id
+      union all
+      select track.id
+      from flight_telemetry_track track, subject
+      where track.tenant_id = ${input.tenantId}::uuid
+        and track.membership_id = subject.id
+      union all
+      select event.id
+      from flight_oooi_events event, subject
+      where event.tenant_id = ${input.tenantId}::uuid
+        and (
+          event.actor_membership_id = subject.id
+          or event.device_id in (select id from subject_devices)
+          or event.flight_id in (select id from target_flights)
+        )
     ), subject_privacy_requests as materialized (
       select request.id
       from privacy_subject_requests request, subject
@@ -1385,6 +1425,24 @@ export async function anonymizePrivacySubject(input: {
           or event.flight_id in (select id from target_flights)
         )
       returning event.id
+    ), redacted_oooi as (
+      update flight_oooi_events event
+      set actor_membership_id = null, device_id = null, reason = null
+      from subject
+      where event.tenant_id = ${input.tenantId}::uuid
+        and (
+          event.actor_membership_id = subject.id
+          or event.device_id in (select id from subject_devices)
+          or event.flight_id in (select id from target_flights)
+        )
+      returning event.id
+    ), deleted_devices as (
+      delete from simulator_devices device
+      using subject
+      where device.tenant_id = ${input.tenantId}::uuid
+        and device.membership_id = subject.id
+        and (select count(*) from redacted_oooi) >= 0
+      returning device.id
     ), deleted_simbrief as (
       delete from simbrief_dispatches dispatch
       where dispatch.tenant_id = ${input.tenantId}::uuid
@@ -1454,7 +1512,8 @@ export async function anonymizePrivacySubject(input: {
           'localRecords', jsonb_build_object(
             'flights', (select count(*)::int from redacted_flights),
             'requests', (select count(*)::int from redacted_requests),
-            'messages', (select count(*)::int from redacted_messages)
+            'messages', (select count(*)::int from redacted_messages),
+            'telemetry', (select count(*)::int from telemetry_records)
           ),
           'externalTasksRemaining', ${input.externalTasksRemaining}::int
         ),
@@ -1487,7 +1546,8 @@ export async function anonymizePrivacySubject(input: {
       completed_request.*,
       (select count(*)::int from redacted_flights) as local_flights,
       (select count(*)::int from redacted_requests) as local_requests,
-      (select count(*)::int from redacted_messages) as local_messages
+      (select count(*)::int from redacted_messages) as local_messages,
+      (select count(*)::int from telemetry_records) as local_telemetry
     from completed_request, recorded_audit
   `);
   const [, result] = await db.batch([lock, operation] as const);
@@ -1499,6 +1559,7 @@ export async function anonymizePrivacySubject(input: {
           flights: Number(camelRow(row).localFlights),
           requests: Number(camelRow(row).localRequests),
           messages: Number(camelRow(row).localMessages),
+          telemetry: Number(camelRow(row).localTelemetry),
         },
       }
     : null;
@@ -1519,6 +1580,7 @@ export async function erasePrivacySubject(input: {
       localFlights: number;
       localRequests: number;
       localMessages: number;
+      localTelemetry: number;
     }
   >(sql`
     with subject as materialized (
@@ -1567,6 +1629,40 @@ export async function erasePrivacySubject(input: {
       where not open_work.present
         and f.tenant_id = ${input.tenantId}::uuid
         and f.pilot_membership_id = subject.id
+    ), subject_devices as materialized (
+      select device.id
+      from simulator_devices device, subject
+      where device.tenant_id = ${input.tenantId}::uuid
+        and device.membership_id = subject.id
+    ), telemetry_records as materialized (
+      select device.id
+      from simulator_devices device, subject
+      where device.tenant_id = ${input.tenantId}::uuid
+        and device.membership_id = subject.id
+      union all
+      select telemetry_current.flight_id
+      from flight_telemetry_current telemetry_current, subject
+      where telemetry_current.tenant_id = ${input.tenantId}::uuid
+        and telemetry_current.membership_id = subject.id
+      union all
+      select lease.flight_id
+      from flight_telemetry_leases lease, subject
+      where lease.tenant_id = ${input.tenantId}::uuid
+        and lease.membership_id = subject.id
+      union all
+      select track.id
+      from flight_telemetry_track track, subject
+      where track.tenant_id = ${input.tenantId}::uuid
+        and track.membership_id = subject.id
+      union all
+      select event.id
+      from flight_oooi_events event, subject
+      where event.tenant_id = ${input.tenantId}::uuid
+        and (
+          event.actor_membership_id = subject.id
+          or event.device_id in (select id from subject_devices)
+          or event.flight_id in (select id from target_flights)
+        )
     ), subject_privacy_requests as materialized (
       select request.id
       from privacy_subject_requests request, subject
@@ -1633,6 +1729,17 @@ export async function erasePrivacySubject(input: {
         and event.actor_membership_id = ${input.membershipId}::uuid
         and event.flight_id not in (select id from target_flights)
       returning event.id
+    ), redacted_oooi as (
+      update flight_oooi_events event
+      set actor_membership_id = null, device_id = null, reason = null
+      from subject
+      where event.tenant_id = ${input.tenantId}::uuid
+        and (
+          event.actor_membership_id = subject.id
+          or event.device_id in (select id from subject_devices)
+          or event.flight_id in (select id from target_flights)
+        )
+      returning event.id
     ), deleted_flights as (
       delete from flights flight
       using target_flights tf
@@ -1690,7 +1797,8 @@ export async function erasePrivacySubject(input: {
           'localRecords', jsonb_build_object(
             'flights', (select count(*)::int from deleted_flights),
             'requests', (select count(*)::int from deleted_requests),
-            'messages', (select count(*)::int from deleted_messages)
+            'messages', (select count(*)::int from deleted_messages),
+            'telemetry', (select count(*)::int from telemetry_records)
           ),
           'externalTasksRemaining', ${input.externalTasksRemaining}::int
         ),
@@ -1706,6 +1814,7 @@ export async function erasePrivacySubject(input: {
       using subject, open_work, completed_request
       where not open_work.present
         and member.id = subject.id
+        and (select count(*) from redacted_oooi) >= 0
       returning member.id
     ), recorded_audit as (
       insert into audit_events (
@@ -1730,7 +1839,8 @@ export async function erasePrivacySubject(input: {
       completed_request.*,
       (select count(*)::int from deleted_flights) as local_flights,
       (select count(*)::int from deleted_requests) as local_requests,
-      (select count(*)::int from deleted_messages) as local_messages
+      (select count(*)::int from deleted_messages) as local_messages,
+      (select count(*)::int from telemetry_records) as local_telemetry
     from completed_request, recorded_audit
   `);
   const [, result] = await db.batch([lock, operation] as const);
@@ -1742,6 +1852,7 @@ export async function erasePrivacySubject(input: {
           flights: Number(camelRow(row).localFlights),
           requests: Number(camelRow(row).localRequests),
           messages: Number(camelRow(row).localMessages),
+          telemetry: Number(camelRow(row).localTelemetry),
         },
       }
     : null;
@@ -1757,6 +1868,11 @@ export const PRIVACY_EXPORT_STORES = [
   "flights",
   "dispatchReleases",
   "flightOperationalEvents",
+  "simulatorDevices",
+  "flightTelemetryCurrent",
+  "flightTelemetryLeases",
+  "flightTelemetryTrack",
+  "flightOooiEvents",
   "oauthTransactions",
   "simbriefDispatches",
   "acarsMessages",
@@ -1919,6 +2035,73 @@ function privacyExportQuery(input: {
           and (
             not ${memberScope}
             or event.actor_membership_id = ${memberId}::uuid
+            or exists (
+              select 1 from flights flight
+              where flight.id = event.flight_id
+                and flight.tenant_id = event.tenant_id
+                and flight.pilot_membership_id = ${memberId}::uuid
+            )
+          )
+          and event.id > ${afterId}::uuid
+        order by event.id
+        limit ${input.limit}
+      `;
+    case "simulatorDevices":
+      return sql`
+        select device.id::text as id,
+          (to_jsonb(device) - 'token_mac')
+            || jsonb_build_object('authenticatorOmitted', true) as data
+        from simulator_devices device
+        where device.tenant_id = ${input.tenantId}::uuid
+          and (not ${memberScope} or device.membership_id = ${memberId}::uuid)
+          and device.id > ${afterId}::uuid
+        order by device.id
+        limit ${input.limit}
+      `;
+    case "flightTelemetryCurrent":
+      return sql`
+        select telemetry.flight_id::text as id, to_jsonb(telemetry) as data
+        from flight_telemetry_current telemetry
+        where telemetry.tenant_id = ${input.tenantId}::uuid
+          and (not ${memberScope} or telemetry.membership_id = ${memberId}::uuid)
+          and telemetry.flight_id > ${afterId}::uuid
+        order by telemetry.flight_id
+        limit ${input.limit}
+      `;
+    case "flightTelemetryLeases":
+      return sql`
+        select lease.flight_id::text as id, to_jsonb(lease) as data
+        from flight_telemetry_leases lease
+        where lease.tenant_id = ${input.tenantId}::uuid
+          and (not ${memberScope} or lease.membership_id = ${memberId}::uuid)
+          and lease.flight_id > ${afterId}::uuid
+        order by lease.flight_id
+        limit ${input.limit}
+      `;
+    case "flightTelemetryTrack":
+      return sql`
+        select telemetry.id::text as id, to_jsonb(telemetry) as data
+        from flight_telemetry_track telemetry
+        where telemetry.tenant_id = ${input.tenantId}::uuid
+          and (not ${memberScope} or telemetry.membership_id = ${memberId}::uuid)
+          and telemetry.id > ${afterId}::uuid
+        order by telemetry.id
+        limit ${input.limit}
+      `;
+    case "flightOooiEvents":
+      return sql`
+        select event.id::text as id, to_jsonb(event) as data
+        from flight_oooi_events event
+        where event.tenant_id = ${input.tenantId}::uuid
+          and (
+            not ${memberScope}
+            or event.actor_membership_id = ${memberId}::uuid
+            or exists (
+              select 1 from simulator_devices device
+              where device.id = event.device_id
+                and device.tenant_id = event.tenant_id
+                and device.membership_id = ${memberId}::uuid
+            )
             or exists (
               select 1 from flights flight
               where flight.id = event.flight_id
@@ -2143,6 +2326,29 @@ function retentionCountQuery(input: {
           count(*) filter (where ${held})::int as held
         from candidates
       `;
+    case "telemetry":
+      return sql`
+        with candidates as (
+          select telemetry_current.membership_id as subject_id
+          from flight_telemetry_current telemetry_current
+          where telemetry_current.tenant_id = ${input.tenantId}::uuid
+            and telemetry_current.sample_at < ${input.cutoff}
+          union all
+          select lease.membership_id as subject_id
+          from flight_telemetry_leases lease
+          where lease.tenant_id = ${input.tenantId}::uuid
+            and lease.lease_expires_at < ${input.cutoff}
+          union all
+          select track.membership_id as subject_id
+          from flight_telemetry_track track
+          where track.tenant_id = ${input.tenantId}::uuid
+            and track.sample_at < ${input.cutoff}
+        )
+        select
+          count(*) filter (where not (${held}))::int as eligible,
+          count(*) filter (where ${held})::int as held
+        from candidates
+      `;
     case "simbrief":
       return sql`
         with candidates as (
@@ -2294,6 +2500,52 @@ function retentionMutationQuery(input: {
           returning flight.id
         )
         select count(*)::int as affected from affected
+      `;
+    case "telemetry":
+      return sql`
+        with candidates as materialized (
+          select 'current'::text as store, telemetry_current.flight_id as id,
+            telemetry_current.membership_id as subject_id, telemetry_current.sample_at as recorded_at
+          from flight_telemetry_current telemetry_current
+          where telemetry_current.tenant_id = ${input.tenantId}::uuid
+            and telemetry_current.sample_at < ${input.cutoff}
+          union all
+          select 'lease', lease.flight_id, lease.membership_id, lease.lease_expires_at
+          from flight_telemetry_leases lease
+          where lease.tenant_id = ${input.tenantId}::uuid
+            and lease.lease_expires_at < ${input.cutoff}
+          union all
+          select 'track', track.id, track.membership_id, track.sample_at
+          from flight_telemetry_track track
+          where track.tenant_id = ${input.tenantId}::uuid
+            and track.sample_at < ${input.cutoff}
+        ), eligible as (
+          select store, id
+          from candidates
+          where ${noHold}
+          order by recorded_at, id
+          limit ${input.limit}
+        ), deleted_current as (
+          delete from flight_telemetry_current telemetry_current
+          using eligible
+          where eligible.store = 'current' and telemetry_current.flight_id = eligible.id
+          returning telemetry_current.flight_id
+        ), deleted_leases as (
+          delete from flight_telemetry_leases lease
+          using eligible
+          where eligible.store = 'lease' and lease.flight_id = eligible.id
+          returning lease.flight_id
+        ), deleted_track as (
+          delete from flight_telemetry_track track
+          using eligible
+          where eligible.store = 'track' and track.id = eligible.id
+          returning track.id
+        )
+        select (
+          (select count(*) from deleted_current)
+          + (select count(*) from deleted_leases)
+          + (select count(*) from deleted_track)
+        )::int as affected
       `;
     case "simbrief":
       return sql`

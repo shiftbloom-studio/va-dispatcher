@@ -899,6 +899,7 @@ export async function exportPrivacyRequestPage(input: {
         "tenants.hoppie_logon_enc",
         "navigraph_oauth_transactions.code_verifier_enc",
         "simbrief_dispatches.callback_token_mac",
+        "simulator_devices.token_mac",
       ],
     },
     items,

@@ -70,6 +70,7 @@ const config = {
     memberships: { retentionDays: 730, action: "anonymize" },
     scheduleRequests: { retentionDays: 730, action: "delete" },
     flights: { retentionDays: 2_555, action: "delete" },
+    telemetry: { retentionDays: 1, action: "delete" },
     simbrief: { retentionDays: 90, action: "delete" },
     acars: { retentionDays: 30, action: "delete" },
     oauth: { retentionDays: 1, action: "delete" },

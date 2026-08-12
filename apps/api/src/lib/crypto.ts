@@ -10,6 +10,7 @@ import { AppError } from "./errors.js";
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const INITIALIZATION_VECTOR_LENGTH_BYTES = 12;
+const AUTHENTICATION_TAG_LENGTH_BYTES = 16;
 const TOKEN_MAC_LENGTH_BYTES = 32;
 const TOKEN_MAC_SALT = Buffer.from("va-dispatch:token-mac:v1", "utf8");
 const OPAQUE_TOKEN_KEY_LENGTH_BYTES = 32;
@@ -209,12 +210,15 @@ function decryptWithKey(
   }
   const [encodedInitializationVector, encodedAuthenticationTag, encodedData] =
     parts as [string, string, string];
-  const initializationVector = Buffer.from(
+  const initializationVector = decodeCanonicalBase64Url(
     encodedInitializationVector,
-    "base64url",
+    INITIALIZATION_VECTOR_LENGTH_BYTES,
   );
-  const authenticationTag = Buffer.from(encodedAuthenticationTag, "base64url");
-  const encryptedData = Buffer.from(encodedData, "base64url");
+  const authenticationTag = decodeCanonicalBase64Url(
+    encodedAuthenticationTag,
+    AUTHENTICATION_TAG_LENGTH_BYTES,
+  );
+  const encryptedData = decodeCanonicalBase64Url(encodedData);
   let decrypted: Buffer | undefined;
   try {
     const decipher = createDecipheriv(
@@ -231,7 +235,28 @@ function decryptWithKey(
     return decrypted.toString("utf8");
   } finally {
     decrypted?.fill(0);
+    initializationVector.fill(0);
+    authenticationTag.fill(0);
+    encryptedData.fill(0);
   }
+}
+
+function decodeCanonicalBase64Url(
+  value: string,
+  expectedLength?: number,
+): Buffer {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new AppError("UNPROCESSABLE", "Invalid encrypted secret payload");
+  }
+  const decoded = Buffer.from(value, "base64url");
+  if (
+    decoded.toString("base64url") !== value ||
+    (expectedLength !== undefined && decoded.length !== expectedLength)
+  ) {
+    decoded.fill(0);
+    throw new AppError("UNPROCESSABLE", "Invalid encrypted secret payload");
+  }
+  return decoded;
 }
 
 function decodeTokenMac(value: string): Buffer | null {
