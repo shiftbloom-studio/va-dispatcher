@@ -29,6 +29,16 @@ export type TelemetryActor = {
 
 export type PresenceState = "online" | "stale" | "disconnected";
 
+export type PilotPresenceSummary = {
+  onlinePilots: number;
+  flyingPilots: number;
+  stalePilots: number;
+  definition: string;
+};
+
+export const PILOT_PRESENCE_DEFINITION =
+  "Distinct assigned pilots with authenticated simulator telemetry: online means a server receipt within 30 seconds; flying is the online subset reporting airborne phase; stale means the newest receipt is over 30 seconds and no more than 2 minutes old. Equal newest receipt times prefer an airborne sample.";
+
 export function presenceState(
   sampleAt: Date | null,
   now = new Date(),
@@ -200,17 +210,69 @@ export async function getFlightTelemetry(
   };
 }
 
-export async function listLiveTelemetry(actor: TelemetryActor) {
+export async function listLiveTelemetry(
+  actor: TelemetryActor,
+  now = new Date(),
+) {
   if (!roleAtLeast(actor.role, "dispatcher")) {
     throw new AppError("FORBIDDEN", "Dispatchers only");
   }
   const current = await telemetryRepo.listCurrentFlightTelemetry({
     tenantId: actor.tenantId,
   });
-  return current.map((item) => ({
+  const items = current.map((item) => ({
     ...item,
-    presence: presenceState(item.sampleAt),
+    presence: presenceState(item.sampleAt, now),
   }));
+  return {
+    items,
+    summary: summarizePilotPresence(items),
+    generatedAt: now,
+  };
+}
+
+export function summarizePilotPresence(
+  items: Array<
+    Pick<FlightTelemetryCurrent, "membershipId" | "phase" | "sampleAt"> & {
+      presence: PresenceState;
+    }
+  >,
+): PilotPresenceSummary {
+  const newestByPilot = new Map<string, (typeof items)[number]>();
+
+  for (const item of items) {
+    const current = newestByPilot.get(item.membershipId);
+    const itemTime = item.sampleAt.getTime();
+    const currentTime = current?.sampleAt.getTime() ?? Number.NEGATIVE_INFINITY;
+    if (
+      !current ||
+      itemTime > currentTime ||
+      (itemTime === currentTime &&
+        item.phase === "airborne" &&
+        current.phase !== "airborne")
+    ) {
+      newestByPilot.set(item.membershipId, item);
+    }
+  }
+
+  let onlinePilots = 0;
+  let flyingPilots = 0;
+  let stalePilots = 0;
+  for (const item of newestByPilot.values()) {
+    if (item.presence === "online") {
+      onlinePilots += 1;
+      if (item.phase === "airborne") flyingPilots += 1;
+    } else if (item.presence === "stale") {
+      stalePilots += 1;
+    }
+  }
+
+  return {
+    onlinePilots,
+    flyingPilots,
+    stalePilots,
+    definition: PILOT_PRESENCE_DEFINITION,
+  };
 }
 
 export async function correctOooi(

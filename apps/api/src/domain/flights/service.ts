@@ -839,7 +839,11 @@ export async function applyHoppieProgress(input: {
   return updated;
 }
 
+export type DispatchBoardLane =
+  "overdue" | "accepted" | "briefed" | "active" | "completed";
+
 export async function getDispatchBoard(tenantId: string, now = new Date()) {
+  const window = flightRepo.dispatchBoardWindow(now);
   const boardFlights = await flightRepo.listBoardFlights(tenantId, now);
   const latestReleases = await releaseRepo.findLatestDispatchReleases(
     tenantId,
@@ -871,9 +875,11 @@ export async function getDispatchBoard(tenantId: string, now = new Date()) {
   return {
     flights: boardFlights.map((flight) => ({
       flight,
+      lane: dispatchBoardLane(flight, now),
       latestReleaseRevision: latestReleases.get(flight.id)?.revision ?? null,
       assignmentConfirmationRequired: assignmentNeedsConfirmation(flight),
     })),
+    window,
     metrics: {
       window: {
         from: monthStart.toISOString(),
@@ -906,6 +912,25 @@ export async function getDispatchBoard(tenantId: string, now = new Date()) {
       },
     },
   };
+}
+
+export function dispatchBoardLane(
+  flight: Pick<Flight, "status" | "etd">,
+  now: Date,
+): DispatchBoardLane {
+  if (flight.status === "active" || flight.status === "completed") {
+    return flight.status;
+  }
+  if (
+    (flight.status === "accepted" || flight.status === "briefed") &&
+    flight.etd.getTime() < now.getTime()
+  ) {
+    return "overdue";
+  }
+  if (flight.status === "accepted" || flight.status === "briefed") {
+    return flight.status;
+  }
+  throw new Error(`Unsupported dispatch board status: ${flight.status}`);
 }
 
 export function assignmentNeedsConfirmation(flight: Flight): boolean {

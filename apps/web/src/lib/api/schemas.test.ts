@@ -4,6 +4,7 @@ import {
   acarsMessagePageSchema,
   bulkFlightResponseSchema,
   dispatchBoardSchema,
+  dispatchTelemetrySchema,
   flightResponseSchema,
   meSchema,
   membersSchema,
@@ -115,6 +116,7 @@ describe("live API contract smoke fixtures", () => {
             eta: flight.eta,
             aircraftType: "A320",
             status: "accepted",
+            boardLane: "accepted",
             pilotMembershipId: "m1",
             dispatcherNotes: null,
             assignmentRevision: 1,
@@ -147,9 +149,28 @@ describe("live API contract smoke fixtures", () => {
             definition: "Month-to-date progress.",
           },
         },
+        boardWindow: {
+          generatedAt: "2026-08-12T12:00:00.000Z",
+          overdueFrom: "2026-08-11T12:00:00.000Z",
+          upcomingTo: "2026-08-19T12:00:00.000Z",
+          overdueLookbackHours: 24,
+          upcomingHorizonDays: 7,
+        },
         scheduleRequestCounts: { pending: 2 },
       }).scheduleRequestCounts.pending,
     ).toBe(2);
+    expect(
+      dispatchTelemetrySchema.parse({
+        items: [],
+        summary: {
+          onlinePilots: 1,
+          flyingPilots: 1,
+          stalePilots: 0,
+          definition: "Trusted server receipt window",
+        },
+        generatedAt: "2026-08-12T12:00:00.000Z",
+      }).summary.flyingPilots,
+    ).toBe(1);
     expect(
       membersSchema.parse({
         items: [

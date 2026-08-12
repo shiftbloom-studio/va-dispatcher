@@ -137,7 +137,7 @@ PostgreSQL contract suite is opt-in and requires a disposable PostgreSQL URL:
 
 ```bash
 TEST_DATABASE_URL=postgres://postgres:password@127.0.0.1:55439/test \
-  pnpm --filter @va-dispatch/api test:postgres-contract
+  pnpm --filter @va-dispatch/api test:postgres
 ```
 
 The suite creates and drops a unique schema. Do not point it at a shared or

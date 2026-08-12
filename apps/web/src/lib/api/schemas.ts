@@ -378,6 +378,12 @@ export const flightTelemetryResponseSchema = z.object({
 });
 export const dispatchTelemetrySchema = z.object({
   items: z.array(flightTelemetrySchema.extend({ presence: presenceSchema })),
+  summary: z.object({
+    onlinePilots: z.number().int().nonnegative(),
+    flyingPilots: z.number().int().nonnegative(),
+    stalePilots: z.number().int().nonnegative(),
+    definition: z.string(),
+  }),
   generatedAt: z.string(),
 });
 
@@ -477,7 +483,16 @@ export const boardFlightSchema = flightSchema
     outAt: true,
     inAt: true,
   })
-  .extend({ latestReleaseRevision: z.number().int().nullable() });
+  .extend({
+    latestReleaseRevision: z.number().int().nullable(),
+    boardLane: z.enum([
+      "overdue",
+      "accepted",
+      "briefed",
+      "active",
+      "completed",
+    ]),
+  });
 export type BoardFlight = z.infer<typeof boardFlightSchema>;
 const metricRatio = z.number().min(0).max(1).nullable();
 export const dispatchBoardSchema = z.object({
@@ -505,6 +520,13 @@ export const dispatchBoardSchema = z.object({
       value: metricRatio,
       definition: z.string(),
     }),
+  }),
+  boardWindow: z.object({
+    generatedAt: z.string(),
+    overdueFrom: z.string(),
+    upcomingTo: z.string(),
+    overdueLookbackHours: z.number().int().positive(),
+    upcomingHorizonDays: z.number().int().positive(),
   }),
   scheduleRequestCounts: z.record(z.string(), z.number()).default({}),
 });
