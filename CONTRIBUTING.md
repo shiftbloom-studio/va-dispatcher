@@ -15,7 +15,8 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
 
-VA Dispatch is a pnpm monorepo and requires Node.js 24 or newer and pnpm 11.
+VA Dispatch is a pnpm monorepo and requires Node.js 24 or newer (the version in
+`.nvmrc` is recommended) and pnpm 11.
 
 ```bash
 pnpm install

@@ -1,0 +1,1 @@
+[VA Dispatch repository](https://github.com/shiftbloom-studio/va-dispatcher) · [OpenAPI source](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/apps/api/src/docs/openapi.ts) · [Security policy](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/SECURITY.md) · AGPL-3.0-or-later · Simulation use only
