@@ -49,10 +49,10 @@ curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
 ## ACARS
 
 Production uses Hoppie exclusively. An admin configures and tests the tenant's
-ground station from the web settings page; the API encrypts its logon using
-`TENANT_SECRETS_KEY` before storage. Without that configuration, live sends
-return `422 UNPROCESSABLE` and nothing is stored. Generate the required 32-byte
-base64 key with `openssl rand -base64 32`.
+ground station from the web organization settings page; the API encrypts its
+logon using `TENANT_SECRETS_KEY` before storage. Without that configuration,
+live sends return `422 UNPROCESSABLE` and nothing is stored. Generate the
+required 32-byte base64 key with `openssl rand -base64 32`.
 
 `ACARS_PROVIDER=mock` selects the DB-backed adapter only for local development
 and automated tests. Production always resolves to Hoppie, including when a

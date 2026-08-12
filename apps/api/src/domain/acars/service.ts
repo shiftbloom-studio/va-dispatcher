@@ -14,6 +14,7 @@ import {
   findTenantById,
   listHoppieTenants,
 } from "../../db/repositories/tenants.js";
+import { findFlight } from "../../db/repositories/flights.js";
 import { AppError } from "../../lib/errors.js";
 import { isUniqueViolation } from "../../lib/postgres.js";
 import type { Tenant } from "../../db/schema.js";
@@ -26,6 +27,12 @@ export async function sendTelex(input: {
   flightId?: string | null;
 }) {
   const tenant = await requireTenant(input.tenantId);
+  if (input.flightId) {
+    const flight = await findFlight(input.tenantId, input.flightId);
+    if (!flight) {
+      throw new AppError("NOT_FOUND", "Flight not found");
+    }
+  }
   const from = tenant.hoppieStation ?? tenant.slug.toUpperCase();
   let provider: AcarsProvider;
   let result;

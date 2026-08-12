@@ -6,7 +6,7 @@ export function ForbiddenState({
   destination,
 }: {
   slug: string;
-  destination: "portal" | "dispatch";
+  destination: "portal" | "dispatch" | "settings";
 }) {
   return (
     <section
