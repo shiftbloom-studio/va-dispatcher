@@ -9,6 +9,9 @@ export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
+  // Keep schema operations scoped to application-owned tables. Neon provisions
+  // its own schemas alongside `public`, which must never be managed by Drizzle.
+  schemaFilter: ["public"],
   dbCredentials: {
     url: databaseUrl,
   },
