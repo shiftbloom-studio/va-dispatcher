@@ -75,6 +75,7 @@ export function DispatcherFlightList({ slug }: { slug: string }) {
   const memberMap = new Map(
     members.data.items.map((member) => [member.id, member]),
   );
+  const nextCursor = flights.data.nextCursor;
 
   return (
     <>
@@ -170,13 +171,13 @@ export function DispatcherFlightList({ slug }: { slug: string }) {
           />
         )}
       </Card>
-      {flights.data.nextCursor ? (
+      {nextCursor ? (
         <div className="mt-4 flex justify-end">
           <Button
             variant="secondary"
             onClick={() => {
               const params = new URLSearchParams(search.toString());
-              params.set("cursor", flights.data.nextCursor!);
+              params.set("cursor", nextCursor);
               router.push(`/${slug}/dispatch?${params.toString()}`);
             }}
           >

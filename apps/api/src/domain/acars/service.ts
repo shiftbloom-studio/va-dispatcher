@@ -2,7 +2,11 @@ import {
   createAcarsProvider,
   isMockAcarsEnabled,
 } from "../../acars/factory.js";
-import { AcarsProviderError, type AcarsProvider } from "../../acars/types.js";
+import {
+  AcarsProviderError,
+  type AcarsProvider,
+  type SendResult,
+} from "../../acars/types.js";
 import {
   findAcarsMessage,
   insertAcarsMessage,
@@ -33,17 +37,17 @@ export async function sendTelex(input: {
       throw new AppError("NOT_FOUND", "Flight not found");
     }
   }
-  const from = tenant.hoppieStation ?? tenant.slug.toUpperCase();
+  const fromStation = tenant.hoppieStation ?? tenant.slug.toUpperCase();
   let provider: AcarsProvider;
-  let result;
+  let sendResult: SendResult;
   try {
     provider = createAcarsProvider(tenant);
-    result = await provider.sendTelex({
-      from,
+    sendResult = await provider.sendTelex({
+      from: fromStation,
       to: input.to.toUpperCase(),
       body: input.body,
     });
-    if (!result.ok) {
+    if (!sendResult.ok) {
       throw new AcarsProviderError(
         "rejected",
         "The ACARS provider rejected the message.",
@@ -57,12 +61,12 @@ export async function sendTelex(input: {
     tenantId: input.tenantId,
     direction: "outbound",
     msgType: "telex",
-    fromStation: from,
+    fromStation,
     toStation: input.to.toUpperCase(),
     body: input.body,
-    hoppieRaw: result.raw,
+    hoppieRaw: sendResult.raw,
     provider: provider.name,
-    providerMessageId: result.providerMessageId ?? null,
+    providerMessageId: sendResult.providerMessageId ?? null,
     flightId: input.flightId ?? null,
     createdByMembershipId: input.membershipId,
     sentAt: new Date(),
@@ -92,11 +96,11 @@ export async function listMessages(input: {
 }
 
 export async function getMessage(tenantId: string, id: string) {
-  const msg = await findAcarsMessage(tenantId, id);
-  if (!msg) {
+  const message = await findAcarsMessage(tenantId, id);
+  if (!message) {
     throw new AppError("NOT_FOUND", "ACARS message not found");
   }
-  return msg;
+  return message;
 }
 
 export async function simulateInbound(input: {
@@ -113,14 +117,14 @@ export async function simulateInbound(input: {
     );
   }
   const tenant = await requireTenant(input.tenantId);
-  const to =
+  const toStation =
     input.to?.toUpperCase() ??
     tenant.hoppieStation ??
     tenant.slug.toUpperCase();
 
   await enqueueMockAcars({
     tenantId: input.tenantId,
-    toStation: to,
+    toStation,
     fromStation: input.from.toUpperCase(),
     msgType: input.msgType ?? "telex",
     body: input.body,
@@ -132,35 +136,35 @@ export async function simulateInbound(input: {
   // contract used by simulator clients.
   await pollTenantAcars(tenant);
 
-  return { queued: true, to };
+  return { queued: true, to: toStation };
 }
 
 export async function pollTenantAcars(tenant: Tenant): Promise<number> {
   const station = tenant.hoppieStation ?? tenant.slug.toUpperCase();
   const provider = createAcarsProvider(tenant);
-  const inbound = await provider.poll({ station });
-  let stored = 0;
-  for (const msg of inbound) {
+  const inboundMessages = await provider.poll({ station });
+  let storedMessageCount = 0;
+  for (const message of inboundMessages) {
     try {
       await insertAcarsMessage({
         tenantId: tenant.id,
         direction: "inbound",
-        msgType: msg.type,
-        fromStation: msg.from,
-        toStation: msg.to,
-        body: msg.body,
-        hoppieRaw: msg.raw,
+        msgType: message.type,
+        fromStation: message.from,
+        toStation: message.to,
+        body: message.body,
+        hoppieRaw: message.raw,
         provider: provider.name,
-        providerMessageId: msg.providerMessageId,
-        receivedAt: msg.receivedAt,
+        providerMessageId: message.providerMessageId,
+        receivedAt: message.receivedAt,
       });
-      stored += 1;
+      storedMessageCount += 1;
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       // Hoppie poll dedupe: another ingestion already stored this message.
     }
   }
-  return stored;
+  return storedMessageCount;
 }
 
 /**
@@ -191,15 +195,19 @@ export async function pollAllTenants(): Promise<{
     };
   }
 
-  let messages = 0;
+  let messageCount = 0;
   for (const tenant of hoppieTenants) {
     try {
-      messages += await pollTenantAcars(tenant);
-    } catch (err) {
-      console.error(`ACARS poll failed for tenant ${tenant.slug}`, err);
+      messageCount += await pollTenantAcars(tenant);
+    } catch (error) {
+      console.error(`ACARS poll failed for tenant ${tenant.slug}`, error);
     }
   }
-  return { tenants: hoppieTenants.length, messages, skipped: null };
+  return {
+    tenants: hoppieTenants.length,
+    messages: messageCount,
+    skipped: null,
+  };
 }
 
 export function publicProviderError(error: unknown): AppError {

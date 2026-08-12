@@ -32,8 +32,8 @@ internalRoutes.on(["GET", "POST"], "/internal/cron/acars-poll", async (c) => {
   if (!hasDatabase()) {
     return c.json({ ok: false, error: "no database" }, 503);
   }
-  const result = await pollAllTenants();
-  return c.json({ ok: true, ...result });
+  const pollResult = await pollAllTenants();
+  return c.json({ ok: true, ...pollResult });
 });
 
 internalRoutes.post(
@@ -50,12 +50,12 @@ internalRoutes.post(
   ),
   async (c) => {
     // Allow seed with cron secret or when AUTH_DEV_BYPASS
-    const e = env();
-    const auth = c.req.header("authorization");
-    const seedOk =
-      auth === `Bearer ${e.CRON_SECRET}` ||
-      (e.AUTH_DEV_BYPASS && e.NODE_ENV !== "production");
-    if (!seedOk) {
+    const config = env();
+    const authorizationHeader = c.req.header("authorization");
+    const isSeedAuthorized =
+      authorizationHeader === `Bearer ${config.CRON_SECRET}` ||
+      (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production");
+    if (!isSeedAuthorized) {
       throw new AppError("UNAUTHORIZED", "Seed not authorized");
     }
     if (!hasDatabase()) {
@@ -63,7 +63,8 @@ internalRoutes.post(
     }
 
     const body = c.req.valid("json") ?? {};
-    const clerkOrgId = body.clerkOrgId ?? e.VSAS_CLERK_ORG_ID ?? "org_vsas_dev";
+    const clerkOrgId =
+      body.clerkOrgId ?? config.VSAS_CLERK_ORG_ID ?? "org_vsas_dev";
 
     const tenant = await upsertTenantBySlug({
       slug: "vsas",

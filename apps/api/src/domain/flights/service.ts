@@ -1,15 +1,14 @@
 import { writeAudit } from "../../db/repositories/audit.js";
 import * as flightRepo from "../../db/repositories/flights.js";
-import { findScheduleRequest } from "../../db/repositories/schedule-requests.js";
-import { updateScheduleRequestStatus } from "../../db/repositories/schedule-requests.js";
+import {
+  findScheduleRequest,
+  updateScheduleRequestStatus,
+} from "../../db/repositories/schedule-requests.js";
 import type { Flight, FlightStatus, MemberRole } from "../../db/schema.js";
 import { AppError } from "../../lib/errors.js";
 import { roleAtLeast } from "../members/roles.js";
 import { assertScheduleRequestTransition } from "../schedule-requests/transitions.js";
-import {
-  assertFlightTransition,
-  pilotMayCancel,
-} from "./transitions.js";
+import { assertFlightTransition, pilotMayCancel } from "./transitions.js";
 
 export async function createFlight(
   actor: {
@@ -34,11 +33,11 @@ export async function createFlight(
     throw new AppError("FORBIDDEN", "Dispatchers only");
   }
   if (input.scheduleRequestId) {
-    const req = await findScheduleRequest(
+    const scheduleRequest = await findScheduleRequest(
       actor.tenantId,
       input.scheduleRequestId,
     );
-    if (!req) {
+    if (!scheduleRequest) {
       throw new AppError("NOT_FOUND", "Schedule request not found");
     }
   }
@@ -91,52 +90,56 @@ export async function bulkCreateFlights(
   if (!roleAtLeast(actor.role, "dispatcher")) {
     throw new AppError("FORBIDDEN", "Dispatchers only");
   }
-  const req = await findScheduleRequest(
+  const scheduleRequest = await findScheduleRequest(
     actor.tenantId,
     input.scheduleRequestId,
   );
-  if (!req) {
+  if (!scheduleRequest) {
     throw new AppError("NOT_FOUND", "Schedule request not found");
   }
 
-  const created = await flightRepo.createFlights(
-    input.flights.map((f) => ({
+  const createdFlights = await flightRepo.createFlights(
+    input.flights.map((flight) => ({
       tenantId: actor.tenantId,
       scheduleRequestId: input.scheduleRequestId,
-      pilotMembershipId: f.pilotMembershipId ?? req.pilotMembershipId,
-      flightNumber: f.flightNumber,
-      depIcao: f.depIcao,
-      arrIcao: f.arrIcao,
-      etd: f.etd,
-      eta: f.eta,
-      aircraftType: f.aircraftType,
+      pilotMembershipId:
+        flight.pilotMembershipId ?? scheduleRequest.pilotMembershipId,
+      flightNumber: flight.flightNumber,
+      depIcao: flight.depIcao,
+      arrIcao: flight.arrIcao,
+      etd: flight.etd,
+      eta: flight.eta,
+      aircraftType: flight.aircraftType,
       status: "offered" as const,
     })),
   );
 
   // Move request into review/partial fulfillment heuristics
-  if (req.status === "pending") {
-    assertScheduleRequestTransition(req.status, "in_review");
+  if (scheduleRequest.status === "pending") {
+    assertScheduleRequestTransition(scheduleRequest.status, "in_review");
     await updateScheduleRequestStatus(
       actor.tenantId,
-      req.id,
+      scheduleRequest.id,
       "in_review",
     );
   }
 
-  const offeredCount = created.length;
-  if (offeredCount >= req.desiredFlightCount) {
-    if (req.status === "in_review" || req.status === "pending") {
+  const offeredCount = createdFlights.length;
+  if (offeredCount >= scheduleRequest.desiredFlightCount) {
+    if (
+      scheduleRequest.status === "in_review" ||
+      scheduleRequest.status === "pending"
+    ) {
       await updateScheduleRequestStatus(
         actor.tenantId,
-        req.id,
+        scheduleRequest.id,
         "fulfilled",
       );
     }
   } else if (offeredCount > 0) {
     await updateScheduleRequestStatus(
       actor.tenantId,
-      req.id,
+      scheduleRequest.id,
       "partially_fulfilled",
     );
   }
@@ -147,10 +150,10 @@ export async function bulkCreateFlights(
     action: "flight.bulk_create",
     entityType: "schedule_request",
     entityId: input.scheduleRequestId,
-    meta: { count: created.length },
+    meta: { count: createdFlights.length },
   });
 
-  return created;
+  return createdFlights;
 }
 
 export async function getFlight(
@@ -202,8 +205,8 @@ export async function transitionFlight(
     role: MemberRole;
   },
   flightId: string,
-  to: FlightStatus,
-  extra?: {
+  nextStatus: FlightStatus,
+  transitionDetails?: {
     reason?: string;
   },
 ): Promise<Flight> {
@@ -212,52 +215,63 @@ export async function transitionFlight(
     throw new AppError("NOT_FOUND", "Flight not found");
   }
 
-  assertFlightTransition(flight.status, to);
+  assertFlightTransition(flight.status, nextStatus);
 
   // Authorization by transition
-  if (to === "accepted" || to === "declined") {
+  if (nextStatus === "accepted" || nextStatus === "declined") {
     if (flight.pilotMembershipId !== actor.membershipId) {
       throw new AppError("FORBIDDEN", "Only the assigned pilot can respond");
     }
-  } else if (to === "cancelled") {
+  } else if (nextStatus === "cancelled") {
     const isDispatcher = roleAtLeast(actor.role, "dispatcher");
     const isOwner = flight.pilotMembershipId === actor.membershipId;
     if (!isDispatcher && !(isOwner && pilotMayCancel(flight.status))) {
       throw new AppError("FORBIDDEN", "Cannot cancel this flight");
     }
-  } else if (to === "offered" || to === "briefed" || to === "active" || to === "completed") {
+  } else if (
+    nextStatus === "offered" ||
+    nextStatus === "briefed" ||
+    nextStatus === "active" ||
+    nextStatus === "completed"
+  ) {
     if (!roleAtLeast(actor.role, "dispatcher")) {
       throw new AppError("FORBIDDEN", "Dispatchers only");
     }
   }
 
-  const patch: Parameters<typeof flightRepo.updateFlight>[2] = { status: to };
-  if (to === "cancelled") {
-    patch.cancelReason = extra?.reason ?? null;
+  const patch: Parameters<typeof flightRepo.updateFlight>[2] = {
+    status: nextStatus,
+  };
+  if (nextStatus === "cancelled") {
+    patch.cancelReason = transitionDetails?.reason ?? null;
   }
-  if (to === "declined") {
-    patch.declinedReason = extra?.reason ?? null;
+  if (nextStatus === "declined") {
+    patch.declinedReason = transitionDetails?.reason ?? null;
   }
 
-  const updated = await flightRepo.updateFlight(
+  const updatedFlight = await flightRepo.updateFlight(
     actor.tenantId,
     flightId,
     patch,
   );
-  if (!updated) {
+  if (!updatedFlight) {
     throw new AppError("NOT_FOUND", "Flight not found");
   }
 
   await writeAudit({
     tenantId: actor.tenantId,
     actorMembershipId: actor.membershipId,
-    action: `flight.${to}`,
+    action: `flight.${nextStatus}`,
     entityType: "flight",
     entityId: flightId,
-    meta: { from: flight.status, to, reason: extra?.reason },
+    meta: {
+      from: flight.status,
+      to: nextStatus,
+      reason: transitionDetails?.reason,
+    },
   });
 
-  return updated;
+  return updatedFlight;
 }
 
 export async function patchFlight(
@@ -292,12 +306,12 @@ export async function patchFlight(
     );
   }
 
-  const updated = await flightRepo.updateFlight(
+  const updatedFlight = await flightRepo.updateFlight(
     actor.tenantId,
     flightId,
     patch,
   );
-  if (!updated) {
+  if (!updatedFlight) {
     throw new AppError("NOT_FOUND", "Flight not found");
   }
 
@@ -310,7 +324,7 @@ export async function patchFlight(
     meta: { fields: Object.keys(patch) },
   });
 
-  return updated;
+  return updatedFlight;
 }
 
 export async function getDispatchBoard(tenantId: string) {

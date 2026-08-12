@@ -21,10 +21,7 @@ export async function createRequest(
   },
 ): Promise<ScheduleRequest> {
   if (input.windowEnd <= input.windowStart) {
-    throw new AppError(
-      "BAD_REQUEST",
-      "windowEnd must be after windowStart",
-    );
+    throw new AppError("BAD_REQUEST", "windowEnd must be after windowStart");
   }
   if (input.desiredFlightCount < 1 || input.desiredFlightCount > 50) {
     throw new AppError(
@@ -33,7 +30,7 @@ export async function createRequest(
     );
   }
 
-  const row = await scheduleRepo.createScheduleRequest({
+  const scheduleRequest = await scheduleRepo.createScheduleRequest({
     tenantId: actor.tenantId,
     pilotMembershipId: actor.membershipId,
     ...input,
@@ -44,10 +41,10 @@ export async function createRequest(
     actorMembershipId: actor.membershipId,
     action: "schedule_request.create",
     entityType: "schedule_request",
-    entityId: row.id,
+    entityId: scheduleRequest.id,
   });
 
-  return row;
+  return scheduleRequest;
 }
 
 export async function getRequest(
@@ -55,24 +52,24 @@ export async function getRequest(
   id: string,
   actor: { membershipId: string; role: MemberRole },
 ) {
-  const req = await scheduleRepo.findScheduleRequest(tenantId, id);
-  if (!req) {
+  const scheduleRequest = await scheduleRepo.findScheduleRequest(tenantId, id);
+  if (!scheduleRequest) {
     throw new AppError("NOT_FOUND", "Schedule request not found");
   }
   if (
     !roleAtLeast(actor.role, "dispatcher") &&
-    req.pilotMembershipId !== actor.membershipId
+    scheduleRequest.pilotMembershipId !== actor.membershipId
   ) {
     throw new AppError("FORBIDDEN", "Not your schedule request");
   }
 
-  const linked = await listFlights({
+  const linkedFlights = await listFlights({
     tenantId,
     scheduleRequestId: id,
     limit: 100,
   });
 
-  return { request: req, flights: linked.items };
+  return { request: scheduleRequest, flights: linkedFlights.items };
 }
 
 export async function listRequests(
@@ -103,51 +100,63 @@ export async function transitionRequest(
     role: MemberRole;
   },
   id: string,
-  to: ScheduleRequest["status"],
-  extra?: { reason?: string },
+  nextStatus: ScheduleRequest["status"],
+  transitionDetails?: { reason?: string },
 ): Promise<ScheduleRequest> {
-  const req = await scheduleRepo.findScheduleRequest(actor.tenantId, id);
-  if (!req) {
+  const scheduleRequest = await scheduleRepo.findScheduleRequest(
+    actor.tenantId,
+    id,
+  );
+  if (!scheduleRequest) {
     throw new AppError("NOT_FOUND", "Schedule request not found");
   }
 
-  assertScheduleRequestTransition(req.status, to);
+  assertScheduleRequestTransition(scheduleRequest.status, nextStatus);
 
-  if (to === "cancelled") {
-    const isOwner = req.pilotMembershipId === actor.membershipId;
+  if (nextStatus === "cancelled") {
+    const isOwner = scheduleRequest.pilotMembershipId === actor.membershipId;
     const isDispatcher = roleAtLeast(actor.role, "dispatcher");
     if (!isOwner && !isDispatcher) {
       throw new AppError("FORBIDDEN", "Cannot cancel this request");
     }
   } else if (
-    to === "in_review" ||
-    to === "rejected" ||
-    to === "fulfilled" ||
-    to === "partially_fulfilled"
+    nextStatus === "in_review" ||
+    nextStatus === "rejected" ||
+    nextStatus === "fulfilled" ||
+    nextStatus === "partially_fulfilled"
   ) {
     if (!roleAtLeast(actor.role, "dispatcher")) {
       throw new AppError("FORBIDDEN", "Dispatchers only");
     }
   }
 
-  const updated = await scheduleRepo.updateScheduleRequestStatus(
+  const updatedScheduleRequest = await scheduleRepo.updateScheduleRequestStatus(
     actor.tenantId,
     id,
-    to,
-    { rejectReason: to === "rejected" ? (extra?.reason ?? null) : undefined },
+    nextStatus,
+    {
+      rejectReason:
+        nextStatus === "rejected"
+          ? (transitionDetails?.reason ?? null)
+          : undefined,
+    },
   );
-  if (!updated) {
+  if (!updatedScheduleRequest) {
     throw new AppError("NOT_FOUND", "Schedule request not found");
   }
 
   await writeAudit({
     tenantId: actor.tenantId,
     actorMembershipId: actor.membershipId,
-    action: `schedule_request.${to}`,
+    action: `schedule_request.${nextStatus}`,
     entityType: "schedule_request",
     entityId: id,
-    meta: { from: req.status, to, reason: extra?.reason },
+    meta: {
+      from: scheduleRequest.status,
+      to: nextStatus,
+      reason: transitionDetails?.reason,
+    },
   });
 
-  return updated;
+  return updatedScheduleRequest;
 }

@@ -15,11 +15,9 @@ export function getDb(): Db {
   if (dbInstance) return dbInstance;
   const url = env().DATABASE_URL;
   if (!url) {
-    throw new AppError(
-      "INTERNAL",
-      "DATABASE_URL is not configured",
-      { status: 503 },
-    );
+    throw new AppError("INTERNAL", "DATABASE_URL is not configured", {
+      status: 503,
+    });
   }
   const sql = neon(url);
   dbInstance = drizzle({ client: sql, relations });

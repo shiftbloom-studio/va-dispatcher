@@ -114,11 +114,14 @@ export async function listFlights(input: {
     conditions.push(lte(flights.etd, input.toEtd));
   }
   if (input.cursor) {
-    const c = decodeCursor(input.cursor);
+    const cursor = decodeCursor(input.cursor);
     conditions.push(
       or(
-        lt(flights.createdAt, new Date(c.createdAt)),
-        and(eq(flights.createdAt, new Date(c.createdAt)), lt(flights.id, c.id)),
+        lt(flights.createdAt, new Date(cursor.createdAt)),
+        and(
+          eq(flights.createdAt, new Date(cursor.createdAt)),
+          lt(flights.id, cursor.id),
+        ),
       )!,
     );
   }
@@ -132,12 +135,12 @@ export async function listFlights(input: {
 
   const hasMore = rows.length > input.limit;
   const items = hasMore ? rows.slice(0, input.limit) : rows;
-  const last = items[items.length - 1];
+  const lastItem = items.at(-1);
   const nextCursor =
-    hasMore && last
+    hasMore && lastItem
       ? encodeCursor({
-          createdAt: last.createdAt.toISOString(),
-          id: last.id,
+          createdAt: lastItem.createdAt.toISOString(),
+          id: lastItem.id,
         })
       : null;
 
@@ -180,21 +183,16 @@ export async function updateFlight(
 
 export async function listBoardFlights(tenantId: string): Promise<Flight[]> {
   const db = getDb();
-  const now = new Date();
-  const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
+  const boardHorizon = new Date(Date.now() + sevenDaysInMilliseconds);
   return db
     .select()
     .from(flights)
     .where(
       and(
         eq(flights.tenantId, tenantId),
-        inArray(flights.status, [
-          "offered",
-          "accepted",
-          "briefed",
-          "active",
-        ]),
-        lte(flights.etd, horizon),
+        inArray(flights.status, ["offered", "accepted", "briefed", "active"]),
+        lte(flights.etd, boardHorizon),
       ),
     )
     .orderBy(flights.etd);

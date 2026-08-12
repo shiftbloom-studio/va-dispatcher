@@ -76,7 +76,10 @@ export const tenants = pgTable(
     clerkOrgId: text("clerk_org_id").notNull(),
     hoppieStation: text("hoppie_station"),
     hoppieLogonEnc: text("hoppie_logon_enc"),
-    settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
+    settings: jsonb("settings")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     ...timestamps,
   },
   (t) => [
@@ -260,7 +263,11 @@ export const mockAcarsQueue = pgTable(
       .defaultNow(),
   },
   (t) => [
-    index("mock_acars_queue_pending_idx").on(t.tenantId, t.toStation, t.delivered),
+    index("mock_acars_queue_pending_idx").on(
+      t.tenantId,
+      t.toStation,
+      t.delivered,
+    ),
   ],
 );
 

@@ -72,8 +72,8 @@ export function ScheduleRequestDetail({
     );
   }
 
-  const item = request.data.request;
-  const availability = availabilityFromPreferences(item.preferences);
+  const scheduleRequest = request.data.request;
+  const availability = availabilityFromPreferences(scheduleRequest.preferences);
 
   return (
     <>
@@ -85,9 +85,12 @@ export function ScheduleRequestDetail({
       </Link>
       <PageHeading
         eyebrow="Schedule request"
-        title={item.title || `${item.desiredFlightCount}-flight request`}
-        description={`Submitted ${formatUtc(item.createdAt)} · ${item.desiredFlightCount} flight${item.desiredFlightCount === 1 ? "" : "s"} requested`}
-        action={<StatusBadge status={item.status} />}
+        title={
+          scheduleRequest.title ||
+          `${scheduleRequest.desiredFlightCount}-flight request`
+        }
+        description={`Submitted ${formatUtc(scheduleRequest.createdAt)} · ${scheduleRequest.desiredFlightCount} flight${scheduleRequest.desiredFlightCount === 1 ? "" : "s"} requested`}
+        action={<StatusBadge status={scheduleRequest.status} />}
       />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -122,7 +125,12 @@ export function ScheduleRequestDetail({
             <div className="space-y-3 p-5">
               {(availability.length
                 ? availability
-                : [{ startAt: item.windowStart, endAt: item.windowEnd }]
+                : [
+                    {
+                      startAt: scheduleRequest.windowStart,
+                      endAt: scheduleRequest.windowEnd,
+                    },
+                  ]
               ).map((interval, index) => (
                 <div
                   key={`${interval.startAt}-${index}`}
@@ -146,25 +154,25 @@ export function ScheduleRequestDetail({
               ))}
             </div>
           </Card>
-          {item.notes ? (
+          {scheduleRequest.notes ? (
             <Card className="p-5">
               <h2 className="font-display text-lg font-semibold">
                 Pilot notes
               </h2>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                {item.notes}
+                {scheduleRequest.notes}
               </p>
             </Card>
           ) : null}
-          {item.rejectReason ? (
+          {scheduleRequest.rejectReason ? (
             <div
               role="status"
               className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"
             >
-              <strong>Dispatch response:</strong> {item.rejectReason}
+              <strong>Dispatch response:</strong> {scheduleRequest.rejectReason}
             </div>
           ) : null}
-          {canCancelScheduleRequest(item.status) ? (
+          {canCancelScheduleRequest(scheduleRequest.status) ? (
             <ConfirmAction
               trigger={
                 <Button variant="secondary" className="w-full text-red-700">
@@ -175,7 +183,9 @@ export function ScheduleRequestDetail({
               detail="Dispatch will stop working on this request. Existing flight records are not changed by this action."
               confirmLabel="Cancel request"
               danger
-              onConfirm={() => cancel.mutateAsync().then(() => undefined)}
+              onConfirm={async () => {
+                await cancel.mutateAsync();
+              }}
             />
           ) : null}
         </div>
