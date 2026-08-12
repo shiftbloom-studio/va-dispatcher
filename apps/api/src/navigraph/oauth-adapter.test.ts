@@ -6,7 +6,7 @@ import {
 
 describe("buildNavigraphAuthorizationUrl", () => {
   it("builds the documented Authorization Code + S256 PKCE request", () => {
-    const state = `v1.${"s".repeat(22)}.${"m".repeat(43)}`;
+    const state = `v2.${"i".repeat(16)}.${"t".repeat(22)}.${"c".repeat(58)}`;
     const codeChallenge = "c".repeat(43);
     const redirectUri =
       "https://www.va-dispatcher.world/api/v1/simbrief/oauth/callback";

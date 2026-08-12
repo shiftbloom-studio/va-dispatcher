@@ -8,10 +8,10 @@ import * as oauthRepo from "../../db/repositories/navigraph-oauth.js";
 import type { Membership } from "../../db/schema.js";
 import { env } from "../../env.js";
 import {
-  createTokenMac,
+  decryptOpaqueToken,
   decryptSecret,
+  encryptOpaqueToken,
   encryptSecret,
-  verifyTokenMac,
 } from "../../lib/crypto.js";
 import { AppError } from "../../lib/errors.js";
 import { isUniqueViolation } from "../../lib/postgres.js";
@@ -23,10 +23,11 @@ import {
 import type { SimbriefActor } from "./service.js";
 
 const OAUTH_TRANSACTION_TTL_MS = 10 * 60 * 1_000;
-const OAUTH_STATE_VERSION = "v1";
-const OAUTH_STATE_ID_LENGTH_BYTES = 16;
-const OAUTH_STATE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
-const OAUTH_STATE_MAC_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const OAUTH_STATE_VERSION = "v2";
+const OAUTH_STATE_ID_LENGTH_BYTES = 32;
+const OAUTH_STATE_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const OAUTH_STATE_PATTERN =
+  /^v2\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{58}$/;
 
 export type NavigraphOauthStart = {
   authorizationUrl: string;
@@ -253,27 +254,31 @@ function issueOauthState(secretsKey: string): {
   const stateId = randomBytes(OAUTH_STATE_ID_LENGTH_BYTES).toString(
     "base64url",
   );
-  const payload = `${OAUTH_STATE_VERSION}.${stateId}`;
-  const mac = createTokenMac(payload, secretsKey, "navigraph-oauth-state");
-  return { state: `${payload}.${mac}`, stateId };
+  const sealedStateId = encryptOpaqueToken(
+    stateId,
+    secretsKey,
+    "navigraph-oauth-state",
+  );
+  return {
+    state: `${OAUTH_STATE_VERSION}.${sealedStateId}`,
+    stateId,
+  };
 }
 
 function verifyOauthState(state: string, secretsKey: string): string | null {
-  const [version, stateId, mac, ...extra] = state.split(".");
-  if (
-    extra.length > 0 ||
-    version !== OAUTH_STATE_VERSION ||
-    !stateId ||
-    !mac ||
-    !OAUTH_STATE_ID_PATTERN.test(stateId) ||
-    !OAUTH_STATE_MAC_PATTERN.test(mac)
-  ) {
+  if (!OAUTH_STATE_PATTERN.test(state)) return null;
+  const sealedStateId = state.slice(OAUTH_STATE_VERSION.length + 1);
+  try {
+    const stateId = decryptOpaqueToken(
+      sealedStateId,
+      secretsKey,
+      "navigraph-oauth-state",
+    );
+    return OAUTH_STATE_ID_PATTERN.test(stateId) ? stateId : null;
+  } catch (error) {
+    if (error instanceof AppError && error.code === "INTERNAL") throw error;
     return null;
   }
-  const payload = `${version}.${stateId}`;
-  return verifyTokenMac(payload, mac, secretsKey, "navigraph-oauth-state")
-    ? stateId
-    : null;
 }
 
 function invalidOauthState(): AppError {
