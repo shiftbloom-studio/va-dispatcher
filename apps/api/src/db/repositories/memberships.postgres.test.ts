@@ -237,21 +237,38 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     const flight = await pool.query<{
       pilotMembershipId: string;
       status: string;
+      version: number;
+      assignmentRevision: number;
+      assignmentConfirmedRevision: number | null;
     }>(
-      `select pilot_membership_id as "pilotMembershipId", status
+      `select
+         pilot_membership_id as "pilotMembershipId",
+         status,
+         version,
+         assignment_revision as "assignmentRevision",
+         assignment_confirmed_revision as "assignmentConfirmedRevision"
        from flights where id = $1`,
       [FLIGHT_ONE],
     );
     expect(flight.rows[0]).toEqual({
       pilotMembershipId: PILOT_TWO,
       status: "offered",
+      version: 2,
+      assignmentRevision: 2,
+      assignmentConfirmedRevision: null,
     });
-    const request = await pool.query<{ pilotMembershipId: string }>(
-      `select pilot_membership_id as "pilotMembershipId"
+    const request = await pool.query<{
+      pilotMembershipId: string;
+      version: number;
+    }>(
+      `select pilot_membership_id as "pilotMembershipId", version
        from schedule_requests where id = $1`,
       [REQUEST_ONE],
     );
-    expect(request.rows[0]?.pilotMembershipId).toBe(PILOT_TWO);
+    expect(request.rows[0]).toEqual({
+      pilotMembershipId: PILOT_TWO,
+      version: 2,
+    });
     const events = await pool.query<{
       action: string;
       meta: Record<string, unknown>;
@@ -269,9 +286,34 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       "schedule_request.assignment_reassigned",
     ]);
     expect(events.rows[0]?.meta).toMatchObject({
-      before: { pilotMembershipId: PILOT_ONE, status: "accepted" },
-      after: { pilotMembershipId: PILOT_TWO, status: "offered" },
+      before: {
+        pilotMembershipId: PILOT_ONE,
+        status: "accepted",
+        version: 1,
+        assignmentRevision: 1,
+        assignmentConfirmedRevision: 1,
+      },
+      after: {
+        pilotMembershipId: PILOT_TWO,
+        status: "offered",
+        version: 2,
+        assignmentRevision: 2,
+        assignmentConfirmedRevision: null,
+      },
       acceptanceInvalidated: true,
+      reason: "member_became_ineligible",
+    });
+    expect(events.rows[1]?.meta).toMatchObject({
+      before: {
+        pilotMembershipId: PILOT_ONE,
+        status: "in_review",
+        version: 1,
+      },
+      after: {
+        pilotMembershipId: PILOT_TWO,
+        status: "in_review",
+        version: 2,
+      },
       reason: "member_became_ineligible",
     });
   });
@@ -733,10 +775,11 @@ async function resetFixtures(pool: pg.Pool): Promise<void> {
   await pool.query(
     `insert into flights (
       id, tenant_id, schedule_request_id, pilot_membership_id, flight_number,
-      dep_icao, arr_icao, etd, eta, status
+      dep_icao, arr_icao, etd, eta, status,
+      assignment_confirmed_revision, assignment_confirmed_at
     ) values (
       $1, $2, $3, $4, 'SK901', 'EKCH', 'ENGM', now(),
-      now() + interval '1 hour', 'accepted'
+      now() + interval '1 hour', 'accepted', 1, now()
     )`,
     [FLIGHT_ONE, TENANT_ONE, REQUEST_ONE, PILOT_ONE],
   );

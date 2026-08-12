@@ -570,7 +570,7 @@ export async function administrativelyUpdateMembership(input: {
       limit 1
     ),
     locked_requests as materialized (
-      select sr.id, sr.pilot_membership_id, sr.status
+      select sr.id, sr.pilot_membership_id, sr.status, sr.version
       from schedule_requests sr, target t
       where sr.tenant_id = t.tenant_id
         and (
@@ -593,7 +593,13 @@ export async function administrativelyUpdateMembership(input: {
       select count(*)::int as locked_request_count from locked_requests
     ),
     locked_flights as materialized (
-      select f.id, f.status, f.schedule_request_id
+      select
+        f.id,
+        f.status,
+        f.schedule_request_id,
+        f.version,
+        f.assignment_revision,
+        f.assignment_confirmed_revision
       from flights f, target t, locked_request_gate request_gate
       where request_gate.locked_request_count >= 0
         and f.tenant_id = t.tenant_id
@@ -669,7 +675,13 @@ export async function administrativelyUpdateMembership(input: {
       returning m.*
     ),
     flight_candidates as materialized (
-      select lf.id, lf.status as previous_status, lf.schedule_request_id
+      select
+        lf.id,
+        lf.status as previous_status,
+        lf.schedule_request_id,
+        lf.version as previous_version,
+        lf.assignment_revision as previous_assignment_revision,
+        lf.assignment_confirmed_revision as previous_confirmed_revision
       from locked_flights lf, updated_member u
       where exists (
           select 1 from eligible e where e.requires_work_transfer
@@ -680,6 +692,10 @@ export async function administrativelyUpdateMembership(input: {
       update flights f
       set
         pilot_membership_id = r.id,
+        version = f.version + 1,
+        assignment_revision = f.assignment_revision + 1,
+        assignment_confirmed_revision = null,
+        assignment_confirmed_at = null,
         status = case
           when fc.previous_status in ('accepted', 'briefed') then 'offered'::flight_status
           else fc.previous_status
@@ -690,27 +706,44 @@ export async function administrativelyUpdateMembership(input: {
         and f.tenant_id = ${input.tenantId}::uuid
         and f.pilot_membership_id = ${input.membershipId}::uuid
         and f.status = fc.previous_status
+        and f.version = fc.previous_version
       returning
         f.id,
         f.schedule_request_id,
         fc.previous_status,
-        f.status as next_status
+        f.status as next_status,
+        fc.previous_version,
+        f.version as next_version,
+        fc.previous_assignment_revision,
+        f.assignment_revision as next_assignment_revision,
+        fc.previous_confirmed_revision
     ),
     request_candidates as materialized (
-      select lr.id, lr.status as request_status
+      select
+        lr.id,
+        lr.status as request_status,
+        lr.version as previous_version
       from locked_requests lr, updated_member u
       where lr.pilot_membership_id = u.id
         and lr.status in ('pending', 'in_review', 'partially_fulfilled')
     ),
     reassigned_requests as (
       update schedule_requests sr
-      set pilot_membership_id = r.id, updated_at = ${changedAt}
+      set
+        pilot_membership_id = r.id,
+        version = sr.version + 1,
+        updated_at = ${changedAt}
       from request_candidates rc, replacement r
       where sr.id = rc.id
         and sr.tenant_id = ${input.tenantId}::uuid
         and sr.pilot_membership_id = ${input.membershipId}::uuid
         and sr.status = rc.request_status
-      returning sr.id, rc.request_status
+        and sr.version = rc.previous_version
+      returning
+        sr.id,
+        rc.request_status,
+        rc.previous_version,
+        sr.version as next_version
     ),
     recorded_flight_audit as (
       insert into audit_events (
@@ -725,11 +758,17 @@ export async function administrativelyUpdateMembership(input: {
         jsonb_build_object(
           'before', jsonb_build_object(
             'pilotMembershipId', ${input.membershipId}::uuid,
-            'status', rf.previous_status
+            'status', rf.previous_status,
+            'version', rf.previous_version,
+            'assignmentRevision', rf.previous_assignment_revision,
+            'assignmentConfirmedRevision', rf.previous_confirmed_revision
           ),
           'after', jsonb_build_object(
             'pilotMembershipId', ${replacementId}::uuid,
-            'status', rf.next_status
+            'status', rf.next_status,
+            'version', rf.next_version,
+            'assignmentRevision', rf.next_assignment_revision,
+            'assignmentConfirmedRevision', null
           ),
           'acceptanceInvalidated', rf.previous_status in ('accepted', 'briefed'),
           'reason', 'member_became_ineligible'
@@ -751,11 +790,13 @@ export async function administrativelyUpdateMembership(input: {
         jsonb_build_object(
           'before', jsonb_build_object(
             'pilotMembershipId', ${input.membershipId}::uuid,
-            'status', rr.request_status
+            'status', rr.request_status,
+            'version', rr.previous_version
           ),
           'after', jsonb_build_object(
             'pilotMembershipId', ${replacementId}::uuid,
-            'status', rr.request_status
+            'status', rr.request_status,
+            'version', rr.next_version
           ),
           'reason', 'member_became_ineligible'
         ),
