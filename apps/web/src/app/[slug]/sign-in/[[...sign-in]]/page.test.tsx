@@ -44,6 +44,14 @@ describe("tenant sign-in", () => {
         "A real-time human dispatch layer for Virtual SAS, where dispatchers build individual pilot schedules and coordinate every flight together.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Source code" })).toHaveAttribute(
+      "href",
+      "https://github.com/shiftbloom-studio/va-dispatcher",
+    );
+    expect(
+      screen.getByRole("link", { name: "AGPL-3.0-or-later" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No warranty")).toBeInTheDocument();
     expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
       "data-sign-up-url",
       "/vsas/sign-up",

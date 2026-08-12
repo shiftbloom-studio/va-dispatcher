@@ -1,6 +1,7 @@
 import Image from "next/image";
 import type { CSSProperties, ReactNode } from "react";
 
+import { LegalNotice } from "@/components/legal-notice";
 import type { TenantConfig } from "@/lib/tenant";
 
 export const TENANT_AUTH_APPEARANCE = {
@@ -76,6 +77,7 @@ export function TenantAuthShell({
             </h1>
           </div>
           {children}
+          <LegalNotice className="mt-8 text-center text-xs leading-5 text-slate-500" />
         </div>
       </section>
     </main>
