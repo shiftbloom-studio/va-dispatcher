@@ -236,6 +236,14 @@ export const flightPageSchema = z.object({
 });
 export const bulkFlightResponseSchema = z.object({
   flights: z.array(flightSchema),
+  fulfillment: z.object({
+    scheduleRequestId: z.string(),
+    requestStatus: z.enum(["partially_fulfilled", "fulfilled"]),
+    requestVersion: z.number().int().min(2),
+    linkedFlightCount: z.number().int().positive(),
+    remainingFlightCount: z.number().int().nonnegative(),
+    flightIds: z.array(z.string()).min(1),
+  }),
 });
 
 export const memberSchema = z.object({

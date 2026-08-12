@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   listFlightEvents: vi.fn(),
   createFlight: vi.fn(),
   fulfillScheduleRequest: vi.fn(),
+  findScheduleFulfillmentAttempt: vi.fn(),
+  replayScheduleFulfillment: vi.fn(),
   countNonCancelledScheduleRequestFlights: vi.fn(),
   findFlight: vi.fn(),
   findReplacementFlight: vi.fn(),
@@ -41,6 +43,8 @@ vi.mock("../../db/repositories/flight-events.js", () => ({
 vi.mock("../../db/repositories/flights.js", () => ({
   createFlight: mocks.createFlight,
   fulfillScheduleRequest: mocks.fulfillScheduleRequest,
+  findScheduleFulfillmentAttempt: mocks.findScheduleFulfillmentAttempt,
+  replayScheduleFulfillment: mocks.replayScheduleFulfillment,
   countNonCancelledScheduleRequestFlights:
     mocks.countNonCancelledScheduleRequestFlights,
   findFlight: mocks.findFlight,
@@ -86,6 +90,7 @@ const writeAudit = mocks.writeAudit;
 const pilotId = "pilot-test";
 const requestId = "request-test";
 const flightId = "flight-test";
+const idempotencyKey = "offer-batch-2026-09-10-001";
 const request = {
   id: requestId,
   tenantId: actor.tenantId,
@@ -157,6 +162,52 @@ const storedFlight = {
   createdAt: new Date("2026-08-12T00:00:00.000Z"),
   updatedAt: new Date("2026-08-12T00:00:00.000Z"),
 };
+const fulfillmentResult = {
+  flights: [storedFlight],
+  fulfillment: {
+    scheduleRequestId: requestId,
+    requestStatus: "partially_fulfilled" as const,
+    requestVersion: 2,
+    linkedFlightCount: 1,
+    remainingFlightCount: 1,
+    flightIds: [flightId],
+  },
+};
+function fulfillmentAttempt(payloadHash: string) {
+  return {
+    id: "ffffffff-ffff-4fff-8fff-fffffffffff0",
+    tenantId: actor.tenantId,
+    scheduleRequestId: requestId,
+    idempotencyKey,
+    payloadHash,
+    flightIds: [flightId],
+    requestStatus: "partially_fulfilled" as const,
+    requestVersion: 2,
+    linkedFlightCount: 1,
+    remainingFlightCount: 1,
+    createdAt: new Date("2026-08-12T00:00:00.000Z"),
+  };
+}
+
+function bulkInput(
+  overrides: Partial<Parameters<typeof bulkCreateFlights>[1]> = {},
+): Parameters<typeof bulkCreateFlights>[1] {
+  return {
+    scheduleRequestId: requestId,
+    idempotencyKey,
+    expectedRequestVersion: 1,
+    flights: [
+      {
+        flightNumber: "SK101",
+        depIcao: "EKCH",
+        arrIcao: "ENGM",
+        etd: new Date("2026-09-10T08:30:00.000Z"),
+        eta: new Date("2026-09-10T10:00:00.000Z"),
+      },
+    ],
+    ...overrides,
+  };
+}
 
 describe("flight planning service", () => {
   beforeEach(() => {
@@ -455,7 +506,9 @@ describe("flight server invariants", () => {
     scheduleRepo.findScheduleRequest.mockResolvedValue(request);
     flightRepo.countNonCancelledScheduleRequestFlights.mockResolvedValue(0);
     flightRepo.createFlight.mockResolvedValue(storedFlight);
-    flightRepo.fulfillScheduleRequest.mockResolvedValue([storedFlight]);
+    flightRepo.findScheduleFulfillmentAttempt.mockResolvedValue(null);
+    flightRepo.fulfillScheduleRequest.mockResolvedValue(fulfillmentResult);
+    flightRepo.replayScheduleFulfillment.mockResolvedValue(fulfillmentResult);
     flightRepo.findFlight.mockResolvedValue(storedFlight);
     flightRepo.findReplacementFlight.mockResolvedValue(null);
     flightRepo.updateFlight.mockResolvedValue(storedFlight);
@@ -521,6 +574,7 @@ describe("flight server invariants", () => {
     await expect(
       bulkCreateFlights(actor, {
         scheduleRequestId: requestId,
+        idempotencyKey,
         expectedRequestVersion: 1,
         flights: [
           {
@@ -548,6 +602,7 @@ describe("flight server invariants", () => {
     await expect(
       bulkCreateFlights(actor, {
         scheduleRequestId: requestId,
+        idempotencyKey,
         expectedRequestVersion: 1,
         flights: [
           {
@@ -565,6 +620,7 @@ describe("flight server invariants", () => {
     await expect(
       bulkCreateFlights(actor, {
         scheduleRequestId: requestId,
+        idempotencyKey,
         expectedRequestVersion: 1,
         flights: [
           {
@@ -594,10 +650,11 @@ describe("flight server invariants", () => {
       version: 4,
       status: "partially_fulfilled",
     });
-    flightRepo.fulfillScheduleRequest.mockResolvedValueOnce([storedFlight]);
+    flightRepo.fulfillScheduleRequest.mockResolvedValueOnce(fulfillmentResult);
 
     await bulkCreateFlights(actor, {
       scheduleRequestId: requestId,
+      idempotencyKey,
       expectedRequestVersion: 4,
       flights: [
         {
@@ -632,6 +689,7 @@ describe("flight server invariants", () => {
     await expect(
       bulkCreateFlights(actor, {
         scheduleRequestId: requestId,
+        idempotencyKey,
         expectedRequestVersion: 1,
         flights: [
           {
@@ -666,6 +724,7 @@ describe("flight server invariants", () => {
     await expect(
       bulkCreateFlights(actor, {
         scheduleRequestId: requestId,
+        idempotencyKey,
         expectedRequestVersion: 1,
         flights: [],
       }),
@@ -678,11 +737,120 @@ describe("flight server invariants", () => {
     await expect(
       bulkCreateFlights(actor, {
         scheduleRequestId: requestId,
+        idempotencyKey,
         expectedRequestVersion: 1,
         flights: [],
       }),
     ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
     expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+  });
+
+  it("replays the original ordered result before checking a now-terminal request", async () => {
+    const input = bulkInput();
+    await bulkCreateFlights(actor, input);
+    const payloadHash = flightRepo.fulfillScheduleRequest.mock.calls[0]![0]
+      .payloadHash as string;
+    flightRepo.findScheduleFulfillmentAttempt.mockResolvedValue(
+      fulfillmentAttempt(payloadHash),
+    );
+    scheduleRepo.findScheduleRequest.mockResolvedValue({
+      ...request,
+      version: 2,
+      status: "fulfilled",
+    });
+
+    await expect(bulkCreateFlights(actor, input)).resolves.toEqual(
+      fulfillmentResult,
+    );
+
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledTimes(1);
+    expect(scheduleRepo.findScheduleRequest).toHaveBeenCalledTimes(1);
+    expect(flightRepo.replayScheduleFulfillment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flightIds: [flightId],
+        requestStatus: "partially_fulfilled",
+        requestVersion: 2,
+      }),
+    );
+  });
+
+  it("rejects reuse of an idempotency key with a different canonical payload", async () => {
+    flightRepo.findScheduleFulfillmentAttempt.mockResolvedValue(
+      fulfillmentAttempt("0".repeat(64)),
+    );
+
+    await expect(bulkCreateFlights(actor, bulkInput())).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+      message:
+        "Idempotency-Key was already used with a different fulfillment payload",
+      details: {
+        scheduleRequestId: requestId,
+        requestStatus: "partially_fulfilled",
+        requestVersion: 2,
+      },
+    });
+
+    expect(scheduleRepo.findScheduleRequest).not.toHaveBeenCalled();
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+    expect(flightRepo.replayScheduleFulfillment).not.toHaveBeenCalled();
+  });
+
+  it("returns the winning result when a same-key concurrent submission loses the row lock", async () => {
+    flightRepo.fulfillScheduleRequest.mockResolvedValueOnce(null);
+    flightRepo.findScheduleFulfillmentAttempt
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          fulfillmentAttempt(
+            flightRepo.fulfillScheduleRequest.mock.calls[0]![0]
+              .payloadHash as string,
+          ),
+        ),
+      );
+
+    await expect(bulkCreateFlights(actor, bulkInput())).resolves.toEqual(
+      fulfillmentResult,
+    );
+
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledTimes(1);
+    expect(flightRepo.replayScheduleFulfillment).toHaveBeenCalledTimes(1);
+    expect(
+      flightRepo.countNonCancelledScheduleRequestFlights,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("canonicalizes fulfillment payload fields before hashing and inserting", async () => {
+    await bulkCreateFlights(
+      actor,
+      bulkInput({
+        flights: [
+          {
+            flightNumber: " sk101 ",
+            depIcao: " ekch ",
+            arrIcao: " engm ",
+            aircraftType: " a320 ",
+            etd: new Date("2026-09-10T08:30:00.000Z"),
+            eta: new Date("2026-09-10T10:00:00.000Z"),
+          },
+        ],
+      }),
+    );
+
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey,
+        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        flights: [
+          expect.objectContaining({
+            flightNumber: "SK101",
+            depIcao: "EKCH",
+            arrIcao: "ENGM",
+            aircraftType: "A320",
+          }),
+        ],
+      }),
+    );
   });
 
   it("validates patch times against the merged record", async () => {

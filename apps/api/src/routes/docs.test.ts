@@ -101,6 +101,40 @@ describe("API documentation", () => {
     expect(documentedOperations).toEqual(runtimeOperations);
   });
 
+  it("documents the durable bulk-fulfillment idempotency contract", () => {
+    const operation = openApiDocument.paths["/flights/bulk"].post;
+    const parameters = operation.parameters;
+
+    expect(parameters).toContainEqual(
+      expect.objectContaining({
+        in: "header",
+        name: "Idempotency-Key",
+        required: true,
+      }),
+    );
+    expect(operation.responses["201"]).toMatchObject({
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/BulkFlightsResponse" },
+        },
+      },
+    });
+    expect(
+      openApiDocument.components.schemas.BulkFlightsResponse,
+    ).toMatchObject({
+      required: ["flights", "fulfillment"],
+      properties: {
+        fulfillment: {
+          required: expect.arrayContaining([
+            "requestStatus",
+            "requestVersion",
+            "flightIds",
+          ]),
+        },
+      },
+    });
+  });
+
   it("has resolvable references and unique, described operations", () => {
     const operationIds: string[] = [];
 

@@ -410,6 +410,7 @@ test("dispatcher builds the exact offer and advances a flight", async ({
   );
   await page.route("**/api/v1/flights/bulk", async (route) => {
     const body = route.request().postDataJSON();
+    expect(route.request().headers()["idempotency-key"]).toBeTruthy();
     expect(body.flights).toHaveLength(1);
     expect(body.expectedRequestVersion).toBe(currentRequest.version);
     linkedFlightCount += body.flights.length;
@@ -418,7 +419,23 @@ test("dispatcher builds the exact offer and advances a flight", async ({
       status: linkedFlightCount === 2 ? "fulfilled" : "partially_fulfilled",
       version: currentRequest.version + 1,
     });
-    return json(route, { flights: [flight()] }, 201);
+    const createdFlight = flight();
+    return json(
+      route,
+      {
+        flights: [createdFlight],
+        fulfillment: {
+          scheduleRequestId: currentRequest.id,
+          requestStatus: currentRequest.status,
+          requestVersion: currentRequest.version,
+          linkedFlightCount,
+          remainingFlightCount:
+            currentRequest.desiredFlightCount - linkedFlightCount,
+          flightIds: [createdFlight.id],
+        },
+      },
+      201,
+    );
   });
   await page.route("**/api/v1/flights/*/status", async (route) => {
     const body = route.request().postDataJSON();

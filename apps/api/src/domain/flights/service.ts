@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { writeAudit } from "../../db/repositories/audit.js";
 import * as releaseRepo from "../../db/repositories/dispatch-releases.js";
 import {
@@ -15,6 +16,7 @@ import type {
   FlightStatus,
   MemberRole,
   ScheduleRequest,
+  ScheduleFulfillmentAttempt,
 } from "../../db/schema.js";
 import { AppError } from "../../lib/errors.js";
 import { isUniqueViolation } from "../../lib/postgres.js";
@@ -94,6 +96,7 @@ export async function bulkCreateFlights(
   actor: Actor,
   input: {
     scheduleRequestId: string;
+    idempotencyKey: string;
     expectedRequestVersion: number;
     flights: Array<{
       flightNumber: string;
@@ -105,8 +108,23 @@ export async function bulkCreateFlights(
       pilotMembershipId?: string | null;
     }>;
   },
-): Promise<Flight[]> {
+): Promise<flightRepo.ScheduleFulfillmentResult> {
   requireDispatcher(actor);
+  const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
+  const normalizedFlights = input.flights.map(normalizeFulfillmentFlight);
+  const payloadHash = fulfillmentPayloadHash({
+    scheduleRequestId: input.scheduleRequestId,
+    expectedRequestVersion: input.expectedRequestVersion,
+    flights: normalizedFlights,
+  });
+  const existingAttempt = await flightRepo.findScheduleFulfillmentAttempt(
+    actor.tenantId,
+    input.scheduleRequestId,
+    idempotencyKey,
+  );
+  if (existingAttempt) {
+    return replayMatchingFulfillment(existingAttempt, payloadHash);
+  }
   const scheduleRequest = await findScheduleRequest(
     actor.tenantId,
     input.scheduleRequestId,
@@ -128,10 +146,14 @@ export async function bulkCreateFlights(
     );
   }
 
+  if (normalizedFlights.length === 0) {
+    throw new AppError("BAD_REQUEST", "At least one flight is required");
+  }
+
   await assertActivePilot(actor.tenantId, scheduleRequest.pilotMembershipId, {
     required: true,
   });
-  for (const flight of input.flights) {
+  for (const flight of normalizedFlights) {
     assertFlightTimes(flight.etd, flight.eta);
     const pilotMembershipId = resolveRequestAssignment(
       flight.pilotMembershipId,
@@ -146,10 +168,12 @@ export async function bulkCreateFlights(
   const createdFlights = await flightRepo.fulfillScheduleRequest({
     tenantId: actor.tenantId,
     scheduleRequestId: input.scheduleRequestId,
+    idempotencyKey,
+    payloadHash,
     expectedRequestVersion: input.expectedRequestVersion,
     expectedRequestStatus: scheduleRequest.status,
     actorMembershipId: actor.membershipId,
-    flights: input.flights.map((flight) => ({
+    flights: normalizedFlights.map((flight) => ({
       flightNumber: flight.flightNumber,
       depIcao: flight.depIcao,
       arrIcao: flight.arrIcao,
@@ -159,6 +183,14 @@ export async function bulkCreateFlights(
     })),
   });
   if (!createdFlights) {
+    const concurrentAttempt = await flightRepo.findScheduleFulfillmentAttempt(
+      actor.tenantId,
+      input.scheduleRequestId,
+      idempotencyKey,
+    );
+    if (concurrentAttempt) {
+      return replayMatchingFulfillment(concurrentAttempt, payloadHash);
+    }
     const latest = await findScheduleRequest(
       actor.tenantId,
       scheduleRequest.id,
@@ -185,6 +217,80 @@ export async function bulkCreateFlights(
     );
   }
   return createdFlights;
+}
+
+function normalizeIdempotencyKey(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length < 1 || normalized.length > 200) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "Idempotency-Key must contain between 1 and 200 characters",
+    );
+  }
+  return normalized;
+}
+
+function normalizeFulfillmentFlight(flight: {
+  flightNumber: string;
+  depIcao: string;
+  arrIcao: string;
+  etd: Date;
+  eta: Date;
+  aircraftType?: string | null;
+  pilotMembershipId?: string | null;
+}) {
+  return {
+    flightNumber: flight.flightNumber.trim().toUpperCase(),
+    depIcao: flight.depIcao.trim().toUpperCase(),
+    arrIcao: flight.arrIcao.trim().toUpperCase(),
+    etd: flight.etd,
+    eta: flight.eta,
+    aircraftType: flight.aircraftType?.trim().toUpperCase() || null,
+    pilotMembershipId: flight.pilotMembershipId ?? null,
+  };
+}
+
+function fulfillmentPayloadHash(input: {
+  scheduleRequestId: string;
+  expectedRequestVersion: number;
+  flights: Array<ReturnType<typeof normalizeFulfillmentFlight>>;
+}): string {
+  const canonicalPayload = {
+    scheduleRequestId: input.scheduleRequestId,
+    expectedRequestVersion: input.expectedRequestVersion,
+    flights: input.flights.map((flight) => ({
+      flightNumber: flight.flightNumber,
+      depIcao: flight.depIcao,
+      arrIcao: flight.arrIcao,
+      etd: flight.etd.toISOString(),
+      eta: flight.eta.toISOString(),
+      aircraftType: flight.aircraftType,
+      pilotMembershipId: flight.pilotMembershipId,
+    })),
+  };
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalPayload))
+    .digest("hex");
+}
+
+async function replayMatchingFulfillment(
+  attempt: ScheduleFulfillmentAttempt,
+  payloadHash: string,
+): Promise<flightRepo.ScheduleFulfillmentResult> {
+  if (attempt.payloadHash !== payloadHash) {
+    throw new AppError(
+      "CONFLICT",
+      "Idempotency-Key was already used with a different fulfillment payload",
+      {
+        details: {
+          scheduleRequestId: attempt.scheduleRequestId,
+          requestStatus: attempt.requestStatus,
+          requestVersion: attempt.requestVersion,
+        },
+      },
+    );
+  }
+  return flightRepo.replayScheduleFulfillment(attempt);
 }
 
 function scheduleRequestConflict(scheduleRequest: ScheduleRequest): AppError {
