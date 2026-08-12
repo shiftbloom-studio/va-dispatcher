@@ -1,5 +1,5 @@
 import { SignIn } from "@clerk/nextjs";
-import { Plane } from "lucide-react";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 
 import { getTenantConfig } from "@/lib/tenant";
@@ -21,9 +21,15 @@ export default async function SignInPage({
     >
       <section className="relative hidden overflow-hidden p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="absolute -right-24 top-28 size-80 rounded-full bg-red-600/30 blur-3xl" />
-        <div className="relative flex items-center gap-3">
-          <span className="grid size-11 place-items-center rounded-xl bg-[var(--accent)] font-display font-black">
-            VS
+        <div className="relative flex items-center gap-4">
+          <span className="relative h-14 w-40 shrink-0 overflow-hidden rounded-xl bg-slate-50 shadow-lg shadow-black/20 ring-1 ring-white/10">
+            <Image
+              alt={tenant.logo.alt}
+              className="object-cover"
+              fill
+              sizes="160px"
+              src={tenant.logo.src}
+            />
           </span>
           <span className="font-display text-xl font-bold">
             {tenant.shortName} Live Operations
@@ -37,8 +43,9 @@ export default async function SignInPage({
             The operation stays connected.
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-8 text-slate-300">
-            A single operational picture for {tenant.name} pilots and
-            dispatchers, built around clear decisions and Zulu time.
+            A real-time human dispatch layer for {tenant.name}, where
+            dispatchers build individual pilot schedules and coordinate every
+            flight together.
           </p>
         </div>
         <p className="relative text-sm text-slate-400">
@@ -48,9 +55,15 @@ export default async function SignInPage({
       <section className="flex min-h-screen items-center justify-center bg-slate-50 p-5 sm:p-10">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center lg:hidden">
-            <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[var(--accent)] text-white">
-              <Plane aria-hidden className="size-6" />
-            </span>
+            <div className="relative mx-auto h-14 w-40 overflow-hidden rounded-xl bg-slate-100 shadow-sm ring-1 ring-slate-200">
+              <Image
+                alt={tenant.logo.alt}
+                className="object-cover"
+                fill
+                sizes="160px"
+                src={tenant.logo.src}
+              />
+            </div>
             <h1 className="mt-4 font-display text-3xl font-semibold text-slate-950">
               {tenant.shortName} Live Operations
             </h1>

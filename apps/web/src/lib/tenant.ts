@@ -3,6 +3,10 @@ export type TenantConfig = {
   name: string;
   shortName: string;
   accent: string;
+  logo: {
+    src: string;
+    alt: string;
+  };
 };
 
 const tenants: Record<string, TenantConfig> = {
@@ -11,6 +15,10 @@ const tenants: Record<string, TenantConfig> = {
     name: "Virtual SAS",
     shortName: "vSAS",
     accent: "#e64646",
+    logo: {
+      src: "/tenants/vsas/logo.jpg",
+      alt: "Virtual SAS logo",
+    },
   },
 };
 
