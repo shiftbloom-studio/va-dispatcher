@@ -4,16 +4,16 @@ A flight is the canonical operational record used by pilots, dispatchers, the op
 
 ## Flight fields
 
-| Group             | Fields                                                        |
-| ----------------- | ------------------------------------------------------------- |
-| Identity          | `id`, `tenantId`, optional `scheduleRequestId`                |
-| Assignment        | optional `pilotMembershipId`                                  |
-| Route             | `flightNumber`, `depIcao`, `arrIcao`, optional `aircraftType` |
-| Schedule          | `etd`, `eta`                                                  |
-| Lifecycle         | `status`, optional cancel and decline reasons                 |
-| Dispatch          | optional `dispatcherNotes`                                    |
-| OOOI placeholders | `outAt`, `offAt`, `onAt`, `inAt`                              |
-| Record history    | `createdAt`, `updatedAt`                                      |
+| Group          | Fields                                                                        |
+| -------------- | ----------------------------------------------------------------------------- |
+| Identity       | `id`, `tenantId`, optional `scheduleRequestId`, optional `replacesFlightId`   |
+| Assignment     | optional `pilotMembershipId`, assignment and confirmation revisions           |
+| Route          | `flightNumber`, `depIcao`, `arrIcao`, optional `aircraftType`                 |
+| Schedule       | `etd`, `eta`                                                                  |
+| Lifecycle      | numeric `version`, `status`, optional cancel and decline reasons              |
+| Dispatch       | optional `dispatcherNotes`, immutable dispatch-release revisions              |
+| OOOI           | `outAt`, `offAt`, `onAt`, `inAt`, manual-override flags and provenance events |
+| Record history | `createdAt`, `updatedAt`                                                      |
 
 ICAO fields are normalized to uppercase by the repository. Web forms also uppercase flight number and aircraft type before submission.
 
@@ -48,8 +48,8 @@ stateDiagram-v2
 | `offered`   | Accept, decline   | Edit, cancel                 |
 | `accepted`  | Cancel            | Edit, mark briefed, cancel   |
 | `briefed`   | Cancel            | Edit, activate, cancel       |
-| `active`    | None              | Edit, complete, cancel       |
-| `declined`  | Read only         | Read only                    |
+| `active`    | None              | Complete, cancel             |
+| `declined`  | Read only         | Create one replacement offer |
 | `completed` | Read only         | Read only                    |
 | `cancelled` | Read only         | Read only                    |
 
@@ -68,17 +68,20 @@ The backend also allows an assigned pilot to cancel an offered flight, although 
 
 ### Schedule offer
 
-`POST /flights/bulk` creates offered flights linked to one schedule request. The normal UI submits exactly the requested number and assigns the request's pilot.
+`POST /flights/bulk` creates an atomic batch of offered flights linked to one
+schedule request. It requires the current request version and an
+`Idempotency-Key`, respects cumulative remaining capacity, and assigns the
+request's active pilot.
 
 ### Ad-hoc flight
 
-`POST /flights` creates a draft or offered flight with no required schedule request. The UI requires a pilot for an immediate offer and permits an unassigned draft.
-
-Before offering a draft, dispatch should ensure the pilot assignment is valid and active. The current API does not independently validate the referenced membership's tenant, role, or status at creation time; web clients select from the tenant's active pilot list.
+`POST /flights` creates only an ad-hoc draft or offer. A draft may be unassigned;
+an offer requires a same-tenant active pilot. The API validates pilot role,
+status, tenant, ETA after ETD, and any applicable availability rule.
 
 ## Editing
 
-Dispatchers can edit non-terminal flights:
+Dispatchers can version-edit eligible non-terminal flights:
 
 - pilot assignment;
 - flight number;
@@ -87,27 +90,35 @@ Dispatchers can edit non-terminal flights:
 - aircraft type; and
 - dispatcher notes.
 
-Completed and cancelled records cannot be edited. Declined records are terminal in the state machine but are not included in the backend's edit prohibition; the current UI action matrix makes them read-only.
+Completed, cancelled, declined, and materially active records are immutable.
+Every mutation compares the numeric version and returns the latest record on a
+conflict. Material pilot, route, schedule, equipment, or flight-number changes
+require a reason and invalidate acceptance/planning state; notes-only edits do
+not. Mutation and audit are one database statement.
 
-Current edits are last-write-wins. The API has no record version, `If-Match`, or compare-and-set contract. It also does not automatically reset acceptance after a material reassignment or schedule change. Concurrent-editor and reassignment semantics should be designed before expanding collaborative dispatch editing.
+A declined flight stays terminal. Dispatch may create one replacement that
+copies its immutable source data and links through `replacesFlightId`.
+Concurrent attempts converge on one winning replacement.
 
 ## Cancelling
 
 A cancellation may include a reason. Cancellation preserves the record and its links.
 
-Cancelling a flight does not change its originating schedule request. Cancelling a schedule request does not change the flight. This non-cascading behavior is intentionally visible in confirmation copy.
+Cancelling an individual flight preserves its originating request link.
+Cancelling a request separately requires an explicit policy to keep linked
+flights or cancel eligible pre-departure flights atomically.
 
 ## Operations board
 
-The dispatcher board contains flights that:
+The dispatcher board contains same-tenant accepted and briefed flights from 24
+hours overdue through seven days ahead, every active flight regardless of ETD,
+and completed flights from the current UTC month. Offered flights remain in
+Flight Management. The server classifies overdue, accepted, briefed, active,
+and completed lanes and the UI refreshes every 10 seconds.
 
-- belong to the active tenant;
-- have status `offered`, `accepted`, `briefed`, or `active`; and
-- have an ETD no later than seven days from the current time.
-
-It groups by status and refreshes every 10 seconds. There is currently no lower ETD bound, so an old non-terminal record can remain visible until its status is corrected.
-
-The dashboard's **Active pilots** metric counts memberships with role `pilot` and status `active`. It is not a count of airborne, connected, or recently-seen pilots.
+Pilot-presence metrics use each pilot's newest trusted simulator receipt and
+distinguish online, airborne, and stale presence. They do not count all active
+memberships.
 
 ## Pilot dashboard visibility
 
@@ -115,25 +126,30 @@ The pilot dashboard shows:
 
 - `offered` flights in **Flight offers**;
 - `accepted` and `briefed` flights in **Upcoming flights**; and
+- `active` flights in their own active group, regardless of old ETD; and
 - `completed`, `cancelled`, and `declined` flights in recent history.
-
-An `active` flight remains available through its direct detail URL and API assignment, but the current pilot dashboard does not place it in one of those groups.
 
 ## OOOI and monitoring
 
-The schema contains nullable Out, Off, On, and In timestamps, but the current application has no simulator ingestion endpoint, automatic phase detection, telemetry table, live map, or OOOI editor. Flight activation and completion are manual dispatcher transitions.
+Pilots issue revocable simulator-device tokens and the MSFS client sends
+sequence-checked position/phase samples. The API stores a current sample and a
+bounded track, derives live presence, and may record automatic Out, Off, On,
+and In events. Dispatch can correct OOOI timestamps manually with a reason.
+Source/device/actor provenance is append-only and each accepted OOOI mutation
+increments the flight version atomically.
 
-Inbound ACARS `progress` and `position` messages are stored as typed message records, but their bodies are not parsed into flight telemetry or OOOI fields.
-
-Do not describe the current operations board as live aircraft monitoring. See [Project Status and Limitations](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Project-Status-and-Limitations).
+ACARS message text is not treated as simulator telemetry. The monitoring UI is
+for virtual-airline operational awareness, not real-world navigation.
 
 ## Pagination and ordering
 
-The flight list is cursor-paginated with a maximum page size of 100. Records are ordered by descending ETD and ID, while the opaque cursor is derived from creation time and ID. Consumers must treat `nextCursor` as opaque and send it back unchanged.
+The flight list is cursor-paginated with a maximum page size of 100. Ordering
+and seek use `(etd DESC, id DESC)`. Cursors are strict, versioned, and opaque;
+reuse them only with the same filters. Legacy or malformed cursors are rejected.
 
 ## Extending the lifecycle safely
 
-Adding dispatch release, SimBrief readiness, boarding, delayed, diverted, or telemetry-driven states is a cross-layer change. Update:
+Adding boarding, delayed, diverted, or another lifecycle is a cross-layer change. Update:
 
 1. PostgreSQL enum and migration strategy.
 2. Backend transition table and role/ownership rules.

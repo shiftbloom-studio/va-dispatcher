@@ -41,32 +41,41 @@ The primary production shape is a Vercel multi-service project. The Next.js serv
 ### Pilot
 
 - Sign in or create an account inside the tenant-branded Clerk shell.
-- Save a display name and personal aircraft ACARS callsign.
+- Save a display name, simulator devices, personal aircraft ACARS callsign,
+  SimBrief identity, and Navigraph connection.
 - Request one or more flights across one or more non-overlapping UTC availability intervals.
-- Review schedule-request status and linked flight offers.
-- Accept or decline an assigned offer and cancel accepted or briefed flying.
+- Edit a pending request, review linked flight offers, and choose an explicit
+  linked-flight outcome when cancelling eligible requests.
+- Accept or decline an assigned offer, review the dispatch release and OFP,
+  generate a prepared SimBrief plan, and complete the assigned flight lifecycle.
 
 ### Dispatcher
 
-- Review, reject, cancel, and fulfill pilot schedule requests.
-- Build an exact-count schedule offer or create an ad-hoc flight.
-- Edit flights and move them through explicit operational states.
-- View the next seven days on the operations board.
+- Review, reject, cancel, partially fulfill, and complete pilot schedule requests.
+- Build idempotent schedule batches or create an ad-hoc flight.
+- Edit versioned flights, publish dispatch releases, prepare SimBrief plans,
+  re-offer declined work safely, and move flights through explicit states.
+- Monitor overdue/upcoming/active operations, live pilot presence, telemetry,
+  and OOOI timestamps.
 - Send and receive free-text Hoppie telex traffic and optionally link outbound messages to a flight.
 
 ### Administrator
 
 - Use every dispatcher capability.
 - Configure, test, replace, or remove the tenant's encrypted Hoppie ground-station credential.
-- Manage tenant and membership data through the API. The current web UI exposes organization ACARS settings, not a complete member-administration console.
+- Manage member roles/status, safe work reassignment, Clerk directory sync,
+  privacy operations, and tenant audit events through the web control plane.
 
 ## Important boundaries
 
 - Production ACARS always uses Hoppie and fails closed until a ground-station credential is configured and tested.
 - A successful Hoppie send is a store-and-forward acceptance, not a delivery or read receipt.
-- The web operations board is status-based. It is not live aircraft-position monitoring.
-- SimBrief/Navigraph flight-plan generation is not part of the current default-branch application.
-- Cancelling a schedule request does not cancel already-created flights.
+- The web operations board includes simulator presence and telemetry, but it is
+  not certified navigation or real-world flight following.
+- SimBrief generation remains pilot-owned even though dispatch prepares the
+  canonical release and attribution.
+- Cancelling a schedule request requires an explicit choice to preserve linked
+  flights or cancel eligible pre-departure flights; terminal history is preserved.
 - The repository provides privacy-by-default technical controls, not a legal compliance certification. Every operator remains responsible for its own legal configuration and procedures.
 
 See [Project Status and Limitations](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Project-Status-and-Limitations) for the complete current-state boundary.

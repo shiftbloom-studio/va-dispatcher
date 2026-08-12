@@ -49,7 +49,14 @@ The configured `VSAS_CLERK_ORG_ID` is a narrow bootstrap exception: if that exac
 
 ## Membership provisioning and roles
 
-On first access to a registered tenant, the API creates a local membership. Clerk role keys are normalized by removing `org:` and mapping:
+On first access to a registered tenant, the API atomically creates an active
+pilot membership and a self-provision audit event. Clerk claims do not grant
+dispatcher/admin privilege during authentication. Privileged roles come from
+the audited admin control plane or full Clerk directory synchronization. The
+only recovery exception promotes a verified member when the tenant has no
+active administrator.
+
+Clerk directory role keys are normalized by removing `org:` and mapping:
 
 ```text
 admin / owner  -> admin
@@ -66,7 +73,11 @@ pilot = 1, dispatcher = 2, admin = 3
 
 `requireRole("dispatcher")` therefore permits dispatchers and administrators. `requireRole("admin")` permits administrators only.
 
-The local membership role is used after provisioning. `/members/sync` can refresh up to 100 organization memberships from Clerk, including role and display name. It is a dispatcher-protected API operation and has no complete web management screen today.
+The stored local membership role is authoritative after provisioning.
+`/members/sync` is admin-only, pages the complete Clerk organization directory,
+and returns explicit partial-failure reporting. The web admin control plane
+provides search, impact review, safe role/status updates, replacement pilot
+selection, and directory synchronization.
 
 Membership statuses are:
 
@@ -118,7 +129,10 @@ Defaults are supplied for missing headers, but the referenced tenant must alread
 
 The bypass is hard-disabled in production. It must still never be configured there.
 
-Playwright uses a separate pair, `E2E_AUTH_BYPASS` and `NEXT_PUBLIC_E2E_AUTH_BYPASS`, to render deterministic frontend fixtures. That mode is also rejected in production and should not be used for manual API authentication.
+The fast browser suite uses `NEXT_PUBLIC_E2E_ROUTE_FIXTURE_MODE`; the integrated
+suite uses `E2E_FIXTURE_MODE`, a high-entropy `E2E_FIXTURE_SECRET`, an exact
+disposable-database confirmation, and `NEXT_PUBLIC_E2E_FIXTURE_MODE`. All
+fixture modes are rejected in production and are not deployment authentication.
 
 ## Clerk-free public routes
 
@@ -135,7 +149,9 @@ This lets visitors review legal and privacy information before loading authentic
 
 BotID runs before authenticated business routes on mutating requests. It is an abuse-control layer, not an identity or role substitute. A request must pass BotID where applicable and then pass Clerk authentication, tenant resolution, and authorization.
 
-Internal cron and seed routes are excluded from BotID because they use `CRON_SECRET` or an explicit non-production seed allowance.
+Internal cron routes are excluded from BotID because they use `CRON_SECRET`.
+Development seed and integrated fixture routes are independently hard-disabled
+in production and use separate non-production authority.
 
 ## Invariants for contributors
 

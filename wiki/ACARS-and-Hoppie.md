@@ -79,23 +79,27 @@ sequenceDiagram
     participant H as Hoppie
 
     D->>A: POST /acars/messages
-    A->>DB: Validate tenant and optional flight link
-    A->>DB: Load tenant station + encrypted credential
-    A->>A: Decrypt credential
+    A->>DB: Validate tenant, flight link, station, and credential
+    A->>DB: Insert logical outbound row as pending
     A->>H: POST form telex
     H-->>A: Protocol response
     alt response begins with ok
-        A->>DB: Insert outbound message + audit event
+        A->>DB: Mark message accepted + audit
         A-->>D: 201 stored message
-    else error, timeout, rate limit, invalid response
-        A-->>D: Sanitized 422 or 502 error
-        D->>D: Retain draft; manual retry only
+    else explicit provider rejection
+        A->>DB: Mark message rejected + audit
+        A-->>D: Sanitized rejection
+    else timeout, unavailable, invalid, or finalization uncertainty
+        A->>DB: Preserve pending or mark ambiguous
+        A-->>D: Outcome unknown; check conversation
     end
 ```
 
 Hoppie often returns HTTP 200 for protocol errors. The provider accepts only a body beginning with `ok`; it classifies invalid logon, callsign in use, rate limiting, timeout, unavailable service, rejection, and invalid response without echoing credential or raw payload details to users.
 
-A successful send means Hoppie accepted the message for store-and-forward. It does not mean the aircraft received or read it.
+A successful send means Hoppie accepted the message for store-and-forward. It
+does not mean the aircraft received or read it. The application never
+automatically retries an uncertain send.
 
 ## Inbound polling
 
@@ -108,7 +112,11 @@ Vercel calls `/api/v1/internal/cron/acars-poll` every minute with `CRON_SECRET`.
 5. stores inbound records; and
 6. continues with other tenants if one poll fails.
 
-The provider recognizes `telex`, `progress`, `cpdlc`, and `position`; other types become `other`. Stored inbound messages are deduplicated by tenant, provider, and provider message ID.
+The provider recognizes `telex`, `progress`, `cpdlc`, and `position`; other
+types become `other`. A canonical content fingerprint plus a 15-minute bucket
+suppresses repeated polls inside that window while allowing the same legitimate
+text later. A non-empty malformed `ok` response fails visibly instead of being
+treated as an empty inbox.
 
 The web inbox and open station conversation refresh stored records every 10 seconds. Therefore live inbound latency is normally:
 
@@ -125,12 +133,15 @@ The workspace provides:
 - the newest 50 messages;
 - station-based conversations;
 - direction and message-type labels;
+- accepted, rejected, pending, or ambiguous outbound outcome labels;
 - optional links from stored messages to dispatcher flight detail;
 - recipient suggestions from active members with saved callsigns;
 - optional selection of a flight, which fills the assigned pilot's callsign when available; and
 - an explicit manual refresh.
 
-Inbound Hoppie messages are not automatically linked to a flight. The provider supplies station and message body, and the current ingestion path stores `flightId` as null.
+Inbound Hoppie messages are not automatically linked to a flight. The provider
+supplies station and message body, and the ingestion path stores `flightId` as
+null.
 
 Progress and position bodies remain ACARS message text. They are not parsed into aircraft location, OOOI timestamps, or operations-board telemetry.
 
@@ -148,17 +159,18 @@ The simulate endpoint returns 404-like `NOT_FOUND` behavior whenever mock mode i
 
 ## Error behavior
 
-| Symptom                               | API result                      | Operator action                                        |
-| ------------------------------------- | ------------------------------- | ------------------------------------------------------ |
-| Ground station not configured         | `422 UNPROCESSABLE`             | Admin tests and saves tenant credential                |
-| Hoppie rejects credential/request     | `502 UPSTREAM`                  | Correct config or message; retry manually              |
-| Callsign already in use               | `502 UPSTREAM` with safe reason | Wait about two minutes and retry                       |
-| Rate limited                          | `502 UPSTREAM`                  | Stop retrying rapidly; wait                            |
-| 15-second timeout/unavailable         | `502 UPSTREAM`                  | Check status/network; retry manually                   |
-| Linked flight unknown or cross-tenant | `404 NOT_FOUND`                 | Select a valid tenant flight; Hoppie was not contacted |
-| Poll failure for one tenant           | Logged server-side              | Other configured tenants still poll                    |
+| Symptom                                   | Stored outcome     | Operator action                                  |
+| ----------------------------------------- | ------------------ | ------------------------------------------------ |
+| Ground station not configured             | No provider call   | Admin tests and saves tenant credential          |
+| Explicit credential/request rejection     | `rejected`         | Correct the cause before composing a new message |
+| Callsign in use or rate limited           | `rejected`         | Wait; do not retry rapidly                       |
+| Timeout, unavailable, or invalid response | `ambiguous`        | Check the conversation before any new send       |
+| Final database/audit uncertainty          | `pending`          | Treat outcome as unknown and investigate         |
+| Linked flight unknown or cross-tenant     | No provider call   | Select a valid tenant flight                     |
+| Poll failure for one tenant               | Logged server-side | Other configured tenants still poll              |
 
-Failed outbound messages are not inserted, and the frontend deliberately retains the draft. There is no automatic retry because an ambiguous provider outcome could duplicate operational traffic.
+ACARS and inbox HTTP responses use private, no-store cache policy because free
+text may contain operational or personal information.
 
 ## ACARS data safety
 

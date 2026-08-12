@@ -28,7 +28,10 @@ The active Clerk organization must have the same slug as the URL. The applicatio
 Open **My settings** and save:
 
 - an optional display name; and
-- the aircraft callsign used by the pilot's Hoppie-capable simulator client.
+- the aircraft callsign used by the pilot's Hoppie-capable simulator client;
+- the pilot's own verified SimBrief identity and optional Navigraph connection;
+  and
+- one or more revocable simulator-device credentials for the MSFS client.
 
 The personal Hoppie logon code stays in the simulator client. VA Dispatch never asks pilots or flying dispatchers to store that personal credential in the website.
 
@@ -45,7 +48,10 @@ Every date and time is interpreted as UTC. The detailed intervals are stored in 
 
 ### 3. Follow the request
 
-The pilot dashboard separates active requests from recent history. A request can move through review, fulfillment, rejection, or cancellation. Once dispatch creates flights, the request detail links to the canonical flight records.
+The pilot dashboard separates active requests from recent history. An owned
+pending request can be edited until dispatch starts review. A partially
+fulfilled request stays active for later batches. Cancellation asks whether to
+preserve linked flights or cancel eligible pre-departure work.
 
 ### 4. Respond to a flight offer
 
@@ -55,7 +61,11 @@ An assigned pilot can:
 - decline it, optionally with a reason; or
 - cancel their own accepted or briefed flight.
 
-After a flight is active, cancellation and operational completion are dispatcher actions.
+After accepting, the pilot can review the immutable dispatch release, generate
+a dispatcher-prepared SimBrief plan through their own account, recover from the
+provider callback, and view the OFP. Active flights have a dedicated dashboard
+group. Cancellation and operational completion after activation are dispatcher
+actions.
 
 ## Dispatcher workflow
 
@@ -63,9 +73,13 @@ The dispatcher suite has four work areas.
 
 ### Operations
 
-The operations board groups `offered`, `accepted`, `briefed`, and `active` flights with ETDs within the next seven days. It refreshes every 10 seconds while visible.
+The operations board separates overdue, accepted, briefed, active, and current-
+month completed operations. Accepted/briefed rows use a 24-hour overdue through
+seven-day upcoming window; active rows remain visible regardless of ETD. It
+refreshes every 10 seconds while visible.
 
-The **Active pilots** card counts active pilot memberships. It does not indicate simulator connectivity, current flight activity, or online presence.
+Pilot-presence metrics show trusted online, airborne, and stale simulator
+receipts. Flight telemetry and OOOI cards provide operational awareness.
 
 ### Requests
 
@@ -75,13 +89,16 @@ Dispatchers can:
 - move a pending request into review;
 - inspect all detailed availability intervals and notes;
 - reject or cancel an eligible request; and
-- build the complete requested number of offered flights.
-
-The current UI intentionally treats old `partially_fulfilled` requests as historical: they remain readable and cancellable, but the offer builder does not append another batch.
+- choose a partial or complete atomic batch up to remaining capacity; and
+- return later to append another batch to a partially fulfilled request.
 
 ### Flights
 
-Dispatchers can create a draft or offered ad-hoc flight, filter all flights by status, edit non-terminal records, and apply valid state transitions. Flight actions are deliberately explicit; changing a form field never silently advances the operational status.
+Dispatchers can create a draft or offered ad-hoc flight, filter all flights by
+status, version-edit eligible records, publish revisioned dispatch releases,
+prepare SimBrief generation, safely replace declined work, correct OOOI, and
+apply valid state transitions. Material edits require a reason and reset stale
+acceptance/planning state.
 
 ### ACARS
 
@@ -107,23 +124,29 @@ An administrator has every dispatcher capability and can open **Organization set
 
 The logon is encrypted before storage and is never returned to the browser. Removing it leaves ACARS unconfigured; production never falls back to the mock adapter.
 
-The API also supports tenant edits, member role/status edits, and Clerk member synchronization. A complete web-based member-administration console is not currently present.
+The admin control plane searches members, updates role/status, synchronizes the
+complete Clerk directory, safely reassigns eligible work, and exposes a
+redacted audit viewer/export. Privacy operations cover approved retention runs,
+subject requests, holds, and external-provider tasks.
 
 ## Role and capability matrix
 
-| Capability                                  | Pilot | Dispatcher | Admin |
-| ------------------------------------------- | :---: | :--------: | :---: |
-| View or edit own profile and callsign       |  Yes  |    Yes     |  Yes  |
-| Create and view own schedule requests       |  Yes  |     —      |   —   |
-| Accept or decline own assigned offers       |  Yes  |     —      |   —   |
-| View all tenant requests and flights        |   —   |    Yes     |  Yes  |
-| Review, reject, or fulfill requests         |   —   |    Yes     |  Yes  |
-| Create, edit, and advance flights           |   —   |    Yes     |  Yes  |
-| Use dispatcher ACARS workspace              |   —   |    Yes     |  Yes  |
-| List tenant members                         |   —   |    Yes     |  Yes  |
-| Synchronize Clerk members                   |   —   |    Yes     |  Yes  |
-| Change tenant or member administration data |   —   |     —      |  API  |
-| Configure organization Hoppie credentials   |   —   |     —      |  Yes  |
+| Capability                                       | Pilot | Dispatcher | Admin |
+| ------------------------------------------------ | :---: | :--------: | :---: |
+| View or edit own profile and callsign            |  Yes  |    Yes     |  Yes  |
+| Manage own SimBrief/Navigraph/device links       |  Yes  |    Yes     |  Yes  |
+| Create and view own schedule requests            |  Yes  |     —      |   —   |
+| Accept or decline own assigned offers            |  Yes  |     —      |   —   |
+| Generate prepared SimBrief plan and view OFP     |  Yes  |     —      |   —   |
+| View all tenant requests and flights             |   —   |    Yes     |  Yes  |
+| Review, reject, or fulfill requests              |   —   |    Yes     |  Yes  |
+| Create, plan, edit, monitor, and advance flights |   —   |    Yes     |  Yes  |
+| Use dispatcher ACARS workspace                   |   —   |    Yes     |  Yes  |
+| List tenant members                              |   —   |    Yes     |  Yes  |
+| Synchronize Clerk members                        |   —   |    Yes     |  Yes  |
+| Change member roles/status and audit access      |   —   |     —      |  Yes  |
+| Operate privacy lifecycle workflows              |   —   |     —      |  Yes  |
+| Configure organization Hoppie credentials        |   —   |     —      |  Yes  |
 
 ## Operational language
 
