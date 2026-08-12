@@ -1,10 +1,13 @@
 import { neon } from "@neondatabase/serverless";
+import { defineRelations } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import * as schema from "./schema.js";
 import { env } from "../env.js";
 import { AppError } from "../lib/errors.js";
 
-export type Db = NeonHttpDatabase<typeof schema>;
+const relations = defineRelations(schema);
+
+export type Db = NeonHttpDatabase<typeof relations>;
 
 let dbInstance: Db | null = null;
 
@@ -19,7 +22,7 @@ export function getDb(): Db {
     );
   }
   const sql = neon(url);
-  dbInstance = drizzle(sql, { schema });
+  dbInstance = drizzle({ client: sql, relations });
   return dbInstance;
 }
 

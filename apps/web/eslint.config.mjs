@@ -1,6 +1,5 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTypeScript from "eslint-config-next/typescript";
+import { nextTypeScript, nextVitals } from "@va-dispatch/eslint-config";
 
 export default defineConfig([
   ...nextVitals,
