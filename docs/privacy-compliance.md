@@ -25,16 +25,18 @@ operating procedures for the actual deployment with qualified counsel.
 
 ## Data inventory in this application
 
-| System              | Personal or linkable data                                                                                                                    |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clerk               | User and organization identifiers, login identifier/email, name, authentication/session events, IP/device data                               |
-| `memberships`       | Clerk user ID, role, display name, pilot callsign, status, timestamps                                                                        |
-| `schedule_requests` | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                        |
-| `flights`           | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                       |
-| `acars_messages`    | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                |
-| `audit_events`      | Actor, action, entity identifiers, metadata, timestamp                                                                                       |
-| Infrastructure      | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                  |
-| Vercel telemetry    | Consent-gated aggregated routes, referrers, coarse location/device categories and Web Vitals; essential BotID challenge and security signals |
+| System                | Personal or linkable data                                                                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clerk                 | User and organization identifiers, login identifier/email, name, authentication/session events, IP/device data                                                   |
+| `memberships`         | Clerk user ID, role, display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, status, timestamps |
+| `schedule_requests`   | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                            |
+| `flights`             | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                           |
+| OAuth transactions    | Short-lived random state lookup ID, encrypted PKCE verifier, member/tenant link, expiry and consumption times                                                    |
+| `simbrief_dispatches` | Flight, initiating member, SimBrief Pilot/static/request IDs, dispatch options, generated OFP, errors, timestamps                                                |
+| `acars_messages`      | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                                    |
+| `audit_events`        | Actor, action, entity identifiers, metadata, timestamp                                                                                                           |
+| Infrastructure        | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                                      |
+| Vercel telemetry      | Consent-gated aggregated routes, referrers, coarse location/device categories and Web Vitals; essential BotID challenge and security signals                     |
 
 Free-text fields can contain personal data even when the schema does not ask
 for it. Train dispatchers and members not to enter sensitive or unrelated data.
@@ -54,14 +56,24 @@ for it. Train dispatchers and members not to enter sensitive or unrelated data.
   that messages can be visible to others and remain in its queue for 24 hours.
   Never transmit personal, confidential, authentication, or special-category
   data through ACARS.
+- Before enabling SimBrief, add Navigraph/SimBrief to the processing records
+  and privacy notice. OAuth sends the user to Navigraph and stores the returned
+  account subject, preferred username, and connection time; OAuth access,
+  refresh, and ID tokens are not retained. Dispatch sends the member's SimBrief
+  Pilot ID, flight details, optional names/remarks, and planning options to
+  SimBrief and stores the returned OFP. Confirm the applicable terms,
+  processing role, retention, transfer mechanism, and user notice. The
+  application must never collect a SimBrief/Navigraph password or browser
+  session.
 
 ## Retention and data-subject requests
 
 The privacy notice uses retention criteria because this repository cannot
 choose the controller's legally appropriate periods. Before launch, approve a
-written schedule for accounts, operational history, ACARS copies, audit events,
-HTTP/security logs, and backups. Configure provider retention and implement a
-tested recurring deletion or anonymization process for each store.
+written schedule for accounts, operational history, SimBrief dispatches/OFPs,
+ACARS copies, audit events, HTTP/security logs, and backups. Configure provider
+retention and implement a tested recurring deletion or anonymization process
+for each store.
 
 Document and test a request workflow that can:
 

@@ -15,6 +15,7 @@ import { dispatchRoutes } from "./routes/dispatch.js";
 import { acarsRoutes } from "./routes/acars.js";
 import { internalRoutes } from "./routes/internal.js";
 import { docsRoutes } from "./routes/docs.js";
+import { simbriefPublicRoutes, simbriefRoutes } from "./routes/simbrief.js";
 import type { AppVariables } from "./middleware/auth.js";
 
 // Ensure env is loaded once at import for local/dev.
@@ -81,6 +82,7 @@ export function createApp() {
   // Internal routes authenticate with their own secrets. Mount them before the
   // business-route auth middleware, whose wildcard also matches later routes.
   v1.route("/", internalRoutes);
+  v1.route("/", simbriefPublicRoutes);
   v1.use("*", requireHuman);
   v1.route("/", meRoutes);
   v1.route("/", tenantRoutes);
@@ -89,6 +91,7 @@ export function createApp() {
   v1.route("/", flightRoutes);
   v1.route("/", dispatchRoutes);
   v1.route("/", acarsRoutes);
+  v1.route("/", simbriefRoutes);
 
   app.route("/api/v1", v1);
   // Also mount at /v1 when service-scoped rewrite strips /api
