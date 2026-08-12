@@ -106,11 +106,11 @@ describe("Navigraph OAuth service", () => {
     });
   });
 
-  it("creates server-authenticated state with a valid S256 PKCE challenge", async () => {
+  it("creates sealed server-authenticated state with a valid S256 PKCE challenge", async () => {
     const result = await startNavigraphOauth(actor);
     const authorizationUrl = new URL(result.authorizationUrl);
     const state = authorizationUrl.searchParams.get("state")!;
-    const [version, stateId, mac] = state.split(".");
+    const [version] = state.split(".");
     const transactionInput = mocks.createTransaction.mock.calls[0]?.[0] as {
       tenantId: string;
       membershipId: string;
@@ -126,15 +126,17 @@ describe("Navigraph OAuth service", () => {
       .update(codeVerifier)
       .digest("base64url");
 
-    expect(state).toMatch(/^v1\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
-    expect(version).toBe("v1");
+    expect(state).toMatch(
+      /^v2\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{58}$/,
+    );
+    expect(version).toBe("v2");
     expect(transactionInput).toMatchObject({
       tenantId: actor.tenantId,
       membershipId: actor.membershipId,
-      stateId,
       expiresAt: new Date("2026-08-12T12:10:00.000Z"),
     });
-    expect(JSON.stringify(transactionInput)).not.toContain(mac);
+    expect(transactionInput.stateId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(state).not.toContain(transactionInput.stateId);
     expect(transactionInput.codeVerifierEnc).not.toContain(codeVerifier);
     expect(codeVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(authorizationUrl.searchParams.get("code_challenge")).toBe(
@@ -149,7 +151,6 @@ describe("Navigraph OAuth service", () => {
     const started = await startNavigraphOauth(actor);
     const authorizationUrl = new URL(started.authorizationUrl);
     const state = authorizationUrl.searchParams.get("state")!;
-    const stateId = state.split(".")[1]!;
     const transactionInput = mocks.createTransaction.mock.calls.at(-1)?.[0] as {
       stateId: string;
       codeVerifierEnc: string;
@@ -172,7 +173,10 @@ describe("Navigraph OAuth service", () => {
       code: "authorization-code",
     });
 
-    expect(mocks.consumeTransaction).toHaveBeenCalledWith(stateId, now);
+    expect(mocks.consumeTransaction).toHaveBeenCalledWith(
+      transactionInput.stateId,
+      now,
+    );
     expect(mocks.exchangeAuthorizationCode).toHaveBeenCalledWith({
       clientId: "client-id",
       clientSecret: "client-secret",
@@ -212,8 +216,10 @@ describe("Navigraph OAuth service", () => {
   it("rejects tampered state before querying the transaction store", async () => {
     const started = await startNavigraphOauth(actor);
     const state = new URL(started.authorizationUrl).searchParams.get("state")!;
-    const replacement = state.endsWith("A") ? "B" : "A";
-    const tampered = state.slice(0, -1) + replacement;
+    const tamperIndex = state.length - 2;
+    const replacement = state[tamperIndex] === "A" ? "B" : "A";
+    const tampered =
+      state.slice(0, tamperIndex) + replacement + state.slice(tamperIndex + 1);
     mocks.consumeTransaction.mockClear();
 
     await expect(
