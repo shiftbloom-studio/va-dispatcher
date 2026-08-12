@@ -3,6 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "description": "Multi-tenant Virtual Airline Live Dispatch & ACARS tool",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/shiftbloom-studio/va-dispatcher",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shiftbloom-studio/va-dispatcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shiftbloom-studio/va-dispatcher/issues"
+  },
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "dev": "pnpm --parallel --filter @va-dispatch/api --filter @va-dispatch/web dev",
@@ -12,10 +21,12 @@
     "build:api": "pnpm --filter @va-dispatch/api build",
     "build:web": "pnpm --filter @va-dispatch/web build",
     "test": "pnpm -r --if-present test",
+    "test:coverage": "pnpm -r --if-present test:coverage",
     "test:api": "pnpm --filter @va-dispatch/api test",
     "test:web": "pnpm --filter @va-dispatch/web test",
     "lint": "pnpm -r --if-present lint",
-    "format:check": "prettier --check package.json pnpm-workspace.yaml vercel.ts README.md docs .github/workflows apps/web",
+    "format:check": "prettier --check package.json pnpm-workspace.yaml vercel.ts README.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md docs .github apps/web",
+    "security:audit": "pnpm audit --audit-level high",
     "typecheck": "pnpm -r --if-present typecheck",
     "db:generate": "pnpm --filter @va-dispatch/api db:generate",
     "db:migrate": "pnpm --filter @va-dispatch/api db:migrate",
@@ -26,6 +37,7 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "@vitest/coverage-istanbul": "4.1.10",
     "@vercel/config": "^0.5.6",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3"
