@@ -259,7 +259,6 @@ export const memberships = pgTable(
       t.tenantId,
       t.navigraphSubject,
     ),
-    uniqueIndex("memberships_tenant_id_uidx").on(t.tenantId, t.id),
     index("memberships_tenant_idx").on(t.tenantId),
   ],
 );

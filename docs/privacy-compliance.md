@@ -70,8 +70,8 @@ this feature must not be presented as optional analytics consent.
   points outside that 24-hour window. Dormant expired rows, the current point,
   device records, and OOOI provenance remain until the controller's recurring
   operational/account deletion process or a valid deletion request applies.
-  Issue #27 owns the production retention job; this feature does not configure
-  or claim wall-clock physical deletion for disconnected tracks.
+  The approved privacy lifecycle job physically expires disconnected current,
+  lease, and track rows under the controller's telemetry retention class.
 - Transfers: the application does not send telemetry to a map or simulator
   provider. It is processed by the configured Vercel and Neon infrastructure,
   whose transfer safeguards apply. The user's simulator client is the source,

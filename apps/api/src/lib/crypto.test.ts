@@ -25,6 +25,8 @@ describe("secret crypto", () => {
       "navigraph-oauth-state",
     );
     const tampered = `${sealed.slice(0, -2)}${sealed.at(-2) === "A" ? "B" : "A"}${sealed.at(-1)}`;
+    const lastCharacter = sealed.at(-1)!;
+    const nonCanonical = `${sealed.slice(0, -1)}${lastCharacter === "A" ? "B" : "A"}`;
 
     expect(sealed).not.toContain("random-state-id");
     expect(decryptOpaqueToken(sealed, rootKey, "navigraph-oauth-state")).toBe(
@@ -32,6 +34,9 @@ describe("secret crypto", () => {
     );
     expect(() =>
       decryptOpaqueToken(tampered, rootKey, "navigraph-oauth-state"),
+    ).toThrow();
+    expect(() =>
+      decryptOpaqueToken(nonCanonical, rootKey, "navigraph-oauth-state"),
     ).toThrow();
     expect(() =>
       decryptOpaqueToken(

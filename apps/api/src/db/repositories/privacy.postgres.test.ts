@@ -49,6 +49,10 @@ const FLIGHT_ONE = "28000000-0000-4000-8000-000000000031";
 const FLIGHT_TWO = "28000000-0000-4000-8000-000000000032";
 const REQUEST_ONE = "28000000-0000-4000-8000-000000000041";
 const REQUEST_TWO = "28000000-0000-4000-8000-000000000042";
+const DEVICE_ONE = "28000000-0000-4000-8000-000000000061";
+const DEVICE_TWO = "28000000-0000-4000-8000-000000000062";
+const TRACK_ONE = "28000000-0000-4000-8000-000000000071";
+const TRACK_TWO = "28000000-0000-4000-8000-000000000072";
 const NOW = new Date("2026-08-12T12:00:00.000Z");
 
 type BatchQuery = { query: SQL };
@@ -259,6 +263,59 @@ describePostgres("privacy lifecycle repository (PostgreSQL)", () => {
     expect(count.rows[0]?.count).toBe("2");
   });
 
+  it("physically expires disconnected telemetry without crossing tenant boundaries", async () => {
+    const cutoff = new Date("2026-08-11T12:00:00.000Z");
+    await expect(
+      inspectRetentionClass({
+        tenantId: TENANT_ONE,
+        classKey: "telemetry",
+        cutoff,
+      }),
+    ).resolves.toEqual({
+      eligible: 3,
+      affected: 0,
+      held: 0,
+      hasMore: false,
+    });
+
+    await expect(
+      executeRetentionClass({
+        tenantId: TENANT_ONE,
+        classKey: "telemetry",
+        cutoff,
+        limit: 100,
+      }),
+    ).resolves.toMatchObject({ affected: 3, hasMore: false });
+
+    const counts = await pool.query<{
+      tenantId: string;
+      currentCount: string;
+      leaseCount: string;
+      trackCount: string;
+    }>(`
+      select tenant.id::text as "tenantId",
+        (select count(*) from flight_telemetry_current current_state where current_state.tenant_id=tenant.id) as "currentCount",
+        (select count(*) from flight_telemetry_leases lease where lease.tenant_id=tenant.id) as "leaseCount",
+        (select count(*) from flight_telemetry_track track where track.tenant_id=tenant.id) as "trackCount"
+      from tenants tenant
+      order by tenant.id
+    `);
+    expect(counts.rows).toEqual([
+      {
+        tenantId: TENANT_ONE,
+        currentCount: "0",
+        leaseCount: "0",
+        trackCount: "0",
+      },
+      {
+        tenantId: TENANT_TWO,
+        currentCount: "1",
+        leaseCount: "1",
+        trackCount: "1",
+      },
+    ]);
+  });
+
   it("treats a processing restriction as retention protection", async () => {
     await pool.query("update flights set updated_at='2020-01-01' where id=$1", [
       FLIGHT_ONE,
@@ -442,6 +499,14 @@ describePostgres("privacy lifecycle repository (PostgreSQL)", () => {
     expect(JSON.stringify(records.get("simbriefDispatches"))).not.toContain(
       "callback-mac",
     );
+    expect(records.get("simulatorDevices")).toHaveLength(1);
+    expect(JSON.stringify(records.get("simulatorDevices"))).not.toContain(
+      "device-token-mac",
+    );
+    expect(records.get("flightTelemetryCurrent")).toHaveLength(1);
+    expect(records.get("flightTelemetryLeases")).toHaveLength(1);
+    expect(records.get("flightTelemetryTrack")).toHaveLength(1);
+    expect(records.get("flightOooiEvents")).toHaveLength(1);
     await expect(
       listPrivacyExportStoreRecords({
         tenantId: TENANT_ONE,
@@ -508,7 +573,7 @@ describePostgres("privacy lifecycle repository (PostgreSQL)", () => {
     });
     expect(result).toMatchObject({
       request: { id: erasure.id, status: "completed" },
-      localRecords: { flights: 1, requests: 1, messages: 1 },
+      localRecords: { flights: 1, requests: 1, messages: 1, telemetry: 5 },
     });
     const local = await pool.query("select 1 from memberships where id=$1", [
       SUBJECT_ONE,
@@ -597,7 +662,7 @@ describePostgres("privacy lifecycle repository (PostgreSQL)", () => {
     });
     expect(result).toMatchObject({
       request: { id: request.id, status: "awaiting_external" },
-      localRecords: { flights: 1, requests: 1, messages: 1 },
+      localRecords: { flights: 1, requests: 1, messages: 1, telemetry: 5 },
     });
     const member = await pool.query<{
       clerkUserId: string;
@@ -630,6 +695,31 @@ describePostgres("privacy lifecycle repository (PostgreSQL)", () => {
       dispatcherNotes: null,
       messageBody: "[redacted by privacy workflow]",
       simbriefCount: "0",
+    });
+    const telemetry = await pool.query<{
+      deviceCount: string;
+      currentCount: string;
+      leaseCount: string;
+      trackCount: string;
+      eventCount: string;
+      linkedEventCount: string;
+    }>(
+      `select
+        (select count(*) from simulator_devices where membership_id=$1) as "deviceCount",
+        (select count(*) from flight_telemetry_current where membership_id=$1) as "currentCount",
+        (select count(*) from flight_telemetry_leases where membership_id=$1) as "leaseCount",
+        (select count(*) from flight_telemetry_track where membership_id=$1) as "trackCount",
+        (select count(*) from flight_oooi_events where flight_id=$2) as "eventCount",
+        (select count(*) from flight_oooi_events where actor_membership_id=$1 or device_id=$3) as "linkedEventCount"`,
+      [SUBJECT_ONE, FLIGHT_ONE, DEVICE_ONE],
+    );
+    expect(telemetry.rows[0]).toEqual({
+      deviceCount: "0",
+      currentCount: "0",
+      leaseCount: "0",
+      trackCount: "0",
+      eventCount: "1",
+      linkedEventCount: "0",
     });
     const audit = await pool.query<{ count: string }>(
       "select count(*) from audit_events where entity_id=$1 and action='privacy.request_processed'",
@@ -701,14 +791,20 @@ describePostgres("privacy lifecycle repository (PostgreSQL)", () => {
         `select 'membership' as entity from memberships where id=$1
          union all select 'request' from schedule_requests where id=$2
          union all select 'flight' from flights where id=$3
-         union all select 'message' from acars_messages where flight_id=$3`,
-        [SUBJECT_ONE, REQUEST_ONE, FLIGHT_ONE],
+         union all select 'message' from acars_messages where flight_id=$3
+         union all select 'device' from simulator_devices where id=$4
+         union all select 'telemetry' from flight_telemetry_current where flight_id=$3
+         union all select 'oooi' from flight_oooi_events where flight_id=$3 and device_id=$4`,
+        [SUBJECT_ONE, REQUEST_ONE, FLIGHT_ONE, DEVICE_ONE],
       );
       expect(persisted.rows.map((row) => row.entity).sort()).toEqual([
+        "device",
         "flight",
         "membership",
         "message",
+        "oooi",
         "request",
+        "telemetry",
       ]);
     } finally {
       await pool.query(
@@ -767,6 +863,11 @@ async function resetFixtures(pool: pg.Pool) {
       privacy_subject_requests,
       privacy_retention_runs,
       privacy_policies,
+      flight_oooi_events,
+      flight_telemetry_track,
+      flight_telemetry_current,
+      flight_telemetry_leases,
+      simulator_devices,
       flight_operational_events,
       dispatch_releases,
       simbrief_dispatches,
@@ -840,6 +941,86 @@ async function resetFixtures(pool: pg.Pool) {
     ],
   );
   await pool.query(
+    `insert into simulator_devices (
+       id, tenant_id, membership_id, name, token_mac, status, last_sequence,
+       last_ingest_at, last_seen_at
+     ) values
+       ($1, $3, $4, 'Subject simulator', 'device-token-mac-one', 'active', 10,
+         '2026-08-10T10:00:00Z', '2026-08-10T10:00:00Z'),
+       ($2, $5, $6, 'Outside simulator', 'device-token-mac-two', 'active', 10,
+         '2026-08-10T10:00:00Z', '2026-08-10T10:00:00Z')`,
+    [DEVICE_ONE, DEVICE_TWO, TENANT_ONE, SUBJECT_ONE, TENANT_TWO, SUBJECT_TWO],
+  );
+  await pool.query(
+    `insert into flight_telemetry_current (
+       flight_id, tenant_id, membership_id, device_id, phase, latitude,
+       longitude, altitude_feet, ground_speed_knots, heading_degrees,
+       simulator_time, sample_at, sequence
+     ) values
+       ($1, $3, $4, $5, 'parked', 55.618, 12.656, 20, 0, 180,
+         '2026-08-10T10:00:00Z', '2026-08-10T10:00:00Z', 10),
+       ($2, $6, $7, $8, 'parked', 59.651, 17.918, 30, 0, 180,
+         '2026-08-10T10:00:00Z', '2026-08-10T10:00:00Z', 10)`,
+    [
+      FLIGHT_ONE,
+      FLIGHT_TWO,
+      TENANT_ONE,
+      SUBJECT_ONE,
+      DEVICE_ONE,
+      TENANT_TWO,
+      SUBJECT_TWO,
+      DEVICE_TWO,
+    ],
+  );
+  await pool.query(
+    `insert into flight_telemetry_leases (
+       flight_id, tenant_id, membership_id, device_id, lease_expires_at
+     ) values
+       ($1, $3, $4, $5, '2026-08-10T10:00:30Z'),
+       ($2, $6, $7, $8, '2026-08-10T10:00:30Z')`,
+    [
+      FLIGHT_ONE,
+      FLIGHT_TWO,
+      TENANT_ONE,
+      SUBJECT_ONE,
+      DEVICE_ONE,
+      TENANT_TWO,
+      SUBJECT_TWO,
+      DEVICE_TWO,
+    ],
+  );
+  await pool.query(
+    `insert into flight_telemetry_track (
+       id, tenant_id, flight_id, membership_id, device_id, phase, latitude,
+       longitude, altitude_feet, ground_speed_knots, heading_degrees,
+       simulator_time, sample_at, sequence
+     ) values
+       ($1, $3, $4, $5, $6, 'parked', 55.618, 12.656, 20, 0, 180,
+         '2026-08-10T10:00:00Z', '2026-08-10T10:00:00Z', 10),
+       ($2, $7, $8, $9, $10, 'parked', 59.651, 17.918, 30, 0, 180,
+         '2026-08-10T10:00:00Z', '2026-08-10T10:00:00Z', 10)`,
+    [
+      TRACK_ONE,
+      TRACK_TWO,
+      TENANT_ONE,
+      FLIGHT_ONE,
+      SUBJECT_ONE,
+      DEVICE_ONE,
+      TENANT_TWO,
+      FLIGHT_TWO,
+      SUBJECT_TWO,
+      DEVICE_TWO,
+    ],
+  );
+  await pool.query(
+    `insert into flight_oooi_events (
+       tenant_id, flight_id, event_type, occurred_at, source, device_id, reason
+     ) values
+       ($1, $2, 'out', '2026-08-10T10:00:00Z', 'telemetry', $3, 'subject device event'),
+       ($4, $5, 'out', '2026-08-10T10:00:00Z', 'telemetry', $6, 'outside device event')`,
+    [TENANT_ONE, FLIGHT_ONE, DEVICE_ONE, TENANT_TWO, FLIGHT_TWO, DEVICE_TWO],
+  );
+  await pool.query(
     `insert into acars_messages (
        tenant_id, direction, from_station, to_station, body, hoppie_raw,
        provider, provider_message_id, flight_id, created_by_membership_id
@@ -850,8 +1031,10 @@ async function resetFixtures(pool: pg.Pool) {
   await pool.query(
     `insert into simbrief_dispatches (
        tenant_id, flight_id, created_by_membership_id, simbrief_user_id,
-       static_id, callback_token_mac, status, request, ofp
-     ) values ($1, $2, $3, '123456', 'PRIVACY_STATIC', 'callback-mac', 'ready',
+       static_id, callback_token_mac, callback_expires_at, status, revision,
+       flight_snapshot, request, ofp
+     ) values ($1, $2, $3, '123456', 'PRIVACY_STATIC', 'callback-mac',
+       now()+interval '1 hour', 'pending', 1, '{}',
        '{"remarks":"synthetic free text"}', '{"general":{"route":"NORKU"}}')`,
     [TENANT_ONE, FLIGHT_ONE, SUBJECT_ONE],
   );
