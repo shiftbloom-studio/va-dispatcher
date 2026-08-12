@@ -4,12 +4,16 @@ import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as flightService from "../domain/flights/service.js";
-import { paginationQuerySchema } from "../lib/pagination.js";
 import type {
   DispatchRelease,
   Flight,
   FlightOperationalEvent,
 } from "../db/schema.js";
+import {
+  flightCursorQuerySchema,
+  paginationQuerySchema,
+} from "../lib/pagination.js";
+import { flightStatusEnum } from "../db/schema.js";
 
 export const flightRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -59,6 +63,22 @@ const expectedVersionSchema = z.object({
 
 const idempotencyHeaderSchema = z.object({
   "idempotency-key": z.string().trim().min(1).max(200),
+});
+
+const flightStatusValues = new Set<string>(flightStatusEnum.enumValues);
+const flightStatusFilterSchema = z.string().transform((value, context) => {
+  const statuses = value.split(",").map((status) => status.trim());
+  if (
+    statuses.length === 0 ||
+    statuses.some((status) => !status || !flightStatusValues.has(status))
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "status contains an empty or unknown flight status",
+    });
+    return z.NEVER;
+  }
+  return [...new Set(statuses)] as Flight["status"][];
 });
 
 const versionedReasonSchema = expectedVersionSchema.extend({
@@ -125,12 +145,8 @@ flightRoutes.get(
   zValidator(
     "query",
     paginationQuerySchema.extend({
-      status: z
-        .string()
-        .optional()
-        .transform((value) =>
-          value ? (value.split(",") as Flight["status"][]) : undefined,
-        ),
+      cursor: flightCursorQuerySchema.optional(),
+      status: flightStatusFilterSchema.optional(),
       fromEtd: z.coerce.date().optional(),
       toEtd: z.coerce.date().optional(),
       scheduleRequestId: z.string().uuid().optional(),
@@ -146,7 +162,7 @@ flightRoutes.get(
         role: auth.role,
       },
       {
-        status: query.status?.length === 1 ? query.status[0] : query.status,
+        status: query.status,
         fromEtd: query.fromEtd,
         toEtd: query.toEtd,
         scheduleRequestId: query.scheduleRequestId,

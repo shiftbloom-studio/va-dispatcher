@@ -20,6 +20,7 @@ import type {
 } from "../../db/schema.js";
 import { AppError } from "../../lib/errors.js";
 import { isUniqueViolation } from "../../lib/postgres.js";
+import type { FlightCursorPayload } from "../../lib/pagination.js";
 import { roleAtLeast } from "../members/roles.js";
 import { assertFlightInsideAvailability } from "../schedule-requests/availability.js";
 import { assertScheduleRequestTransition } from "../schedule-requests/transitions.js";
@@ -347,7 +348,7 @@ export async function listFlightsForActor(
     fromEtd?: Date;
     toEtd?: Date;
     scheduleRequestId?: string;
-    cursor?: string;
+    cursor?: FlightCursorPayload;
     limit: number;
   },
 ) {
