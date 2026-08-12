@@ -606,6 +606,7 @@ const schemas = {
       "etd",
       "eta",
       "status",
+      "boardLane",
       "pilotMembershipId",
       "aircraftType",
       "assignmentConfirmationRequired",
@@ -619,6 +620,12 @@ const schemas = {
       etd: schemaRef("DateTime"),
       eta: schemaRef("DateTime"),
       status: schemaRef("FlightStatus"),
+      boardLane: {
+        type: "string",
+        enum: ["overdue", "accepted", "briefed", "active", "completed"],
+        description:
+          "Server-classified live-board lane. Overdue means an accepted or briefed flight has passed ETD but remains inside the 24-hour live window.",
+      },
       pilotMembershipId: schemaRef("NullableUuid"),
       aircraftType: schemaRef("NullableString"),
       dispatcherNotes: schemaRef("NullableString"),
@@ -1737,7 +1744,7 @@ const schemas = {
   },
   DispatchTelemetryResponse: {
     type: "object",
-    required: ["items", "generatedAt"],
+    required: ["items", "summary", "generatedAt"],
     properties: {
       items: {
         type: "array",
@@ -1750,6 +1757,16 @@ const schemas = {
               properties: { presence: schemaRef("PresenceState") },
             },
           ],
+        },
+      },
+      summary: {
+        type: "object",
+        required: ["onlinePilots", "flyingPilots", "stalePilots", "definition"],
+        properties: {
+          onlinePilots: { type: "integer", minimum: 0 },
+          flyingPilots: { type: "integer", minimum: 0 },
+          stalePilots: { type: "integer", minimum: 0 },
+          definition: { type: "string" },
         },
       },
       generatedAt: schemaRef("DateTime"),
@@ -1765,7 +1782,7 @@ const schemas = {
   },
   DispatchBoardResponse: {
     type: "object",
-    required: ["flights", "metrics", "scheduleRequestCounts"],
+    required: ["flights", "metrics", "boardWindow", "scheduleRequestCounts"],
     properties: {
       flights: { type: "array", items: schemaRef("DispatchFlight") },
       metrics: {
@@ -1825,6 +1842,23 @@ const schemas = {
               definition: { type: "string" },
             },
           },
+        },
+      },
+      boardWindow: {
+        type: "object",
+        required: [
+          "generatedAt",
+          "overdueFrom",
+          "upcomingTo",
+          "overdueLookbackHours",
+          "upcomingHorizonDays",
+        ],
+        properties: {
+          generatedAt: schemaRef("DateTime"),
+          overdueFrom: schemaRef("DateTime"),
+          upcomingTo: schemaRef("DateTime"),
+          overdueLookbackHours: { type: "integer", minimum: 1 },
+          upcomingHorizonDays: { type: "integer", minimum: 1 },
         },
       },
       scheduleRequestCounts: {
@@ -3158,7 +3192,7 @@ export const openApiDocument = {
         operationId: "listDispatchTelemetry",
         summary: "List tenant current telemetry for dispatcher monitoring",
         description:
-          "Requires the dispatcher role or higher. Returns each retained current sample with a server-computed online, stale, or disconnected presence state.",
+          "Requires the dispatcher role or higher. Returns each retained current sample with a server-computed online, stale, or disconnected presence state plus distinct online, airborne, and stale pilot counts based on each pilot's newest trusted server receipt.",
         "x-required-role": "dispatcher",
         responses: {
           "200": jsonResponse(
@@ -3221,11 +3255,12 @@ export const openApiDocument = {
         tags: ["Dispatch"],
         operationId: "getDispatchBoard",
         summary: "Get the live dispatch board",
-        description: "Requires the dispatcher role or higher.",
+        description:
+          "Requires the dispatcher role or higher. Accepted and briefed flights are shown from 24 hours before generation through seven days ahead, with past-ETD records classified into the overdue lane. Offered flights remain in Flight Management. Active flights are unbounded by ETD, and completed flights from the current UTC month remain visible in the Finished lane. Older records remain directly accessible outside the live board.",
         "x-required-role": "dispatcher",
         responses: {
           "200": jsonResponse(
-            "Flights and schedule-request counts.",
+            "Windowed and lane-classified flights with schedule-request counts.",
             schemaRef("DispatchBoardResponse"),
           ),
           ...authenticatedErrors,

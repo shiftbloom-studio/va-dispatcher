@@ -34,6 +34,7 @@ import {
   listLiveTelemetry,
   presenceState,
   revokeDevice,
+  summarizePilotPresence,
 } from "./service.js";
 
 const now = new Date("2026-08-12T12:00:00.000Z");
@@ -305,19 +306,65 @@ describe("telemetry service", () => {
     expect(presenceState(null, now)).toBe("disconnected");
   });
 
+  it("uses a deterministic airborne tie-breaker for equal newest pilot receipts", () => {
+    expect(
+      summarizePilotPresence([
+        {
+          membershipId,
+          phase: "parked",
+          sampleAt: now,
+          presence: "online",
+        },
+        {
+          membershipId,
+          phase: "airborne",
+          sampleAt: now,
+          presence: "online",
+        },
+      ]),
+    ).toMatchObject({ onlinePilots: 1, flyingPilots: 1, stalePilots: 0 });
+  });
+
   it("scopes the dispatcher monitoring snapshot to the authenticated tenant", async () => {
     mocks.listCurrentFlightTelemetry.mockResolvedValue([
-      { ...current, sampleAt: new Date(now.getTime() - 60_000) },
+      { ...current, sampleAt: new Date(now.getTime() - 10_000) },
+      {
+        ...current,
+        flightId: "30000000-0000-4000-8000-000000000002",
+        phase: "parked",
+        sampleAt: new Date(now.getTime() - 60_000),
+      },
+      {
+        ...current,
+        flightId: "30000000-0000-4000-8000-000000000003",
+        membershipId: "10000000-0000-4000-8000-000000000002",
+        sampleAt: new Date(now.getTime() - 60_000),
+      },
+      {
+        ...current,
+        flightId: "30000000-0000-4000-8000-000000000004",
+        membershipId: "10000000-0000-4000-8000-000000000003",
+        sampleAt: new Date(now.getTime() - 180_000),
+      },
     ]);
 
-    const result = await listLiveTelemetry({
-      tenantId,
-      membershipId,
-      role: "dispatcher",
-    });
+    const result = await listLiveTelemetry(
+      { tenantId, membershipId, role: "dispatcher" },
+      now,
+    );
 
     expect(mocks.listCurrentFlightTelemetry).toHaveBeenCalledWith({ tenantId });
-    expect(result).toMatchObject([{ flightId, presence: "stale" }]);
+    expect(result.items[0]).toMatchObject({
+      flightId,
+      presence: "online",
+    });
+    expect(result.summary).toEqual({
+      onlinePilots: 1,
+      flyingPilots: 1,
+      stalePilots: 1,
+      definition: expect.stringContaining("Distinct assigned pilots"),
+    });
+    expect(result.generatedAt).toEqual(now);
   });
 
   it("revokes only a device owned by the authenticated tenant member", async () => {

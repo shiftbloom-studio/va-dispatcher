@@ -134,13 +134,14 @@ telemetryRoutes.get(
   "/dispatch/telemetry",
   requireRole("dispatcher"),
   async (c) => {
-    const items = await telemetryService.listLiveTelemetry(actor(c));
+    const snapshot = await telemetryService.listLiveTelemetry(actor(c));
     return c.json({
-      items: items.map((item) => ({
+      items: snapshot.items.map((item) => ({
         ...serializeTelemetry(item),
         presence: item.presence,
       })),
-      generatedAt: new Date().toISOString(),
+      summary: snapshot.summary,
+      generatedAt: snapshot.generatedAt.toISOString(),
     });
   },
 );

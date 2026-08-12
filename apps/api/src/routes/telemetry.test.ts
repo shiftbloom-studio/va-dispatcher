@@ -76,9 +76,16 @@ describe("telemetry routes", () => {
       },
     });
     mocks.listDevices.mockResolvedValue([]);
-    mocks.listLiveTelemetry.mockResolvedValue([
-      { ...current, presence: "online" },
-    ]);
+    mocks.listLiveTelemetry.mockResolvedValue({
+      items: [{ ...current, presence: "online" }],
+      summary: {
+        onlinePilots: 1,
+        flyingPilots: 1,
+        stalePilots: 0,
+        definition: "Synthetic trusted-receipt definition",
+      },
+      generatedAt: now,
+    });
     mocks.getFlightTelemetry.mockResolvedValue({
       flight: {
         id: flightId,
@@ -206,6 +213,12 @@ describe("telemetry routes", () => {
     expect(dispatcher.headers.get("cache-control")).toBe("private, no-store");
     await expect(dispatcher.json()).resolves.toMatchObject({
       items: [{ flightId, presence: "online", phase: "airborne" }],
+      summary: {
+        onlinePilots: 1,
+        flyingPilots: 1,
+        stalePilots: 0,
+      },
+      generatedAt: now.toISOString(),
     });
   });
 

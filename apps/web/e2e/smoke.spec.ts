@@ -31,6 +31,7 @@ function flight(overrides: Record<string, unknown> = {}) {
     aircraftType: "A320",
     version: 1,
     status: "offered",
+    boardLane: "offered",
     cancelReason: null,
     declinedReason: null,
     dispatcherNotes: "Report ready for briefing.",
@@ -122,6 +123,13 @@ function emptyBoard() {
         value: null,
         definition: "Finished flights divided by scheduled flights.",
       },
+    },
+    boardWindow: {
+      generatedAt: timestamp,
+      overdueFrom: "2026-08-31T08:00:00.000Z",
+      upcomingTo: "2026-09-08T08:00:00.000Z",
+      overdueLookbackHours: 24,
+      upcomingHorizonDays: 7,
     },
     scheduleRequestCounts: {},
   };
@@ -562,6 +570,7 @@ test("dispatcher scans the live board and opens flight planning", async ({
   ]);
   const accepted = flight({
     status: "accepted",
+    boardLane: "accepted",
     assignmentRevision: 2,
     assignmentConfirmedRevision: 1,
     assignmentConfirmedAt: timestamp,
@@ -570,6 +579,7 @@ test("dispatcher scans the live board and opens flight planning", async ({
   const active = flight({
     id: "55555555-5555-4555-8555-555555555555",
     status: "active",
+    boardLane: "active",
     flightNumber: "SK480",
     assignmentConfirmedRevision: 1,
     assignmentConfirmedAt: timestamp,
@@ -836,6 +846,99 @@ test("dispatcher monitors MSFS telemetry and records an OOOI correction", async 
   await expect(
     page.getByText("OOOI timestamps and provenance were updated."),
   ).toBeVisible();
+});
+
+test("operations views show real pilot presence, an overdue lane, and the pilot's active flight", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    { name: "e2e-role", value: "dispatcher", domain: "127.0.0.1", path: "/" },
+  ]);
+  const overdueFlight = flight({
+    id: "77777777-7777-4777-8777-777777777777",
+    flightNumber: "SK700",
+    status: "accepted",
+    boardLane: "overdue",
+    etd: "2026-09-01T07:00:00.000Z",
+    eta: "2026-09-01T08:20:00.000Z",
+  });
+  const activeFlight = flight({
+    id: "88888888-8888-4888-8888-888888888888",
+    flightNumber: "SK701",
+    status: "active",
+    boardLane: "active",
+    etd: "2026-08-25T07:00:00.000Z",
+    eta: "2026-08-25T08:20:00.000Z",
+  });
+  await baseFixtures(page);
+  await page.route("**/api/v1/dispatch/board", (route) => {
+    const fixture = emptyBoard();
+    return json(route, {
+      ...fixture,
+      flights: [overdueFlight, activeFlight],
+      scheduleRequestCounts: { pending: 1, in_review: 0 },
+    });
+  });
+  await page.route("**/api/v1/dispatch/telemetry", (route) =>
+    json(route, {
+      items: [
+        {
+          flightId: activeFlight.id,
+          membershipId: pilot.id,
+          phase: "airborne",
+          latitude: 55.618,
+          longitude: 12.656,
+          altitudeFeet: 12_000,
+          groundSpeedKnots: 310,
+          headingDegrees: 274,
+          simulatorTime: timestamp,
+          sampleAt: timestamp,
+          sequence: 55,
+          presence: "online",
+        },
+      ],
+      summary: {
+        onlinePilots: 1,
+        flyingPilots: 1,
+        stalePilots: 0,
+        definition: "Synthetic authenticated receipt window",
+      },
+      generatedAt: timestamp,
+    }),
+  );
+
+  await page.goto("/vsas/dispatch");
+  await continueWithoutAnalytics(page);
+  await expect(page.getByText("Pilots online")).toBeVisible();
+  await expect(page.getByText("1 airborne · 0 stale")).toBeVisible();
+  const overdueLane = page.getByRole("region", { name: "Overdue" });
+  await expect(overdueLane.getByText("SK700")).toBeVisible();
+  const activeLane = page.getByRole("region", { name: "Active" });
+  await expect(activeLane.getByText("SK701")).toBeVisible();
+  await expect(
+    page.getByText(/Live window: 24 hours overdue through 7 days ahead/),
+  ).toBeVisible();
+
+  await context.addCookies([
+    { name: "e2e-role", value: "pilot", domain: "127.0.0.1", path: "/" },
+  ]);
+  await page.route("**/api/v1/schedule-requests?*", (route) =>
+    json(route, { items: [], nextCursor: null }),
+  );
+  await page.route("**/api/v1/flights?*", (route) =>
+    json(route, { items: [activeFlight], nextCursor: null }),
+  );
+  await page.goto("/vsas/portal");
+
+  await expect(
+    page.getByRole("heading", { name: "Active flights" }),
+  ).toBeVisible();
+  await expect(page.getByText("SK701", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /SK701/ })).toHaveAttribute(
+    "href",
+    `/vsas/portal/flights/${activeFlight.id}`,
+  );
 });
 
 test("dispatcher telemetry workspace fails closed when the flight resource is denied", async ({

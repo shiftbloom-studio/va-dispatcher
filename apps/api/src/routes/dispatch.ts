@@ -25,6 +25,7 @@ dispatchRoutes.get("/dispatch/board", async (c) => {
       etd: item.flight.etd.toISOString(),
       eta: item.flight.eta.toISOString(),
       status: item.flight.status,
+      boardLane: item.lane,
       pilotMembershipId: item.flight.pilotMembershipId,
       aircraftType: item.flight.aircraftType,
       dispatcherNotes: item.flight.dispatcherNotes,
@@ -38,6 +39,13 @@ dispatchRoutes.get("/dispatch/board", async (c) => {
       inAt: item.flight.inAt?.toISOString() ?? null,
     })),
     metrics: board.metrics,
+    boardWindow: {
+      generatedAt: board.window.generatedAt.toISOString(),
+      overdueFrom: board.window.overdueFrom.toISOString(),
+      upcomingTo: board.window.upcomingTo.toISOString(),
+      overdueLookbackHours: board.window.overdueLookbackHours,
+      upcomingHorizonDays: board.window.upcomingHorizonDays,
+    },
     scheduleRequestCounts: requestCounts,
   });
 });

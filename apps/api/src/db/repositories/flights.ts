@@ -48,6 +48,31 @@ export type ScheduleFulfillmentResult = {
   fulfillment: ScheduleFulfillmentOutcome;
 };
 
+export const DISPATCH_BOARD_OVERDUE_LOOKBACK_HOURS = 24;
+export const DISPATCH_BOARD_UPCOMING_HORIZON_DAYS = 7;
+const DISPATCH_BOARD_OVERDUE_LOOKBACK_MS =
+  DISPATCH_BOARD_OVERDUE_LOOKBACK_HOURS * 60 * 60 * 1_000;
+const DISPATCH_BOARD_UPCOMING_HORIZON_MS =
+  DISPATCH_BOARD_UPCOMING_HORIZON_DAYS * 24 * 60 * 60 * 1_000;
+
+export type DispatchBoardWindow = {
+  generatedAt: Date;
+  overdueFrom: Date;
+  upcomingTo: Date;
+  overdueLookbackHours: number;
+  upcomingHorizonDays: number;
+};
+
+export function dispatchBoardWindow(now = new Date()): DispatchBoardWindow {
+  return {
+    generatedAt: now,
+    overdueFrom: new Date(now.getTime() - DISPATCH_BOARD_OVERDUE_LOOKBACK_MS),
+    upcomingTo: new Date(now.getTime() + DISPATCH_BOARD_UPCOMING_HORIZON_MS),
+    overdueLookbackHours: DISPATCH_BOARD_OVERDUE_LOOKBACK_HOURS,
+    upcomingHorizonDays: DISPATCH_BOARD_UPCOMING_HORIZON_DAYS,
+  };
+}
+
 export async function createFlight(input: CreateFlightInput): Promise<Flight> {
   const db = getDb();
   const id = randomUUID();
@@ -809,7 +834,7 @@ export async function listBoardFlights(
   now = new Date(),
 ): Promise<Flight[]> {
   const db = getDb();
-  const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const window = dispatchBoardWindow(now);
   const monthStart = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
   );
@@ -826,7 +851,8 @@ export async function listBoardFlights(
           eq(flights.status, "active"),
           and(
             inArray(flights.status, ["accepted", "briefed"]),
-            lte(flights.etd, horizon),
+            gte(flights.etd, window.overdueFrom),
+            lte(flights.etd, window.upcomingTo),
           ),
           and(
             eq(flights.status, "completed"),

@@ -59,6 +59,7 @@ curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
 - Schedule: `POST/GET /schedule-requests`, `…/cancel|review|reject`
 - Flights: `POST /flights`, `POST /flights/bulk`, `…/accept|decline|cancel|offer|status`
 - Dispatch: `GET /dispatch/board`, `GET /dispatch/inbox`
+- Telemetry: `POST /telemetry/ingest`, `GET /dispatch/telemetry`, `GET /flights/:id/telemetry`
 - Profile: `PATCH /me` (display name and own ACARS callsign)
 - ACARS: `GET/POST /acars/messages`
 - Development fixture: `POST /acars/simulate` (non-production mock adapter only)
@@ -66,6 +67,36 @@ curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
 - SimBrief connection: `GET/PUT/DELETE /simbrief/connection`, `POST /simbrief/oauth/start`
 - SimBrief flight plans: `POST /flights/:id/simbrief/dispatches`, `GET /flights/:id/simbrief`
 - Cron: `POST /internal/cron/acars-poll` (Bearer `CRON_SECRET`)
+
+## Live operations board
+
+`GET /dispatch/board` is a deliberately bounded working view, not an archive.
+At one trusted server generation time it includes:
+
+- accepted and briefed flights from 24 hours before generation through seven
+  days after generation;
+- a separate `overdue` lane for accepted or briefed flights whose ETD has
+  passed;
+- every active flight, regardless of ETD; and
+- completed flights from the current UTC month in the `completed` lane.
+
+Offered flights stay in Flight Management until the pilot accepts them.
+
+Accepted and briefed flights more than 24 hours overdue or beyond the seven-day
+horizon leave the live board, but remain available through flight management
+and the tenant-scoped direct detail endpoint. The response exposes the exact
+`boardWindow` and a server-classified `boardLane` for every returned flight so
+lane counts and empty states describe the same query.
+
+The dispatcher `GET /dispatch/telemetry` response reports distinct pilot
+presence from each pilot's newest authenticated server receipt. `onlinePilots`
+means a receipt within 30 seconds; `flyingPilots` is the online subset whose
+newest phase is `airborne`; `stalePilots` means the newest receipt is older than
+30 seconds but no older than two minutes. These are live-presence counts, not a
+count of active membership records. Disconnected or revoked devices and stale
+assignment ownership are excluded by the telemetry repository joins.
+If two newest samples share an exact receipt timestamp, an airborne sample
+wins the flying tie-breaker so the summary is deterministic.
 
 ## SimBrief flight plans
 

@@ -34,16 +34,26 @@ export function PilotDashboard({ slug }: { slug: string }) {
     queryFn: () => api("/flights?limit=100", { schema: flightPageSchema }),
     refetchInterval: 30_000,
   });
+  const activeFlights = useQuery({
+    queryKey: [slug, "pilot", "flights", "active"],
+    queryFn: () =>
+      api("/flights?status=active&limit=100", { schema: flightPageSchema }),
+    refetchInterval: 10_000,
+  });
 
-  if (requests.isPending || flights.isPending)
+  if (requests.isPending || flights.isPending || activeFlights.isPending)
     return <LoadingState label="Loading your schedule" />;
-  if (requests.isError || flights.isError) {
-    const error = requests.error ?? flights.error;
+  if (requests.isError || flights.isError || activeFlights.isError) {
+    const error = requests.error ?? flights.error ?? activeFlights.error;
     return (
       <ErrorState
         message={apiErrorMessage(error)}
         onRetry={() =>
-          void Promise.all([requests.refetch(), flights.refetch()])
+          void Promise.all([
+            requests.refetch(),
+            flights.refetch(),
+            activeFlights.refetch(),
+          ])
         }
       />
     );
@@ -54,6 +64,9 @@ export function PilotDashboard({ slug }: { slug: string }) {
   );
   const upcoming = flights.data.items.filter((flight) =>
     ["accepted", "briefed"].includes(flight.status),
+  );
+  const active = activeFlights.data.items.filter(
+    (flight) => flight.status === "active",
   );
   const activeRequests = requests.data.items.filter((request) =>
     activeRequestStatuses.has(request.status),
@@ -131,6 +144,31 @@ export function PilotDashboard({ slug }: { slug: string }) {
           </div>
         </Card>
       </div>
+
+      <Card className="mt-6 overflow-hidden">
+        <CardHeader
+          title="Active flights"
+          description="Sectors currently in progress remain visible until they are completed or cancelled."
+        />
+        <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+          {active.length ? (
+            active.map((flight) => (
+              <FlightCard
+                key={flight.id}
+                flight={flight}
+                href={`/${slug}/portal/flights/${flight.id}`}
+              />
+            ))
+          ) : (
+            <div className="sm:col-span-2 lg:col-span-3">
+              <EmptyState
+                title="No flight in progress"
+                detail="A sector appears here as soon as it enters Active status."
+              />
+            </div>
+          )}
+        </div>
+      </Card>
 
       <Card className="mt-6 overflow-hidden">
         <CardHeader

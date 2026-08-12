@@ -9,7 +9,7 @@
     "start": "node dist/local.js",
     "typecheck": "node ./node_modules/typescript7/bin/tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:postgres": "vitest run src/db/repositories/memberships.postgres.test.ts src/db/repositories/simbrief.postgres.test.ts src/db/repositories/telemetry.postgres.test.ts",
+    "test:postgres": "vitest run src/db/repositories/memberships.postgres.test.ts src/db/repositories/simbrief.postgres.test.ts src/db/repositories/telemetry.postgres.test.ts src/db/repositories/flights.postgres.test.ts",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
