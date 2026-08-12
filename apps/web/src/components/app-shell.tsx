@@ -13,8 +13,8 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { LegalNotice } from "@/components/legal-notice";
 import { OnlineStatus } from "@/components/online-status";
+import { SiteFooter } from "@/components/site-footer";
 import type { Me, Role, TenantDetail } from "@/lib/api/schemas";
 import type { TenantConfig } from "@/lib/tenant";
 
@@ -158,9 +158,7 @@ export function AppShell({
             <OnlineStatus />
           </div>
           {children}
-          <footer className="mt-10 border-t border-slate-200 pt-5">
-            <LegalNotice className="text-xs leading-5 text-slate-500" />
-          </footer>
+          <SiteFooter className="mt-12 border-t border-slate-200" />
         </main>
       </div>
     </div>

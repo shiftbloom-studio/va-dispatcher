@@ -1,0 +1,106 @@
+# Privacy and cookie compliance checklist
+
+This repository provides a privacy-by-default technical baseline. It does not
+by itself certify GDPR/DSGVO compliance. The legal controller remains
+responsible for validating the notice, lawful bases, contracts, retention, and
+operating procedures for the actual deployment with qualified counsel.
+
+## Before production
+
+1. Set every required `LEGAL_*` variable listed in
+   `apps/web/.env.example`. Use the controller's real legal identity and a
+   serviceable postal address. Production legal pages intentionally fail when
+   required values are absent.
+2. Determine whether representative, register, VAT ID, phone, or editorial
+   responsibility details apply and configure them. Register name/number and
+   editorially responsible name/address must be configured as complete pairs.
+   Do not publish empty or fabricated entries.
+3. Review `/impressum` and `/privacy` against the controller's legal form,
+   audience, membership terms, and processing records.
+4. Name the controller's competent data-protection supervisory authority and
+   provide its official HTTPS URL.
+5. Confirm that all public domains use HTTPS. Check the HSTS decision before
+   adding subdomains or preload.
+
+## Data inventory in this application
+
+| System              | Personal or linkable data                                                                                      |
+| ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Clerk               | User and organization identifiers, login identifier/email, name, authentication/session events, IP/device data |
+| `memberships`       | Clerk user ID, role, display name, pilot callsign, status, timestamps                                          |
+| `schedule_requests` | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                          |
+| `flights`           | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                         |
+| `acars_messages`    | Station identifiers, free-text messages, provider metadata, actor, timestamps                                  |
+| `audit_events`      | Actor, action, entity identifiers, metadata, timestamp                                                         |
+| Infrastructure      | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                    |
+
+Free-text fields can contain personal data even when the schema does not ask
+for it. Train dispatchers and members not to enter sensitive or unrelated data.
+
+## Processor and transfer controls
+
+- Execute and retain the current data-processing agreements for Clerk, Vercel,
+  and Neon. Record their subprocessors, processing locations, deletion terms,
+  and incident-notification channels.
+- Select EEA deployment/database regions where the contracted product supports
+  them. Document any transfer outside the EEA, its adequacy decision or
+  Standard Contractual Clauses, and the transfer-impact assessment and
+  supplementary measures where required.
+- Subscribe to provider subprocessor-change notices and review changes.
+- Treat Hoppie's ACARS as an optional external network, not a confidential
+  processor. Approve it before setting `ACARS_PROVIDER=hoppie`. Hoppie states
+  that messages can be visible to others and remain in its queue for 24 hours.
+  Never transmit personal, confidential, authentication, or special-category
+  data through ACARS.
+
+## Retention and data-subject requests
+
+The privacy notice uses retention criteria because this repository cannot
+choose the controller's legally appropriate periods. Before launch, approve a
+written schedule for accounts, operational history, ACARS copies, audit events,
+HTTP/security logs, and backups. Configure provider retention and implement a
+tested recurring deletion or anonymization process for each store.
+
+Document and test a request workflow that can:
+
+- verify the requester without collecting excessive new data;
+- export the records listed in the inventory above;
+- correct member identity and callsign data;
+- restrict, object to, or erase processing where the GDPR conditions apply;
+- propagate deletion/correction to Clerk and other processors and backups;
+- preserve only records subject to a documented legal obligation or claim; and
+- respond within the applicable deadline and record the outcome.
+
+## Cookies and browser storage
+
+The current build loads no analytics, advertising, marketing, social-media
+plugin, remote font, map, or embedded-media service. The banner is therefore an
+informational notice about essential authentication/security storage and the
+local acknowledgement record. It deliberately has no deceptive “Accept all”
+choice.
+
+Before adding any optional client-side service:
+
+1. update the data and cookie inventory, provider contracts, and privacy notice;
+2. implement purpose-specific, off-by-default consent with equally accessible
+   accept and reject controls;
+3. prevent the script, iframe, request, cookie, or local-storage access before
+   consent—hiding an already loaded service is insufficient;
+4. make withdrawal as easy as consent and stop future optional processing;
+5. version the notice so existing users see the changed choice; and
+6. verify behavior in a fresh browser profile and after rejection, acceptance,
+   withdrawal, and expiry.
+
+## Organizational safeguards
+
+- Maintain the Article 30 record of processing activities where required and a
+  current legitimate-interest assessment for security processing.
+- Define least-privilege role ownership, periodic access reviews, offboarding,
+  credential rotation, backup restoration tests, and vulnerability management.
+- Maintain a breach-response process covering processor escalation, the
+  72-hour supervisory-authority assessment, evidence preservation, and user
+  notification where required.
+- Assess whether a data-protection officer, EU representative, DPIA, or minor
+  user safeguards are required for the actual controller and audience.
+- Re-run unit, build, browser, header, and cookie-storage checks after every
+  authentication, hosting, database, ACARS, or frontend dependency change.

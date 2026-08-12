@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { env, loadEnv } from "./env.js";
 import { errorHandler } from "./middleware/error.js";
 import { requestId } from "./middleware/request-id.js";
@@ -23,8 +24,34 @@ export function createApp() {
   app.use("*", requestId);
   app.use(
     "*",
+    secureHeaders({
+      // The API is a same-origin JSON service in the primary deployment and
+      // also supports an explicitly configured CORS origin in fallback
+      // deployments. Document-focused isolation headers would block that use.
+      crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: false,
+      originAgentCluster: false,
+      referrerPolicy: "no-referrer",
+      strictTransportSecurity:
+        env().NODE_ENV === "production" ? "max-age=31536000" : false,
+      xFrameOptions: "DENY",
+      permissionsPolicy: {
+        browsingTopics: [],
+        camera: [],
+        geolocation: [],
+        microphone: [],
+        payment: [],
+        usb: [],
+      },
+    }),
+  );
+  app.use(
+    "*",
     cors({
-      origin: env().CORS_ORIGIN.split(",").map((s) => s.trim()),
+      origin: env()
+        .CORS_ORIGIN.split(",")
+        .map((s) => s.trim()),
       allowHeaders: [
         "Authorization",
         "Content-Type",

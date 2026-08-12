@@ -1,10 +1,7 @@
-import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { QueryProvider } from "@/components/query-provider";
-import { getTenantAuthRoutes } from "@/lib/auth-routes";
-import { DEFAULT_TENANT_SLUG } from "@/lib/tenant";
+import { PrivacyControls } from "@/components/privacy-controls";
 
 import "./globals.css";
 
@@ -14,12 +11,10 @@ export const metadata: Metadata = {
     "Virtual Airline live dispatch, scheduling, and ACARS operations.",
 };
 
-const authRoutes = getTenantAuthRoutes(DEFAULT_TENANT_SLUG);
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
-  const document = (
+  return (
     <html lang="en">
       <body>
         <a
@@ -28,25 +23,9 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        <QueryProvider>{children}</QueryProvider>
+        {children}
+        <PrivacyControls />
       </body>
     </html>
-  );
-
-  const fixtureMode =
-    process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS === "true" &&
-    process.env.NODE_ENV !== "production";
-  return fixtureMode ? (
-    document
-  ) : (
-    <ClerkProvider
-      signInUrl={authRoutes.signIn}
-      signUpUrl={authRoutes.signUp}
-      signInFallbackRedirectUrl={authRoutes.home}
-      signUpFallbackRedirectUrl={authRoutes.home}
-      taskUrls={authRoutes.taskUrls}
-    >
-      {document}
-    </ClerkProvider>
   );
 }

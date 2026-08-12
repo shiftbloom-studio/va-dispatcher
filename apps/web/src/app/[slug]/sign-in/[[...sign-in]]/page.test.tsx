@@ -64,6 +64,16 @@ describe("tenant sign-in", () => {
       "data-sign-up-fallback-url",
       "/vsas",
     );
+    expect(screen.getByRole("link", { name: "Impressum" })).toHaveAttribute(
+      "href",
+      "/impressum",
+    );
+    expect(
+      screen.getByRole("link", { name: "Privacy Notice" }),
+    ).toHaveAttribute("href", "/privacy");
+    expect(
+      screen.getByRole("button", { name: "Cookie settings" }),
+    ).toBeInTheDocument();
   });
 
   it("rejects an unknown tenant", async () => {
