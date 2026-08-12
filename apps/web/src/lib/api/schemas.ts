@@ -277,6 +277,7 @@ export const memberUpdateResponseSchema = memberSchema.extend({
 });
 export const memberSyncResponseSchema = z.object({
   complete: z.boolean(),
+  summaryAuditRecorded: z.boolean(),
   pages: z.number().int().nonnegative(),
   seen: z.number().int().nonnegative(),
   created: z.number().int().nonnegative(),

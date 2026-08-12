@@ -172,6 +172,10 @@ export function AdminControlPlane({ slug }: { slug: string }) {
             {sync.data.seen} seen, {sync.data.created} created,{" "}
             {sync.data.updated} updated, {sync.data.unchanged} unchanged,{" "}
             {sync.data.failed} failed.
+            {!sync.data.summaryAuditRecorded && !sync.data.note
+              ? " The aggregate summary audit could not be recorded; completed member changes remain applied and individually audited."
+              : ""}
+            {sync.data.note ? ` ${sync.data.note}` : ""}
           </div>
         ) : null}
         {sync.error ? (

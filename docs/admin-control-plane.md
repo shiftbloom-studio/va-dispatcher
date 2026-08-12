@@ -20,7 +20,10 @@ explicitly.
 
 Clerk synchronization may update role and display name or create an active
 membership. Each mutation and the aggregate sync result is audited. A failed
-audit insert rolls back the corresponding membership mutation.
+per-member audit insert rolls back the corresponding membership mutation. If
+the final aggregate audit insert fails after those transactions, the response
+sets `summaryAuditRecorded` to `false` and reports a bounded failure explicitly;
+completed member changes remain applied and retain their individual audits.
 
 ## Last administrator and recovery
 

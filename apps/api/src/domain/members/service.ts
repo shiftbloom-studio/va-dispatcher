@@ -123,6 +123,7 @@ export type DirectoryPageLoader = (input: {
 
 export type DirectorySyncResult = {
   complete: boolean;
+  summaryAuditRecorded: boolean;
   pages: number;
   seen: number;
   created: number;
@@ -150,6 +151,7 @@ export async function syncMembersFromDirectory(input: {
 }): Promise<DirectorySyncResult> {
   const result: DirectorySyncResult = {
     complete: true,
+    summaryAuditRecorded: false,
     pages: 0,
     seen: 0,
     created: 0,
@@ -160,6 +162,7 @@ export async function syncMembersFromDirectory(input: {
     failures: [],
   };
   let offset = 0;
+  let lastKnownTotalCount = 0;
 
   while (result.pages < MAX_DIRECTORY_PAGES) {
     let page: DirectoryPage;
@@ -177,6 +180,7 @@ export async function syncMembersFromDirectory(input: {
     }
 
     result.pages += 1;
+    lastKnownTotalCount = page.totalCount;
     if (page.data.length === 0) {
       if (offset < page.totalCount) {
         result.complete = false;
@@ -265,7 +269,7 @@ export async function syncMembersFromDirectory(input: {
     if (offset >= page.totalCount) break;
   }
 
-  if (result.pages >= MAX_DIRECTORY_PAGES) {
+  if (directoryPageLimitExceeded(result.pages, offset, lastKnownTotalCount)) {
     result.complete = false;
     result.failed += 1;
     recordSyncFailure(result, {
@@ -275,24 +279,46 @@ export async function syncMembersFromDirectory(input: {
     });
   }
 
-  await writeAudit({
-    tenantId: input.tenantId,
-    actorMembershipId: input.actorMembershipId,
-    action: "members.directory_sync",
-    entityType: "tenant",
-    entityId: input.tenantId,
-    meta: {
-      complete: result.complete,
-      pages: result.pages,
-      seen: result.seen,
-      created: result.created,
-      updated: result.updated,
-      unchanged: result.unchanged,
-      skipped: result.skipped,
-      failed: result.failed,
-    },
-  });
+  try {
+    await writeAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.actorMembershipId,
+      action: "members.directory_sync",
+      entityType: "tenant",
+      entityId: input.tenantId,
+      meta: {
+        complete: result.complete,
+        pages: result.pages,
+        seen: result.seen,
+        created: result.created,
+        updated: result.updated,
+        unchanged: result.unchanged,
+        skipped: result.skipped,
+        failed: result.failed,
+      },
+    });
+    result.summaryAuditRecorded = true;
+  } catch {
+    // Per-member mutations are already atomically audited. A summary failure
+    // must remain visible without converting a completed sync into an opaque
+    // 500 or incorrectly claiming the prior mutations rolled back.
+    result.complete = false;
+    result.failed += 1;
+    recordSyncFailure(result, {
+      scope: "page",
+      offset,
+      code: "summary_audit_failed",
+    });
+  }
   return result;
+}
+
+export function directoryPageLimitExceeded(
+  pages: number,
+  offset: number,
+  totalCount: number,
+): boolean {
+  return pages >= MAX_DIRECTORY_PAGES && offset < totalCount;
 }
 
 function directoryDisplayName(membership: DirectoryMembership): string | null {
