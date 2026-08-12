@@ -1,4 +1,8 @@
-import { createAcarsProvider } from "../../acars/factory.js";
+import {
+  createAcarsProvider,
+  tenantAcarsProviderName,
+} from "../../acars/factory.js";
+import { AcarsProviderError } from "../../acars/types.js";
 import {
   findAcarsMessage,
   insertAcarsMessage,
@@ -6,10 +10,13 @@ import {
   enqueueMockAcars,
 } from "../../db/repositories/acars.js";
 import { writeAudit } from "../../db/repositories/audit.js";
-import { findTenantById } from "../../db/repositories/tenants.js";
-import { listTenants } from "../../db/repositories/tenants.js";
+import {
+  findTenantById,
+  listHoppieTenants,
+} from "../../db/repositories/tenants.js";
 import { env } from "../../env.js";
 import { AppError } from "../../lib/errors.js";
+import { isUniqueViolation } from "../../lib/postgres.js";
 import type { Tenant } from "../../db/schema.js";
 
 export async function sendTelex(input: {
@@ -22,11 +29,22 @@ export async function sendTelex(input: {
   const tenant = await requireTenant(input.tenantId);
   const from = tenant.hoppieStation ?? tenant.slug.toUpperCase();
   const provider = createAcarsProvider(tenant);
-  const result = await provider.sendTelex({
-    from,
-    to: input.to.toUpperCase(),
-    body: input.body,
-  });
+  let result;
+  try {
+    result = await provider.sendTelex({
+      from,
+      to: input.to.toUpperCase(),
+      body: input.body,
+    });
+    if (!result.ok) {
+      throw new AcarsProviderError(
+        "rejected",
+        "The ACARS provider rejected the message.",
+      );
+    }
+  } catch (error) {
+    throw publicProviderError(error);
+  }
 
   const message = await insertAcarsMessage({
     tenantId: input.tenantId,
@@ -81,13 +99,13 @@ export async function simulateInbound(input: {
   body: string;
   msgType?: "telex" | "progress" | "cpdlc" | "position" | "other";
 }) {
-  if (env().ACARS_PROVIDER !== "mock") {
+  const tenant = await requireTenant(input.tenantId);
+  if (tenantAcarsProviderName(tenant) !== "mock") {
     throw new AppError(
       "UNPROCESSABLE",
-      "ACARS simulate is only available when ACARS_PROVIDER=mock",
+      "ACARS simulate is only available while this Virtual Airline uses the mock provider",
     );
   }
-  const tenant = await requireTenant(input.tenantId);
   const to =
     input.to?.toUpperCase() ??
     tenant.hoppieStation ??
@@ -130,8 +148,9 @@ export async function pollTenantAcars(tenant: Tenant): Promise<number> {
         receivedAt: msg.receivedAt,
       });
       stored += 1;
-    } catch {
-      // unique violation on dedupe — ignore
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      // Hoppie poll dedupe: another ingestion already stored this message.
     }
   }
   return stored;
@@ -140,10 +159,8 @@ export async function pollTenantAcars(tenant: Tenant): Promise<number> {
 /**
  * Poll ACARS for tenants that actually need network I/O.
  *
- * Idle-cost rules:
- * - mock provider: no-op (no DB list, no wake-ups) — local/demo only
- * - hoppie provider: only tenants with hoppie_logon_enc set
- *   so empty/suspended projects never pay for idle polls
+ * Only tenants with an encrypted Hoppie logon need network polling. Mock
+ * tenants are drained synchronously by the simulator and never polled here.
  */
 export async function pollAllTenants(): Promise<{
   tenants: number;
@@ -154,12 +171,11 @@ export async function pollAllTenants(): Promise<{
     return {
       tenants: 0,
       messages: 0,
-      skipped: "ACARS_PROVIDER=mock — poll disabled (zero idle cost)",
+      skipped: "deployment-level Hoppie polling is disabled",
     };
   }
 
-  const all = await listTenants();
-  const hoppieTenants = all.filter((t) => Boolean(t.hoppieLogonEnc));
+  const hoppieTenants = await listHoppieTenants();
   if (hoppieTenants.length === 0) {
     return {
       tenants: 0,
@@ -177,6 +193,16 @@ export async function pollAllTenants(): Promise<{
     }
   }
   return { tenants: hoppieTenants.length, messages, skipped: null };
+}
+
+export function publicProviderError(error: unknown): AppError {
+  if (error instanceof AcarsProviderError) {
+    return new AppError("UPSTREAM", error.message, {
+      details: { provider: "hoppie", reason: error.code },
+      cause: error,
+    });
+  }
+  throw error;
 }
 
 async function requireTenant(tenantId: string): Promise<Tenant> {

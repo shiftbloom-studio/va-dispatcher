@@ -7,6 +7,7 @@ import {
   MessageSquareText,
   Plane,
   RadioTower,
+  Settings,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -27,6 +28,8 @@ const dispatcherLinks = [
   { href: "/dispatch/acars", label: "ACARS", icon: MessageSquareText },
 ];
 
+const settingsLink = { href: "/settings", label: "Settings", icon: Settings };
+
 export function AppShell({
   children,
   slug,
@@ -44,7 +47,10 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const search = useSearchParams();
-  const links = role === "pilot" ? pilotLinks : dispatcherLinks;
+  const links = [
+    ...(role === "pilot" ? pilotLinks : dispatcherLinks),
+    settingsLink,
+  ];
   const bypass =
     process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS === "true" &&
     process.env.NODE_ENV !== "production";
