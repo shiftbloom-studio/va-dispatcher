@@ -65,6 +65,10 @@ const dispatch: SimbriefDispatch = {
   status: "pending",
   revision: 1,
   flightSnapshot: {
+    flightVersion: 3,
+    assignmentRevision: 2,
+    dispatchReleaseId: "35000000-0000-4000-8000-000000000001",
+    dispatchReleaseRevision: 4,
     pilotMembershipId: "10000000-0000-4000-8000-000000000001",
     flightNumber: "SK935",
     depIcao: "EKCH",
@@ -150,7 +154,12 @@ describe("SimBrief routes", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notams: true }),
+        body: JSON.stringify({
+          expectedFlightVersion: 3,
+          expectedAssignmentRevision: 2,
+          releaseId: "35000000-0000-4000-8000-000000000001",
+          releaseRevision: 4,
+        }),
       },
     );
     const body = (await response.json()) as {
@@ -164,29 +173,32 @@ describe("SimBrief routes", () => {
     expect(mocks.prepareDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ role: "pilot" }),
       dispatch.flightId,
-      expect.objectContaining({ notams: true, units: "KGS" }),
+      {
+        expectedFlightVersion: 3,
+        expectedAssignmentRevision: 2,
+        releaseId: "35000000-0000-4000-8000-000000000001",
+        releaseRevision: 4,
+      },
     );
     expect(body.dispatch).not.toHaveProperty("callbackTokenMac");
     expect(body.dispatch).not.toHaveProperty("callbackExpiresAt");
     expect(body.dispatch).not.toHaveProperty("flightSnapshot");
     expect(body.dispatch).toHaveProperty("revision", 1);
+    expect(body.dispatch).toHaveProperty("flightVersion", 3);
+    expect(body.dispatch).toHaveProperty("releaseRevision", 4);
     expect(body.dispatch.request).not.toHaveProperty("userid");
     expect(body.dispatch.request).not.toHaveProperty("pid");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
-  it("uses flight defaults when the dispatch request has no body", async () => {
+  it("requires an explicit flight, assignment, and release compare-and-set", async () => {
     const response = await app.request(
       `/flights/${dispatch.flightId}/simbrief/dispatches`,
       { method: "POST" },
     );
 
-    expect(response.status).toBe(201);
-    expect(mocks.prepareDispatch).toHaveBeenCalledWith(
-      expect.anything(),
-      dispatch.flightId,
-      expect.objectContaining({ units: "KGS" }),
-    );
+    expect(response.status).toBe(400);
+    expect(mocks.prepareDispatch).not.toHaveBeenCalled();
   });
 
   it("rejects unknown or reserved-looking dispatch options", async () => {
@@ -195,7 +207,13 @@ describe("SimBrief routes", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apicode: "attacker-controlled" }),
+        body: JSON.stringify({
+          expectedFlightVersion: 3,
+          expectedAssignmentRevision: 2,
+          releaseId: "35000000-0000-4000-8000-000000000001",
+          releaseRevision: 4,
+          apicode: "attacker-controlled",
+        }),
       },
     );
 

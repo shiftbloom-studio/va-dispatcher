@@ -189,4 +189,112 @@ describe("PilotFlightDetail decisions", () => {
       await screen.findByText(/SimBrief returned successfully/i),
     ).toBeVisible();
   });
+
+  it("does not let a pilot launch a preparation from an obsolete release", async () => {
+    apiMock.mockReset();
+    const currentFlight = {
+      ...offeredFlight,
+      status: "briefed" as const,
+      version: 3,
+      assignmentRevision: 2,
+    };
+    const release = {
+      id: "35000000-0000-4000-8000-000000000001",
+      flightId: currentFlight.id,
+      revision: 4,
+      operationalRoute: "NEXEN Z711 MONAK",
+      sid: null,
+      star: null,
+      cruiseLevel: 350,
+      alternateIcao: "ESSA",
+      fuelUnit: "kg" as const,
+      payloadUnit: "kg" as const,
+      taxiFuel: 200,
+      tripFuel: 4_000,
+      contingencyFuel: 200,
+      alternateFuel: 700,
+      finalReserveFuel: 900,
+      additionalFuel: 0,
+      blockFuel: 6_000,
+      plannedPayload: 14_000,
+      weatherSnapshot: {},
+      releaseNotes: null,
+      dispatcherRemarks: null,
+      releasedByMembershipId: "dispatcher-1",
+      releasedAt: "2026-09-01T09:00:00.000Z",
+    };
+    apiMock.mockImplementation(
+      (path: string, options: { method?: string } = {}) => {
+        if (path === "/flights/flight-1" && !options.method) {
+          return Promise.resolve({
+            flight: currentFlight,
+            release,
+            releaseRevisions: [release],
+            events: [],
+          });
+        }
+        if (path === "/flights/flight-1/simbrief/dispatches") {
+          return Promise.resolve({
+            items: [
+              {
+                id: "40000000-0000-4000-8000-000000000001",
+                flightId: currentFlight.id,
+                preparedByMembershipId: "dispatcher-1",
+                generatedByMembershipId: null,
+                dispatcherName: "Test Dispatcher",
+                dispatcherRemarks: null,
+                staticId: "VAD_STALE",
+                status: "prepared",
+                revision: 1,
+                flightVersion: 2,
+                assignmentRevision: 2,
+                releaseId: release.id,
+                releaseRevision: 3,
+                request: {},
+                ofp: null,
+                simbriefRequestId: null,
+                generatedAt: null,
+                syncedAt: null,
+                lastError: null,
+                createdAt: "2026-09-01T09:00:00.000Z",
+                updatedAt: "2026-09-01T09:00:00.000Z",
+              },
+            ],
+          });
+        }
+        if (path === "/simbrief/connection") {
+          return Promise.resolve({
+            connection: {
+              connected: true,
+              userId: "123456",
+              verified: true,
+              verifiedAt: "2026-08-01T00:00:00.000Z",
+              oauth: {
+                configured: false,
+                connected: false,
+                username: null,
+                connectedAt: null,
+              },
+            },
+          });
+        }
+        throw new Error(`Unexpected API call: ${path}`);
+      },
+    );
+
+    render(
+      <TestQueryProvider>
+        <PilotFlightDetail slug="vsas" flightId="flight-1" />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        /dispatch release changed after this preparation/i,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open SimBrief" }),
+    ).toBeDisabled();
+  });
 });

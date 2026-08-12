@@ -4,7 +4,7 @@ import type { DispatchRelease, Flight } from "../../db/schema.js";
 const mocks = vi.hoisted(() => ({
   writeAudit: vi.fn(),
   findLatestDispatchRelease: vi.fn(),
-  createDispatchRelease: vi.fn(),
+  publishDispatchReleaseAtomic: vi.fn(),
   listDispatchReleaseRevisions: vi.fn(),
   findLatestDispatchReleases: vi.fn(),
   createFlightEvent: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock("../../db/repositories/audit.js", () => ({
 }));
 vi.mock("../../db/repositories/dispatch-releases.js", () => ({
   findLatestDispatchRelease: mocks.findLatestDispatchRelease,
-  createDispatchRelease: mocks.createDispatchRelease,
+  publishDispatchReleaseAtomic: mocks.publishDispatchReleaseAtomic,
   listDispatchReleaseRevisions: mocks.listDispatchReleaseRevisions,
   findLatestDispatchReleases: mocks.findLatestDispatchReleases,
 }));
@@ -310,9 +310,10 @@ describe("flight planning service", () => {
     const accepted = makeFlight({ status: "accepted" });
     const release = makeRelease();
     mocks.findFlight.mockResolvedValue(accepted);
-    mocks.findLatestDispatchRelease.mockResolvedValue(null);
-    mocks.createDispatchRelease.mockResolvedValue(release);
-    mocks.updateFlight.mockResolvedValue({ ...accepted, status: "briefed" });
+    mocks.publishDispatchReleaseAtomic.mockResolvedValue({
+      flight: { ...accepted, status: "briefed", version: 2 },
+      release,
+    });
 
     const result = await publishDispatchRelease(
       dispatcher,
@@ -323,47 +324,42 @@ describe("flight planning service", () => {
 
     expect(result.flight.status).toBe("briefed");
     expect(result.release.revision).toBe(1);
-    expect(mocks.createDispatchRelease).toHaveBeenCalledWith(
+    expect(mocks.publishDispatchReleaseAtomic).toHaveBeenCalledWith(
       expect.objectContaining({
-        revision: 1,
+        expectedFlightVersion: accepted.version,
         operationalRoute: "NEXEN Z711 MONAK",
       }),
     );
-    expect(mocks.updateFlight).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: accepted.id,
-        expectedVersion: accepted.version,
-        patch: { status: "briefed" },
-        action: "flight.release_publish",
-      }),
-    );
+    expect(mocks.updateFlight).not.toHaveBeenCalled();
+    expect(mocks.writeAudit).not.toHaveBeenCalled();
   });
 
-  it("repairs an Accepted flight whose immutable release already exists", async () => {
-    const accepted = makeFlight({ status: "accepted" });
-    const release = makeRelease();
-    mocks.findFlight.mockResolvedValue(accepted);
-    mocks.findLatestDispatchRelease.mockResolvedValue(release);
-    mocks.updateFlight.mockResolvedValue({ ...accepted, status: "briefed" });
+  it("increments the flight revision for every replacement release", async () => {
+    const briefed = makeFlight({ status: "briefed", version: 4 });
+    const release = { ...makeRelease(), revision: 2 };
+    mocks.findFlight.mockResolvedValue(briefed);
+    mocks.publishDispatchReleaseAtomic.mockResolvedValue({
+      flight: { ...briefed, version: 5 },
+      release,
+    });
 
     const result = await publishDispatchRelease(
       dispatcher,
-      accepted.id,
-      accepted.version,
+      briefed.id,
+      briefed.version,
       releaseDraft(),
     );
 
     expect(result).toMatchObject({
       flight: { status: "briefed" },
-      release: { id: release.id, revision: 1 },
+      release: { id: release.id, revision: 2 },
     });
-    expect(mocks.createDispatchRelease).not.toHaveBeenCalled();
-    expect(mocks.updateFlight).toHaveBeenCalledWith(
+    expect(mocks.publishDispatchReleaseAtomic).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "flight.release_schedule_recover",
-        expectedVersion: accepted.version,
+        expectedFlightVersion: 4,
       }),
     );
+    expect(result.flight.version).toBe(5);
   });
 
   it("rejects a release whose block fuel does not equal its breakdown", async () => {
@@ -374,7 +370,7 @@ describe("flight planning service", () => {
         blockFuel: draft.blockFuel + 1,
       }),
     ).rejects.toMatchObject({ code: "UNPROCESSABLE" });
-    expect(mocks.createDispatchRelease).not.toHaveBeenCalled();
+    expect(mocks.publishDispatchReleaseAtomic).not.toHaveBeenCalled();
   });
 
   it("uses FLT INIT to confirm assignment without treating it as departure", async () => {

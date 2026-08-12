@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { writeAudit } from "../../db/repositories/audit.js";
+import { findLatestDispatchRelease } from "../../db/repositories/dispatch-releases.js";
 import { findFlight } from "../../db/repositories/flights.js";
 import {
   findMembershipById,
@@ -7,6 +8,7 @@ import {
 } from "../../db/repositories/memberships.js";
 import * as simbriefRepo from "../../db/repositories/simbrief.js";
 import type {
+  DispatchRelease,
   Flight,
   MemberRole,
   Membership,
@@ -23,7 +25,7 @@ import {
 } from "../../simbrief/adapter.js";
 import { SimbriefLegacySigner } from "../../simbrief/legacy-signer.js";
 import { roleAtLeast } from "../members/roles.js";
-import type { SimbriefDispatchOptions } from "./validation.js";
+import type { PrepareSimbriefDispatchInput } from "./validation.js";
 
 const CALLBACK_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const MAX_DISPATCH_URL_LENGTH = 8_192;
@@ -102,14 +104,14 @@ export async function disconnectAccount(
 export async function prepareDispatch(
   actor: SimbriefActor,
   flightId: string,
-  options: SimbriefDispatchOptions,
+  input: PrepareSimbriefDispatchInput,
 ): Promise<SimbriefDispatch> {
   if (!roleAtLeast(actor.role, "dispatcher")) {
     throw new AppError("FORBIDDEN", "Dispatchers only");
   }
-  const [flight, dispatcher] = await Promise.all([
+  const [flight, release] = await Promise.all([
     requireAccessibleFlight(actor, flightId),
-    requireMembership(actor.tenantId, actor.membershipId),
+    findLatestDispatchRelease(actor.tenantId, flightId),
   ]);
   assertDispatchableFlight(flight);
   if (!flight.pilotMembershipId) {
@@ -118,18 +120,26 @@ export async function prepareDispatch(
       "Assign a pilot before preparing a SimBrief flight plan",
     );
   }
+  if (!release) {
+    throw new AppError(
+      "CONFLICT",
+      "Publish a dispatch release before preparing a SimBrief flight plan",
+    );
+  }
+  if (
+    flight.version !== input.expectedFlightVersion ||
+    flight.assignmentRevision !== input.expectedAssignmentRevision ||
+    release.id !== input.releaseId ||
+    release.revision !== input.releaseRevision
+  ) {
+    throw new AppError(
+      "CONFLICT",
+      "The flight or dispatch release changed. Reload before preparing SimBrief.",
+    );
+  }
   const id = randomUUID();
   const staticId = `VAD_${id.replaceAll("-", "")}`;
-  const dispatcherName =
-    dispatcher.displayName?.trim() ||
-    dispatcher.pilotCallsign?.trim() ||
-    "VA Dispatcher";
-  const parameters = dispatchParameters(
-    flight,
-    staticId,
-    options,
-    dispatcherName,
-  );
+  const parameters = dispatchParameters(flight, release, staticId);
 
   const preparedAt = new Date();
   const dispatch = await simbriefRepo.createSimbriefDispatchAtomic({
@@ -139,7 +149,10 @@ export async function prepareDispatch(
     createdByMembershipId: actor.membershipId,
     staticId,
     request: parameters,
-    flightSnapshot: snapshotFlight(flight),
+    expectedFlightVersion: input.expectedFlightVersion,
+    expectedAssignmentRevision: input.expectedAssignmentRevision,
+    releaseId: input.releaseId,
+    releaseRevision: input.releaseRevision,
     preparedAt,
   });
   if (!dispatch) {
@@ -378,28 +391,12 @@ async function syncStoredDispatch(
   return completed;
 }
 
-function snapshotFlight(flight: Flight): simbriefRepo.SimbriefFlightSnapshot {
-  if (!flight.pilotMembershipId) {
-    throw new AppError("UNPROCESSABLE", "Assign a pilot before dispatching");
-  }
-  return {
-    pilotMembershipId: flight.pilotMembershipId,
-    flightNumber: flight.flightNumber,
-    depIcao: flight.depIcao,
-    arrIcao: flight.arrIcao,
-    etd: flight.etd.toISOString(),
-    eta: flight.eta.toISOString(),
-    aircraftType: flight.aircraftType,
-  };
-}
-
 function dispatchParameters(
   flight: Flight,
+  release: DispatchRelease,
   staticId: string,
-  options: SimbriefDispatchOptions,
-  dispatcherName: string,
 ): Record<string, string> {
-  const aircraftType = options.aircraftType ?? flight.aircraftType;
+  const aircraftType = flight.aircraftType;
   if (!aircraftType) {
     throw new AppError(
       "UNPROCESSABLE",
@@ -425,50 +422,30 @@ function dispatchParameters(
   const durationMinutes = Math.round(
     (flight.eta.getTime() - flight.etd.getTime()) / 60_000,
   );
+  const route = [release.sid, release.operationalRoute, release.star]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join(" ");
   const parameters: Record<string, string> = {
     orig: flight.depIcao.toUpperCase(),
     dest: flight.arrIcao.toUpperCase(),
     type: normalizedAircraftType,
-    fltnum: options.flightNumber ?? flight.flightNumber,
+    fltnum: flight.flightNumber,
     date: simbriefDate(flight.etd),
     deph: twoDigits(flight.etd.getUTCHours()),
     depm: twoDigits(flight.etd.getUTCMinutes()),
     steh: String(Math.floor(durationMinutes / 60)),
     stem: twoDigits(durationMinutes % 60),
     static_id: staticId,
-    units: options.units,
-    dxname: dispatcherName,
+    units: release.fuelUnit === "kg" ? "KGS" : "LBS",
+    route,
+    altn: release.alternateIcao,
+    fl: String(release.cruiseLevel),
+    navlog: "1",
+    notams: "1",
   };
 
-  setOptional(parameters, "airline", options.airline);
-  setOptional(parameters, "callsign", options.callsign);
-  setOptional(parameters, "route", options.route);
-  setOptional(parameters, "altn", options.alternate);
-  setOptional(parameters, "fl", options.flightLevel);
-  setOptional(parameters, "reg", options.registration);
-  setOptional(parameters, "pax", options.passengers);
-  setOptional(parameters, "cargo", options.cargo);
-  setOptional(parameters, "cpt", options.captainName);
-  setOptional(parameters, "manualrmk", options.customRemarks);
-  setOptional(parameters, "planformat", options.planFormat);
-  setOptional(parameters, "taxiout", options.taxiOutMinutes);
-  setOptional(parameters, "taxiin", options.taxiInMinutes);
-  setOptional(parameters, "resvrule", options.reserveMinutes);
-  if (options.costIndex !== undefined) {
-    parameters.cruise = "CI";
-    parameters.civalue = String(options.costIndex);
-  }
-
-  setBoolean(parameters, "navlog", options.navlog);
-  setBoolean(parameters, "etops", options.etops);
-  setBoolean(parameters, "stepclimbs", options.stepClimbs);
-  setBoolean(parameters, "tlr", options.runwayAnalysis);
-  setBoolean(parameters, "notams", options.notams);
-  setBoolean(parameters, "firnot", options.firNotams);
-  setBoolean(parameters, "omit_sids", options.omitSids);
-  setBoolean(parameters, "omit_stars", options.omitStars);
-  setOptional(parameters, "maps", options.maps);
-  setOptional(parameters, "find_sidstar", options.sidStarPreference);
+  if (!release.sid && !release.star) parameters.find_sidstar = "1";
+  setOptional(parameters, "manualrmk", release.dispatcherRemarks ?? undefined);
   return parameters;
 }
 
@@ -585,14 +562,6 @@ function setOptional(
   value: string | number | undefined,
 ): void {
   if (value !== undefined) target[key] = String(value);
-}
-
-function setBoolean(
-  target: Record<string, string>,
-  key: string,
-  value: boolean | undefined,
-): void {
-  if (value !== undefined) target[key] = value ? "1" : "0";
 }
 
 function simbriefDate(date: Date): string {

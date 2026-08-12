@@ -254,7 +254,12 @@ export function PilotFlightDetail({
             </div>
           )}
 
-          <SimbriefWorkspace slug={slug} flight={flight} mode="pilot" />
+          <SimbriefWorkspace
+            slug={slug}
+            flight={flight}
+            release={detail.data.release}
+            mode="pilot"
+          />
 
           {detail.data.events.length ? (
             <Card className="overflow-hidden">

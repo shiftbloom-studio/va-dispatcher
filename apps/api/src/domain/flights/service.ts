@@ -643,73 +643,31 @@ export async function publishDispatchRelease(
   }
   validateFuelBreakdown(draft);
 
-  const [latest, weatherSnapshot] = await Promise.all([
-    releaseRepo.findLatestDispatchRelease(actor.tenantId, flightId),
-    fetchWeatherSnapshot([flight.depIcao, flight.arrIcao, draft.alternateIcao]),
+  const weatherSnapshot = await fetchWeatherSnapshot([
+    flight.depIcao,
+    flight.arrIcao,
+    draft.alternateIcao,
   ]);
-  // A prior publish may have durably inserted its immutable release before a
-  // transient status-update failure. Retry by scheduling that exact revision
-  // instead of creating a duplicate release.
-  if (flight.status === "accepted" && latest) {
-    const recovered = await updateFlightWithVersion({
-      actor,
-      flightId,
-      expectedVersion,
-      patch: { status: "briefed" },
-      action: "flight.release_schedule_recover",
-      auditMeta: { revision: latest.revision },
-    });
-    return { flight: recovered, release: latest };
+  const published = await releaseRepo.publishDispatchReleaseAtomic({
+    tenantId: actor.tenantId,
+    flightId,
+    expectedFlightVersion: expectedVersion,
+    ...draft,
+    operationalRoute: draft.operationalRoute.trim().toUpperCase(),
+    alternateIcao: draft.alternateIcao.toUpperCase(),
+    sid: draft.sid?.trim().toUpperCase() ?? null,
+    star: draft.star?.trim().toUpperCase() ?? null,
+    weatherSnapshot,
+    releasedByMembershipId: actor.membershipId,
+    publishedAt: new Date(),
+  });
+  if (!published) {
+    throw new AppError(
+      "CONFLICT",
+      "The flight changed or another dispatcher published first. Reload and review the current release.",
+    );
   }
-  let release: DispatchRelease;
-  try {
-    release = await releaseRepo.createDispatchRelease({
-      tenantId: actor.tenantId,
-      flightId,
-      revision: (latest?.revision ?? 0) + 1,
-      ...draft,
-      operationalRoute: draft.operationalRoute.trim().toUpperCase(),
-      weatherSnapshot,
-      releasedByMembershipId: actor.membershipId,
-    });
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new AppError(
-        "CONFLICT",
-        "Another dispatcher published a release first; reload and review it",
-      );
-    }
-    throw error;
-  }
-
-  const updated =
-    flight.status === "accepted"
-      ? await updateFlightWithVersion({
-          actor,
-          flightId,
-          expectedVersion,
-          patch: { status: "briefed" },
-          action: "flight.release_publish",
-          auditMeta: {
-            revision: release.revision,
-            weatherUnavailable: weatherSnapshot.unavailable,
-          },
-        })
-      : flight;
-  if (flight.status === "briefed") {
-    await writeAudit({
-      tenantId: actor.tenantId,
-      actorMembershipId: actor.membershipId,
-      action: "flight.release_publish",
-      entityType: "flight",
-      entityId: flightId,
-      meta: {
-        revision: release.revision,
-        weatherUnavailable: weatherSnapshot.unavailable,
-      },
-    });
-  }
-  return { flight: updated, release };
+  return published;
 }
 
 export async function startFlight(

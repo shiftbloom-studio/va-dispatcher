@@ -297,9 +297,7 @@ export const dispatchReleases = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
-    flightId: uuid("flight_id")
-      .notNull()
-      .references(() => flights.id, { onDelete: "cascade" }),
+    flightId: uuid("flight_id").notNull(),
     revision: integer("revision").notNull(),
     operationalRoute: text("operational_route").notNull(),
     sid: text("sid"),
@@ -337,6 +335,11 @@ export const dispatchReleases = pgTable(
       t.revision,
     ),
     index("dispatch_releases_tenant_flight_idx").on(t.tenantId, t.flightId),
+    foreignKey({
+      columns: [t.tenantId, t.flightId],
+      foreignColumns: [flights.tenantId, flights.id],
+      name: "dispatch_releases_tenant_flight_fk",
+    }).onDelete("cascade"),
     check("dispatch_releases_revision_check", sql`${t.revision} > 0`),
     check(
       "dispatch_releases_cruise_level_check",
@@ -492,7 +495,7 @@ export const simbriefDispatches = pgTable(
     status: simbriefDispatchStatusEnum("status").notNull().default("pending"),
     revision: integer("revision").notNull(),
     flightSnapshot: jsonb("flight_snapshot")
-      .$type<Record<string, string | null>>()
+      .$type<Record<string, string | number | null>>()
       .notNull(),
     request: jsonb("request")
       .$type<Record<string, string>>()

@@ -3,6 +3,10 @@ import { getDb } from "../client.js";
 import { simbriefDispatches, type SimbriefDispatch } from "../schema.js";
 
 export type SimbriefFlightSnapshot = {
+  flightVersion: number;
+  assignmentRevision: number;
+  dispatchReleaseId: string;
+  dispatchReleaseRevision: number;
   pilotMembershipId: string;
   flightNumber: string;
   depIcao: string;
@@ -18,7 +22,10 @@ type AtomicDispatchEnvelope = {
   dispatch_row: Record<string, unknown> | string | null;
 };
 
-/** Locks the flight and atomically persists a preparation with its audit. */
+/**
+ * Uses the flight version as a database compare-and-set linearization point,
+ * then atomically persists a release-bound preparation and its audit event.
+ */
 export async function createSimbriefDispatchAtomic(input: {
   id: string;
   tenantId: string;
@@ -26,19 +33,40 @@ export async function createSimbriefDispatchAtomic(input: {
   createdByMembershipId: string;
   staticId: string;
   request: Record<string, string>;
-  flightSnapshot: SimbriefFlightSnapshot;
+  expectedFlightVersion: number;
+  expectedAssignmentRevision: number;
+  releaseId: string;
+  releaseRevision: number;
   preparedAt: Date;
 }): Promise<SimbriefDispatch | null> {
   const db = getDb();
   const preparedAt = input.preparedAt.toISOString();
-  const snapshot = input.flightSnapshot;
   const result = await db.execute<AtomicDispatchEnvelope>(sql`
-    WITH locked_flight AS MATERIALIZED (
-      SELECT f.*
-      FROM flights f
+    WITH linearized_flight AS (
+      UPDATE flights f
+      SET version = f.version
       WHERE f.id = ${input.flightId}::uuid
         AND f.tenant_id = ${input.tenantId}::uuid
-      FOR UPDATE
+        AND f.version = ${input.expectedFlightVersion}
+        AND f.assignment_revision = ${input.expectedAssignmentRevision}
+        AND f.status IN ('accepted', 'briefed')
+      RETURNING f.*
+    ),
+    current_release AS MATERIALIZED (
+      SELECT release.*
+      FROM dispatch_releases release
+      JOIN linearized_flight flight
+        ON flight.id = release.flight_id
+       AND flight.tenant_id = release.tenant_id
+      WHERE release.id = ${input.releaseId}::uuid
+        AND release.revision = ${input.releaseRevision}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM dispatch_releases newer
+          WHERE newer.tenant_id = release.tenant_id
+            AND newer.flight_id = release.flight_id
+            AND newer.revision > release.revision
+        )
     ),
     locked_dispatcher AS MATERIALIZED (
       SELECT membership.id, membership.display_name, membership.pilot_callsign
@@ -57,16 +85,12 @@ export async function createSimbriefDispatchAtomic(input: {
                NULLIF(BTRIM(dispatcher.pilot_callsign), ''),
                'VA Dispatcher'
              ) AS dispatcher_name
-      FROM locked_flight f
+      FROM linearized_flight f
+      JOIN current_release release
+        ON release.flight_id = f.id
+       AND release.tenant_id = f.tenant_id
       CROSS JOIN locked_dispatcher dispatcher
-      WHERE f.pilot_membership_id = ${snapshot.pilotMembershipId}::uuid
-        AND f.flight_number = ${snapshot.flightNumber}
-        AND f.dep_icao = ${snapshot.depIcao}
-        AND f.arr_icao = ${snapshot.arrIcao}
-        AND f.etd = ${snapshot.etd}::timestamptz
-        AND f.eta = ${snapshot.eta}::timestamptz
-        AND f.aircraft_type IS NOT DISTINCT FROM ${snapshot.aircraftType}::text
-        AND f.status NOT IN ('declined', 'active', 'completed', 'cancelled')
+      WHERE f.pilot_membership_id IS NOT NULL
     ),
     advanced_head AS (
       INSERT INTO simbrief_flight_heads (
@@ -95,7 +119,25 @@ export async function createSimbriefDispatchAtomic(input: {
                to_jsonb(current_flight.dispatcher_name),
                true
              ),
-             ${JSON.stringify(snapshot)}::jsonb,
+             jsonb_build_object(
+               'flightVersion', current_flight.version,
+               'assignmentRevision', current_flight.assignment_revision,
+               'dispatchReleaseId', ${input.releaseId}::text,
+               'dispatchReleaseRevision', ${input.releaseRevision}::integer,
+               'pilotMembershipId', current_flight.pilot_membership_id,
+               'flightNumber', current_flight.flight_number,
+               'depIcao', current_flight.dep_icao,
+               'arrIcao', current_flight.arr_icao,
+               'etd', to_char(
+                 current_flight.etd AT TIME ZONE 'UTC',
+                 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+               ),
+               'eta', to_char(
+                 current_flight.eta AT TIME ZONE 'UTC',
+                 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+               ),
+               'aircraftType', current_flight.aircraft_type
+             ),
              ${preparedAt}, ${preparedAt}
       FROM current_flight
       JOIN advanced_head ON advanced_head.flight_id = current_flight.id
@@ -112,6 +154,10 @@ export async function createSimbriefDispatchAtomic(input: {
              jsonb_build_object(
                'flightId', created.flight_id,
                'staticId', created.static_id,
+               'flightVersion', created.flight_snapshot -> 'flightVersion',
+               'assignmentRevision', created.flight_snapshot -> 'assignmentRevision',
+               'dispatchReleaseId', created.flight_snapshot -> 'dispatchReleaseId',
+               'dispatchReleaseRevision', created.flight_snapshot -> 'dispatchReleaseRevision',
                'hasRemarks', created.request ? 'manualrmk'
              ),
              ${preparedAt}
@@ -160,17 +206,51 @@ export async function startSimbriefDispatchAtomic(input: {
   const startedAt = input.startedAt.toISOString();
   const callbackExpiresAt = input.callbackExpiresAt.toISOString();
   const result = await db.execute<AtomicDispatchEnvelope>(sql`
-    WITH locked_flight AS MATERIALIZED (
-      SELECT f.*
-      FROM flights f
-      WHERE f.id = ${input.flightId}::uuid
+    WITH target_input AS MATERIALIZED (
+      SELECT dispatch.*
+      FROM simbrief_dispatches dispatch
+      WHERE dispatch.id = ${input.id}::uuid
+        AND dispatch.tenant_id = ${input.tenantId}::uuid
+        AND dispatch.flight_id = ${input.flightId}::uuid
+    ),
+    linearized_flight AS (
+      UPDATE flights f
+      SET version = f.version
+      FROM target_input target
+      WHERE f.id = target.flight_id
+        AND f.id = ${input.flightId}::uuid
         AND f.tenant_id = ${input.tenantId}::uuid
-      FOR UPDATE
+        AND f.version = (target.flight_snapshot ->> 'flightVersion')::integer
+        AND f.assignment_revision =
+            (target.flight_snapshot ->> 'assignmentRevision')::integer
+        AND f.status IN ('accepted', 'briefed')
+      RETURNING f.*
+    ),
+    current_release AS MATERIALIZED (
+      SELECT release.*
+      FROM dispatch_releases release
+      JOIN target_input target
+        ON target.flight_id = release.flight_id
+       AND target.tenant_id = release.tenant_id
+      JOIN linearized_flight flight
+        ON flight.id = release.flight_id
+       AND flight.tenant_id = release.tenant_id
+      WHERE release.id =
+            (target.flight_snapshot ->> 'dispatchReleaseId')::uuid
+        AND release.revision =
+            (target.flight_snapshot ->> 'dispatchReleaseRevision')::integer
+        AND NOT EXISTS (
+          SELECT 1
+          FROM dispatch_releases newer
+          WHERE newer.tenant_id = release.tenant_id
+            AND newer.flight_id = release.flight_id
+            AND newer.revision > release.revision
+        )
     ),
     locked_pilot AS MATERIALIZED (
       SELECT membership.id, membership.simbrief_user_id
       FROM memberships membership
-      JOIN locked_flight flight
+      JOIN linearized_flight flight
         ON flight.pilot_membership_id = membership.id
        AND flight.tenant_id = membership.tenant_id
       WHERE membership.id = ${input.generatedByMembershipId}::uuid
@@ -182,9 +262,12 @@ export async function startSimbriefDispatchAtomic(input: {
     target AS MATERIALIZED (
       SELECT dispatch.*
       FROM simbrief_dispatches dispatch
-      JOIN locked_flight flight
+      JOIN linearized_flight flight
         ON flight.id = dispatch.flight_id
        AND flight.tenant_id = dispatch.tenant_id
+      JOIN current_release release
+        ON release.flight_id = dispatch.flight_id
+       AND release.tenant_id = dispatch.tenant_id
       WHERE dispatch.id = ${input.id}::uuid
         AND dispatch.tenant_id = ${input.tenantId}::uuid
         AND dispatch.flight_id = ${input.flightId}::uuid
@@ -193,12 +276,23 @@ export async function startSimbriefDispatchAtomic(input: {
     material_target AS MATERIALIZED (
       SELECT target.*
       FROM target
-      JOIN locked_flight flight ON flight.id = target.flight_id
+      JOIN linearized_flight flight ON flight.id = target.flight_id
+      JOIN current_release release
+        ON release.flight_id = target.flight_id
+       AND release.tenant_id = target.tenant_id
       JOIN locked_pilot pilot
         ON pilot.id = flight.pilot_membership_id
        AND pilot.simbrief_user_id = ${input.simbriefUserId}
       WHERE target.status = 'prepared'
         AND flight.status NOT IN ('declined', 'active', 'completed', 'cancelled')
+        AND (target.flight_snapshot ->> 'flightVersion')::integer =
+            flight.version
+        AND (target.flight_snapshot ->> 'assignmentRevision')::integer =
+            flight.assignment_revision
+        AND (target.flight_snapshot ->> 'dispatchReleaseId')::uuid =
+            release.id
+        AND (target.flight_snapshot ->> 'dispatchReleaseRevision')::integer =
+            release.revision
         AND (target.flight_snapshot ->> 'pilotMembershipId')::uuid =
             flight.pilot_membership_id
         AND target.flight_snapshot ->> 'flightNumber' = flight.flight_number
@@ -247,6 +341,10 @@ export async function startSimbriefDispatchAtomic(input: {
              jsonb_build_object(
                'flightId', updated.flight_id,
                'staticId', updated.static_id,
+               'flightVersion', updated.flight_snapshot -> 'flightVersion',
+               'assignmentRevision', updated.flight_snapshot -> 'assignmentRevision',
+               'dispatchReleaseId', updated.flight_snapshot -> 'dispatchReleaseId',
+               'dispatchReleaseRevision', updated.flight_snapshot -> 'dispatchReleaseRevision',
                'preparedByMembershipId', updated.created_by_membership_id,
                'callbackExpiresAt', updated.callback_expires_at
              ),
@@ -454,12 +552,16 @@ function stringRecord(value: unknown): Record<string, string> {
   );
 }
 
-function flightSnapshotValue(value: unknown): Record<string, string | null> {
+function flightSnapshotValue(
+  value: unknown,
+): Record<string, string | number | null> {
   const record = objectValue(value);
   return Object.fromEntries(
     Object.entries(record).filter(
-      (entry): entry is [string, string | null] =>
-        typeof entry[1] === "string" || entry[1] === null,
+      (entry): entry is [string, string | number | null] =>
+        typeof entry[1] === "string" ||
+        typeof entry[1] === "number" ||
+        entry[1] === null,
     ),
   );
 }
