@@ -282,17 +282,7 @@ export function PilotFlightDetail({
               </ol>
             </Card>
           ) : null}
-          <FlightTelemetryStatus
-            slug={slug}
-            flightId={flightId}
-            mode="pilot"
-            initialOooi={{
-              outAt: flight.outAt,
-              offAt: flight.offAt,
-              onAt: flight.onAt,
-              inAt: flight.inAt,
-            }}
-          />
+          <FlightTelemetryStatus slug={slug} flightId={flightId} mode="pilot" />
         </div>
 
         <Card className="h-fit overflow-hidden xl:sticky xl:top-22">

@@ -469,22 +469,11 @@ export async function ingestFlightTelemetryAtomic(input: {
          AND (f.on_at IS NULL OR f.on_at <= ${sampleAt}::timestamptz)
          THEN 'in'::oooi_event_type
         ELSE NULL
-      END AS event_type
+      END AS event_type,
+      f.version AS from_version
       FROM accepted_lease lease
       JOIN locked_flight f ON f.id = lease.flight_id
       LEFT JOIN previous ON TRUE
-    ),
-    inserted_event AS (
-      INSERT INTO flight_oooi_events (
-        tenant_id, flight_id, event_type, occurred_at, source, device_id,
-        created_at
-      )
-      SELECT ${input.tenantId}::uuid, ${input.flightId}::uuid,
-             event_type, ${sampleAt}, 'telemetry',
-             ${input.deviceId}::uuid, ${sampleAt}
-      FROM detected_transition
-      WHERE event_type IS NOT NULL
-      RETURNING id, event_type, occurred_at, created_at
     ),
     updated_flight AS (
       UPDATE flights f
@@ -496,13 +485,26 @@ export async function ingestFlightTelemetryAtomic(input: {
                        THEN ${sampleAt} ELSE f.on_at END,
           in_at = CASE WHEN transition.event_type = 'in'
                        THEN ${sampleAt} ELSE f.in_at END,
-          updated_at = CASE WHEN transition.event_type IS NOT NULL
-                            THEN ${sampleAt} ELSE f.updated_at END
+          version = f.version + 1,
+          updated_at = GREATEST(f.updated_at, ${sampleAt}::timestamptz)
       FROM detected_transition transition
       WHERE f.id = ${input.flightId}::uuid
         AND f.tenant_id = ${input.tenantId}::uuid
         AND transition.event_type IS NOT NULL
-      RETURNING f.id
+      RETURNING f.id, transition.from_version, f.version AS to_version
+    ),
+    inserted_event AS (
+      INSERT INTO flight_oooi_events (
+        tenant_id, flight_id, event_type, occurred_at, source, device_id,
+        created_at
+      )
+      SELECT ${input.tenantId}::uuid, updated.id,
+             transition.event_type, ${sampleAt}, 'telemetry',
+             ${input.deviceId}::uuid, ${sampleAt}
+      FROM detected_transition transition
+      JOIN updated_flight updated ON TRUE
+      WHERE transition.event_type IS NOT NULL
+      RETURNING id, event_type, occurred_at, created_at
     ),
     inserted_audit AS (
       INSERT INTO audit_events (
@@ -514,10 +516,13 @@ export async function ingestFlightTelemetryAtomic(input: {
              jsonb_build_object(
                'eventType', event_type,
                'deviceId', ${input.deviceId}::text,
-               'source', 'telemetry'
+               'source', 'telemetry',
+               'fromVersion', updated.from_version,
+               'toVersion', updated.to_version
              ),
              ${sampleAt}
       FROM inserted_event
+      JOIN updated_flight updated ON TRUE
       RETURNING id
     ),
     current_upsert AS (
@@ -711,6 +716,7 @@ export async function correctOooiAtomic(input: {
   tenantId: string;
   flightId: string;
   actorMembershipId: string;
+  expectedVersion: number;
   reason: string;
   outAt?: Date | null;
   offAt?: Date | null;
@@ -738,6 +744,7 @@ export async function correctOooiAtomic(input: {
       FROM flights f
       WHERE f.id = ${input.flightId}::uuid
         AND f.tenant_id = ${input.tenantId}::uuid
+        AND f.version = ${input.expectedVersion}
       FOR UPDATE
     ),
     valid AS MATERIALIZED (
@@ -763,10 +770,13 @@ export async function correctOooiAtomic(input: {
                                     THEN true ELSE f.on_manual_override END,
           in_manual_override = CASE WHEN ${inProvided}
                                     THEN true ELSE f.in_manual_override END,
-          updated_at = ${operationAt}
+          version = f.version + 1,
+          updated_at = GREATEST(f.updated_at, ${operationAt}::timestamptz)
       FROM valid
-      WHERE f.id = valid.id AND f.tenant_id = valid.tenant_id
-      RETURNING f.id
+      WHERE f.id = valid.id
+        AND f.tenant_id = valid.tenant_id
+        AND f.version = ${input.expectedVersion}
+      RETURNING f.id, valid.version AS from_version, f.version AS to_version
     ),
     event_values(event_type, provided, occurred_at) AS (
       VALUES
@@ -802,7 +812,9 @@ export async function correctOooiAtomic(input: {
                  CASE WHEN ${onProvided} THEN 'onAt' END,
                  CASE WHEN ${inProvided} THEN 'inAt' END
                ], NULL),
-               'reason', ${input.reason}::text
+               'reason', ${input.reason}::text,
+               'fromVersion', updated.from_version,
+               'toVersion', updated.to_version
              ),
              ${operationAt}
       FROM updated

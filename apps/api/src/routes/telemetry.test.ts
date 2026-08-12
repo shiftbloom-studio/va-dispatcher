@@ -80,9 +80,28 @@ describe("telemetry routes", () => {
       { ...current, presence: "online" },
     ]);
     mocks.getFlightTelemetry.mockResolvedValue({
+      flight: {
+        id: flightId,
+        version: 3,
+        outAt: null,
+        offAt: now,
+        onAt: null,
+        inAt: null,
+      },
       presence: "online",
       current,
       track: [current],
+      oooiEvents: [],
+    });
+    mocks.correctOooi.mockResolvedValue({
+      flight: {
+        id: flightId,
+        version: 4,
+        outAt: now,
+        offAt: null,
+        onAt: null,
+        inAt: null,
+      },
       oooiEvents: [],
     });
   });
@@ -195,7 +214,40 @@ describe("telemetry routes", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     await expect(response.json()).resolves.toMatchObject({
+      flight: { id: flightId, version: 3, offAt: now.toISOString() },
       current: { flightId, latitude: 55.618, longitude: 12.656 },
+    });
+  });
+
+  it("requires the current flight version for a manual OOOI correction", async () => {
+    const missingVersion = await app.request(`/flights/${flightId}/oooi`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        outAt: now.toISOString(),
+        reason: "Pilot report",
+      }),
+    });
+    expect(missingVersion.status).toBe(400);
+    expect(mocks.correctOooi).not.toHaveBeenCalled();
+
+    const response = await app.request(`/flights/${flightId}/oooi`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expectedVersion: 3,
+        outAt: now.toISOString(),
+        reason: "Pilot report",
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.correctOooi).toHaveBeenCalledWith(
+      expect.anything(),
+      flightId,
+      expect.objectContaining({ expectedVersion: 3, outAt: now }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      flight: { id: flightId, version: 4, outAt: now.toISOString() },
     });
   });
 });

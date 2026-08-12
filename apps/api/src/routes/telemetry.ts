@@ -121,6 +121,7 @@ telemetryRoutes.get(
       c.req.valid("query").trackLimit,
     );
     return c.json({
+      flight: serializeFlightOooi(result.flight),
       presence: result.presence,
       current: result.current ? serializeTelemetry(result.current) : null,
       track: result.track.map(serializeTelemetry),
@@ -238,6 +239,7 @@ function serializeOooiEvent(event: FlightOooiEvent) {
 function serializeFlightOooi(flight: Flight) {
   return {
     id: flight.id,
+    version: flight.version,
     outAt: flight.outAt?.toISOString() ?? null,
     offAt: flight.offAt?.toISOString() ?? null,
     onAt: flight.onAt?.toISOString() ?? null,

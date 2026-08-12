@@ -66,16 +66,21 @@ const baseSchemaSql = `
     tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     pilot_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
     schedule_request_id uuid,
+    replaces_flight_id uuid,
     flight_number text DEFAULT 'SK101' NOT NULL,
     dep_icao text DEFAULT 'EKCH' NOT NULL,
     arr_icao text DEFAULT 'ENGM' NOT NULL,
     etd timestamptz DEFAULT now() NOT NULL,
     eta timestamptz DEFAULT (now() + interval '1 hour') NOT NULL,
     aircraft_type text,
+    version integer DEFAULT 1 NOT NULL,
     status flight_status DEFAULT 'draft' NOT NULL,
     cancel_reason text,
     declined_reason text,
     dispatcher_notes text,
+    assignment_revision integer DEFAULT 1 NOT NULL,
+    assignment_confirmed_revision integer,
+    assignment_confirmed_at timestamptz,
     out_at timestamptz,
     off_at timestamptz,
     on_at timestamptz,
@@ -292,7 +297,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     });
 
     const [flight] = await sqlClient!`
-      SELECT out_at FROM flights WHERE id = ${flightA}
+      SELECT out_at, version FROM flights WHERE id = ${flightA}
     `;
     const [counts] = await sqlClient!`
       SELECT
@@ -304,11 +309,21 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
           WHERE flight_id = ${flightA}) AS current_sequence
     `;
     expect(new Date(String(flight?.out_at))).toEqual(transitionAt);
+    expect(flight?.version).toBe(2);
     expect(counts).toMatchObject({
       track_count: 2,
       event_count: 1,
       audit_count: 1,
       current_sequence: 2,
+    });
+    const [automaticAudit] = await sqlClient!`
+      SELECT meta
+      FROM audit_events
+      WHERE action = 'flight.oooi_automatic'
+    `;
+    expect(automaticAudit?.meta).toMatchObject({
+      fromVersion: 1,
+      toVersion: 2,
     });
   });
 
@@ -886,6 +901,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
         tenantId,
         flightId: flightA,
         actorMembershipId: membershipId,
+        expectedVersion: 1,
         reason: "Corrected from the flight log",
         onAt: new Date(now.getTime() + 20_000),
         operationAt: new Date(now.getTime() + 30_000),
@@ -905,7 +921,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     });
   });
 
-  it("serializes automatic OOOI against a concurrent manual correction without lost provenance", async () => {
+  it("serializes automatic OOOI against a concurrent manual correction without a lost version", async () => {
     await ingest({ phase: "preflight", sequence: 1, sampleAt: now });
     const automaticAt = new Date(now.getTime() + 2_000);
     const manualAt = new Date(now.getTime() + 1_000);
@@ -916,6 +932,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
         tenantId,
         flightId: flightA,
         actorMembershipId: membershipId,
+        expectedVersion: 1,
         reason: "Dispatcher block time correction",
         outAt: manualAt,
         operationAt: new Date(now.getTime() + 3_000),
@@ -923,12 +940,14 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     ]);
 
     expect(automatic.status).toBe("accepted");
-    expect(manual).toBe(true);
     const [flight] = await sqlClient!`
-      SELECT out_at, out_manual_override FROM flights WHERE id = ${flightA}
+      SELECT out_at, out_manual_override, version FROM flights WHERE id = ${flightA}
     `;
-    expect(new Date(String(flight?.out_at))).toEqual(manualAt);
-    expect(flight?.out_manual_override).toBe(true);
+    expect(flight?.version).toBe(2);
+    expect(new Date(String(flight?.out_at))).toEqual(
+      manual ? manualAt : automaticAt,
+    );
+    expect(flight?.out_manual_override).toBe(manual);
     const events = await sqlClient!`
       SELECT event_type, source, occurred_at
       FROM flight_oooi_events
@@ -936,10 +955,72 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       ORDER BY created_at, source
     `;
     expect(events.filter((event) => event.event_type === "out")).toHaveLength(
-      automatic.oooiEvent ? 2 : 1,
+      1,
     );
-    expect(events.at(-1)?.source).toBe("manual");
-    expect(new Date(String(events.at(-1)?.occurred_at))).toEqual(manualAt);
+    expect(events[0]?.source).toBe(manual ? "manual" : "telemetry");
+    expect(new Date(String(events[0]?.occurred_at))).toEqual(
+      manual ? manualAt : automaticAt,
+    );
+  });
+
+  it("observes a concurrently committed versioned dispatcher edit before automatic OOOI", async () => {
+    await ingest({ phase: "preflight", sequence: 1, sampleAt: now });
+    const automaticAt = new Date(now.getTime() + 2_000);
+    const blocker = postgres(databaseUrl!, {
+      max: 1,
+      onnotice: () => undefined,
+      connection: { search_path: schemaName },
+    });
+    let pendingAutomatic: ReturnType<typeof ingest> | undefined;
+
+    await blocker.begin(async (transaction) => {
+      await transaction`
+        UPDATE flights
+        SET dispatcher_notes = 'Gate change confirmed',
+            version = version + 1,
+            updated_at = ${new Date(now.getTime() + 1_000).toISOString()}
+        WHERE id = ${flightA}
+          AND tenant_id = ${tenantId}
+          AND version = 1
+      `;
+      await transaction`
+        INSERT INTO audit_events (
+          tenant_id, actor_membership_id, action, entity_type, entity_id, meta
+        ) VALUES (
+          ${tenantId}, ${membershipId}, 'flight.update', 'flight', ${flightA},
+          jsonb_build_object('fromVersion', 1, 'toVersion', 2)
+        )
+      `;
+      pendingAutomatic = ingest({
+        phase: "taxi_out",
+        sequence: 2,
+        sampleAt: automaticAt,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    await blocker.end();
+
+    await expect(pendingAutomatic).resolves.toMatchObject({
+      status: "accepted",
+      oooiEvent: { eventType: "out", source: "telemetry" },
+    });
+    const [state] = await sqlClient!`
+      SELECT version, dispatcher_notes, out_at,
+        (SELECT meta FROM audit_events
+          WHERE action = 'flight.oooi_automatic') AS automatic_meta,
+        (SELECT count(*)::int FROM audit_events
+          WHERE action = 'flight.update') AS edit_audit_count
+      FROM flights
+      WHERE id = ${flightA}
+    `;
+    expect(new Date(String(state?.out_at))).toEqual(automaticAt);
+    expect(state?.version).toBe(3);
+    expect(state?.dispatcher_notes).toBe("Gate change confirmed");
+    expect(state?.edit_audit_count).toBe(1);
+    expect(state?.automatic_meta).toMatchObject({
+      fromVersion: 2,
+      toVersion: 3,
+    });
   });
 
   it("keeps a manual clear authoritative over later automatic phase transitions", async () => {
@@ -949,6 +1030,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
         tenantId,
         flightId: flightA,
         actorMembershipId: membershipId,
+        expectedVersion: 1,
         reason: "OUT not available from flight log",
         outAt: null,
         operationAt: new Date(now.getTime() + 1_000),
@@ -963,18 +1045,57 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     ).toMatchObject({ status: "accepted", oooiEvent: null });
 
     const [state] = await sqlClient!`
-      SELECT out_at, out_manual_override,
+      SELECT out_at, out_manual_override, version,
         (SELECT count(*)::int FROM flight_oooi_events
           WHERE event_type = 'out' AND source = 'manual') AS manual_events,
         (SELECT count(*)::int FROM flight_oooi_events
-          WHERE event_type = 'out' AND source = 'telemetry') AS auto_events
+          WHERE event_type = 'out' AND source = 'telemetry') AS auto_events,
+        (SELECT meta FROM audit_events
+          WHERE action = 'flight.oooi_correct') AS correction_meta
       FROM flights WHERE id = ${flightA}
     `;
     expect(state).toMatchObject({
       out_at: null,
       out_manual_override: true,
+      version: 2,
       manual_events: 1,
       auto_events: 0,
+      correction_meta: { fromVersion: 1, toVersion: 2 },
+    });
+  });
+
+  it("rejects a stale manual OOOI correction without partial writes", async () => {
+    await sqlClient!`
+      UPDATE flights
+      SET dispatcher_notes = 'Newer dispatcher edit', version = 2
+      WHERE id = ${flightA}
+    `;
+
+    expect(
+      await correctOooiAtomic({
+        tenantId,
+        flightId: flightA,
+        actorMembershipId: membershipId,
+        expectedVersion: 1,
+        reason: "Stale block time",
+        outAt: now,
+        operationAt: new Date(now.getTime() + 1_000),
+      }),
+    ).toBe(false);
+
+    const [state] = await sqlClient!`
+      SELECT version, dispatcher_notes, out_at,
+        (SELECT count(*)::int FROM flight_oooi_events) AS event_count,
+        (SELECT count(*)::int FROM audit_events) AS audit_count
+      FROM flights
+      WHERE id = ${flightA}
+    `;
+    expect(state).toMatchObject({
+      version: 2,
+      dispatcher_notes: "Newer dispatcher edit",
+      out_at: null,
+      event_count: 0,
+      audit_count: 0,
     });
   });
 
