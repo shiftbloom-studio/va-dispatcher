@@ -20,18 +20,38 @@ const icao = z
   .length(4)
   .transform((value) => value.toUpperCase());
 
-const flightBodySchema = z.object({
-  scheduleRequestId: z.string().uuid().optional().nullable(),
-  pilotMembershipId: z.string().uuid().optional().nullable(),
-  flightNumber: z.string().min(2).max(12),
-  depIcao: icao,
-  arrIcao: icao,
-  etd: z.coerce.date(),
-  eta: z.coerce.date(),
-  aircraftType: z.string().max(20).optional().nullable(),
-  status: z.enum(["draft", "offered"]).optional(),
-  dispatcherNotes: z.string().max(2000).optional().nullable(),
-});
+const flightBodySchema = z
+  .object({
+    scheduleRequestId: z.string().uuid().optional().nullable(),
+    pilotMembershipId: z.string().uuid().optional().nullable(),
+    flightNumber: z.string().min(2).max(12),
+    depIcao: icao,
+    arrIcao: icao,
+    etd: z.coerce.date(),
+    eta: z.coerce.date(),
+    aircraftType: z.string().max(20).optional().nullable(),
+    status: z.enum(["draft", "offered"]).optional(),
+    dispatcherNotes: z.string().max(2000).optional().nullable(),
+  })
+  .refine((value) => value.eta > value.etd, {
+    message: "eta must be after etd",
+    path: ["eta"],
+  });
+
+const bulkFlightItemSchema = z
+  .object({
+    flightNumber: z.string().min(2).max(12),
+    depIcao: icao,
+    arrIcao: icao,
+    etd: z.coerce.date(),
+    eta: z.coerce.date(),
+    aircraftType: z.string().max(20).optional().nullable(),
+    pilotMembershipId: z.string().uuid().optional().nullable(),
+  })
+  .refine((value) => value.eta > value.etd, {
+    message: "eta must be after etd",
+    path: ["eta"],
+  });
 
 flightRoutes.post(
   "/flights",
@@ -59,20 +79,7 @@ flightRoutes.post(
     "json",
     z.object({
       scheduleRequestId: z.string().uuid(),
-      flights: z
-        .array(
-          z.object({
-            flightNumber: z.string().min(2).max(12),
-            depIcao: icao,
-            arrIcao: icao,
-            etd: z.coerce.date(),
-            eta: z.coerce.date(),
-            aircraftType: z.string().max(20).optional().nullable(),
-            pilotMembershipId: z.string().uuid().optional().nullable(),
-          }),
-        )
-        .min(1)
-        .max(50),
+      flights: z.array(bulkFlightItemSchema).min(1).max(50),
     }),
   ),
   async (c) => {

@@ -10,13 +10,27 @@ export const scheduleRequestRoutes = new Hono<{ Variables: AppVariables }>();
 
 scheduleRequestRoutes.use("*", requireAuth);
 
+const availabilityIntervalSchema = z
+  .object({
+    startAt: z.string().datetime({ offset: true }),
+    endAt: z.string().datetime({ offset: true }),
+  })
+  .refine((interval) => new Date(interval.endAt) > new Date(interval.startAt), {
+    message: "endAt must be after startAt",
+    path: ["endAt"],
+  });
+
 const createSchema = z.object({
-  title: z.string().max(200).optional().nullable(),
+  title: z.string().max(120).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   windowStart: z.coerce.date(),
   windowEnd: z.coerce.date(),
   desiredFlightCount: z.number().int().min(1).max(50),
-  preferences: z.record(z.string(), z.unknown()).optional(),
+  preferences: z
+    .object({
+      availability: z.array(availabilityIntervalSchema).min(1).max(100),
+    })
+    .catchall(z.unknown()),
 });
 
 scheduleRequestRoutes.post(
