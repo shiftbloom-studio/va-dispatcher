@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { AccountSettings } from "@/components/account-settings";
 
-export const metadata: Metadata = { title: "Settings" };
+export const metadata: Metadata = { title: "My settings" };
 
 export default async function SettingsPage({
   params,
