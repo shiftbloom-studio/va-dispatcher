@@ -1,10 +1,8 @@
-import type { VercelConfig } from "@vercel/config/v1";
-
 /**
  * Multi-service project: frontend (web) + Hono API backend.
  * Public /api/* → api service; everything else → web.
  */
-export const config: VercelConfig = {
+export const config = {
   framework: null,
   services: {
     web: {

@@ -25,7 +25,7 @@
     "test:api": "pnpm --filter @va-dispatch/api test",
     "test:web": "pnpm --filter @va-dispatch/web test",
     "lint": "pnpm -r --if-present lint",
-    "format:check": "prettier --check package.json pnpm-workspace.yaml vercel.ts README.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md docs .github apps/web",
+    "format:check": "prettier --check package.json pnpm-workspace.yaml vercel.ts README.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md docs .github apps/web packages",
     "security:audit": "pnpm audit --audit-level high",
     "typecheck": "pnpm -r --if-present typecheck",
     "db:generate": "pnpm --filter @va-dispatch/api db:generate",
@@ -34,12 +34,12 @@
     "db:studio": "pnpm --filter @va-dispatch/api db:studio"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "devDependencies": {
-    "@vitest/coverage-istanbul": "4.1.10",
-    "@vercel/config": "^0.5.6",
-    "prettier": "^3.6.2",
-    "typescript": "^5.9.3"
+    "@vitest/coverage-istanbul": "5.0.0-rc.1",
+    "prettier": "3.9.6",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript7": "npm:typescript@7.0.2"
   }
 }
