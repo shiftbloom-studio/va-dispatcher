@@ -6,7 +6,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Input, Label, Select, Textarea } from "@/components/ui/fields";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiErrorMessage } from "@/lib/api/http";
 import {
@@ -14,6 +13,7 @@ import {
   simbriefDispatchListSchema,
   simbriefDispatchResponseSchema,
   simbriefGenerateResponseSchema,
+  type DispatchRelease,
   type Flight,
   type SimbriefDispatch,
 } from "@/lib/api/schemas";
@@ -23,10 +23,12 @@ import { formatUtc } from "@/lib/utc";
 export function SimbriefWorkspace({
   slug,
   flight,
+  release,
   mode,
 }: {
   slug: string;
   flight: Flight;
+  release: DispatchRelease | null;
   mode: "pilot" | "dispatcher";
 }) {
   const api = useApi();
@@ -97,6 +99,14 @@ export function SimbriefWorkspace({
   const revisions = history.data.items;
   const latest = revisions[0];
   const isConnected = connection.data?.connection.connected ?? false;
+  const latestMatchesCurrent = Boolean(
+    latest &&
+    release &&
+    latest.flightVersion === flight.version &&
+    latest.assignmentRevision === flight.assignmentRevision &&
+    latest.releaseId === release.id &&
+    latest.releaseRevision === release.revision,
+  );
 
   return (
     <Card className="overflow-hidden">
@@ -110,15 +120,22 @@ export function SimbriefWorkspace({
       />
       <div className="space-y-5 p-5">
         {mode === "dispatcher" ? (
-          <PreparationForm
-            flight={flight}
-            onPrepared={async () => {
-              await queryClient.invalidateQueries({ queryKey: historyKey });
-              setNotice(
-                "A new immutable planning revision was saved for the pilot.",
-              );
-            }}
-          />
+          release ? (
+            <PreparationAction
+              flight={flight}
+              release={release}
+              onPrepared={async () => {
+                await queryClient.invalidateQueries({ queryKey: historyKey });
+                setNotice(
+                  `SimBrief preparation saved from immutable release R${release.revision}.`,
+                );
+              }}
+            />
+          ) : (
+            <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+              Publish a dispatch release before preparing SimBrief.
+            </p>
+          )
         ) : (
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-950">
             <p className="font-semibold">Generation belongs to your account</p>
@@ -143,7 +160,11 @@ export function SimbriefWorkspace({
           <Revision
             dispatch={latest}
             mode={mode}
-            canGenerate={isConnected && latest.status === "prepared"}
+            canGenerate={
+              isConnected &&
+              latest.status === "prepared" &&
+              latestMatchesCurrent
+            }
             busy={generate.isPending || sync.isPending}
             onGenerate={() => generate.mutate(latest.id)}
             onSync={() => sync.mutate(latest.id)}
@@ -163,6 +184,15 @@ export function SimbriefWorkspace({
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
             Connect a numeric SimBrief Pilot ID in My settings before opening
             this preparation.
+          </p>
+        ) : null}
+        {mode === "pilot" &&
+        latest?.status === "prepared" &&
+        !latestMatchesCurrent ? (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+            The flight assignment or dispatch release changed after this
+            preparation. Dispatch must prepare the current release before you
+            can open SimBrief.
           </p>
         ) : null}
         {generate.isError || sync.isError ? (
@@ -197,35 +227,26 @@ export function SimbriefWorkspace({
   );
 }
 
-function PreparationForm({
+function PreparationAction({
   flight,
+  release,
   onPrepared,
 }: {
   flight: Flight;
+  release: DispatchRelease;
   onPrepared: () => Promise<void>;
 }) {
   const api = useApi();
-  const [route, setRoute] = useState("");
-  const [alternate, setAlternate] = useState("");
-  const [flightLevel, setFlightLevel] = useState("");
-  const [registration, setRegistration] = useState("");
-  const [remarks, setRemarks] = useState(flight.dispatcherNotes ?? "");
-  const [units, setUnits] = useState<"KGS" | "LBS">("KGS");
   const prepare = useMutation({
     mutationFn: () =>
       api(`/flights/${flight.id}/simbrief/dispatches`, {
         method: "POST",
         schema: simbriefDispatchResponseSchema,
         ...jsonBody({
-          aircraftType: flight.aircraftType || undefined,
-          route: route.trim() || undefined,
-          alternate: alternate.trim().toUpperCase() || undefined,
-          flightLevel: flightLevel.trim().toUpperCase() || undefined,
-          registration: registration.trim().toUpperCase() || undefined,
-          customRemarks: remarks.trim() || undefined,
-          units,
-          notams: true,
-          navlog: true,
+          expectedFlightVersion: flight.version,
+          expectedAssignmentRevision: flight.assignmentRevision,
+          releaseId: release.id,
+          releaseRevision: release.revision,
         }),
       }),
     onSuccess: onPrepared,
@@ -233,85 +254,32 @@ function PreparationForm({
 
   return (
     <form
-      className="grid gap-4 md:grid-cols-2"
+      className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"
       onSubmit={(event) => {
         event.preventDefault();
         prepare.mutate();
       }}
     >
-      <div className="md:col-span-2">
-        <Label htmlFor="simbrief-route">Route</Label>
-        <Textarea
-          id="simbrief-route"
-          maxLength={2000}
-          value={route}
-          onChange={(event) => setRoute(event.target.value)}
-          placeholder="Leave empty to let SimBrief suggest a route"
-        />
-      </div>
-      <div>
-        <Label htmlFor="simbrief-alternate">Alternate ICAO</Label>
-        <Input
-          id="simbrief-alternate"
-          maxLength={4}
-          className="uppercase"
-          value={alternate}
-          onChange={(event) => setAlternate(event.target.value)}
-        />
-      </div>
-      <div>
-        <Label htmlFor="simbrief-flight-level">Cruise level</Label>
-        <Input
-          id="simbrief-flight-level"
-          maxLength={7}
-          value={flightLevel}
-          onChange={(event) => setFlightLevel(event.target.value)}
-          placeholder="FL390"
-        />
-      </div>
-      <div>
-        <Label htmlFor="simbrief-registration">Registration</Label>
-        <Input
-          id="simbrief-registration"
-          maxLength={16}
-          className="uppercase"
-          value={registration}
-          onChange={(event) => setRegistration(event.target.value)}
-        />
-      </div>
-      <div>
-        <Label htmlFor="simbrief-units">Units</Label>
-        <Select
-          id="simbrief-units"
-          value={units}
-          onChange={(event) => setUnits(event.target.value as "KGS" | "LBS")}
-        >
-          <option value="KGS">Kilograms</option>
-          <option value="LBS">Pounds</option>
-        </Select>
-      </div>
-      <div className="md:col-span-2">
-        <Label htmlFor="simbrief-remarks">Dispatcher remarks</Label>
-        <Textarea
-          id="simbrief-remarks"
-          maxLength={2000}
-          value={remarks}
-          onChange={(event) => setRemarks(event.target.value)}
-        />
-        <p className="mt-1 text-xs text-slate-500">
-          The server snapshots your authenticated member name separately; this
-          field cannot change dispatcher attribution.
-        </p>
-      </div>
+      <p className="font-semibold text-emerald-950">
+        Prepare immutable release R{release.revision}
+      </p>
+      <p className="mt-1 text-sm leading-6 text-emerald-900">
+        Route, alternate, cruise level, units, and dispatcher remarks are copied
+        from the release above. The pilot reviews the SimBrief-specific
+        passenger and freight split before generation. Dispatcher attribution
+        comes from your authenticated account.
+      </p>
       {prepare.isError ? (
-        <p role="alert" className="text-sm text-red-700 md:col-span-2">
+        <p role="alert" className="mt-3 text-sm text-red-700">
           {apiErrorMessage(prepare.error)}
         </p>
       ) : null}
-      <div className="md:col-span-2">
+      <div className="mt-4">
         <Button type="submit" disabled={prepare.isPending}>
           <Save aria-hidden className="size-4" />
-          {prepare.isPending ? "Saving…" : "Save planning revision"}
+          {prepare.isPending
+            ? "Preparing…"
+            : `Prepare SimBrief from R${release.revision}`}
         </Button>
       </div>
     </form>
@@ -346,6 +314,17 @@ function Revision({
             Prepared by {dispatch.dispatcherName} ·{" "}
             {formatUtc(dispatch.createdAt)}
           </p>
+          {dispatch.releaseRevision && dispatch.flightVersion ? (
+            <p className="mt-1 text-xs font-medium text-slate-600">
+              Dispatch release R{dispatch.releaseRevision} · flight revision{" "}
+              {dispatch.flightVersion} · assignment revision{" "}
+              {dispatch.assignmentRevision ?? "unknown"}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs font-medium text-amber-700">
+              Legacy preparation · dispatch must prepare the current release
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {mode === "pilot" && dispatch.status === "prepared" ? (

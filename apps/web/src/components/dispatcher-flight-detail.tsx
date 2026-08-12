@@ -24,6 +24,7 @@ import {
   FlightPlanningDialog,
 } from "@/components/flight-planning-workspace";
 import { PageHeading } from "@/components/page-heading";
+import { SimbriefWorkspace } from "@/components/simbrief-workspace";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -259,13 +260,21 @@ export function DispatcherFlightDetail({
             />
           ) : null}
           {flight.data.release ? (
-            <Card className="overflow-hidden">
-              <CardHeader
-                title="Current dispatch release"
-                description="The latest immutable release revision for this flight."
+            <>
+              <Card className="overflow-hidden">
+                <CardHeader
+                  title="Current dispatch release"
+                  description="The latest immutable release revision for this flight."
+                />
+                <DispatchReleaseSnapshot release={flight.data.release} />
+              </Card>
+              <SimbriefWorkspace
+                slug={slug}
+                flight={currentFlight}
+                release={flight.data.release}
+                mode="dispatcher"
               />
-              <DispatchReleaseSnapshot release={flight.data.release} />
-            </Card>
+            </>
           ) : null}
         </div>
 

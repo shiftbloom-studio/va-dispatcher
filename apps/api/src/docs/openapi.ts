@@ -803,6 +803,10 @@ const schemas = {
       "staticId",
       "status",
       "revision",
+      "flightVersion",
+      "assignmentRevision",
+      "releaseId",
+      "releaseRevision",
       "request",
       "ofp",
       "simbriefRequestId",
@@ -830,6 +834,28 @@ const schemas = {
         minimum: 1,
         description:
           "Immutable per-flight planning revision. Only the canonical highest revision can be launched.",
+      },
+      flightVersion: {
+        type: "integer",
+        minimum: 1,
+        nullable: true,
+        description:
+          "Flight compare-and-set revision captured when this preparation was created. Null only for legacy rows.",
+      },
+      assignmentRevision: {
+        type: "integer",
+        minimum: 1,
+        nullable: true,
+        description:
+          "Pilot assignment revision captured when this preparation was created. Null only for legacy rows.",
+      },
+      releaseId: schemaRef("NullableUuid"),
+      releaseRevision: {
+        type: "integer",
+        minimum: 1,
+        nullable: true,
+        description:
+          "Immutable dispatch release revision used as the sole SimBrief planning source.",
       },
       request: {
         type: "object",
@@ -1193,58 +1219,18 @@ const schemas = {
   },
   CreateSimbriefDispatchInput: {
     type: "object",
+    required: [
+      "expectedFlightVersion",
+      "expectedAssignmentRevision",
+      "releaseId",
+      "releaseRevision",
+    ],
     additionalProperties: false,
     properties: {
-      aircraftType: {
-        type: "string",
-        minLength: 2,
-        maxLength: 64,
-        pattern: "^[A-Za-z0-9_-]+$",
-        description:
-          "ICAO aircraft type or SimBrief airframe Internal ID. Defaults to the flight aircraft type.",
-      },
-      airline: { type: "string", minLength: 1, maxLength: 3 },
-      flightNumber: { type: "string", minLength: 1, maxLength: 12 },
-      callsign: {
-        type: "string",
-        minLength: 2,
-        maxLength: 12,
-        pattern: "^[A-Za-z0-9]+$",
-      },
-      route: { type: "string", maxLength: 2000 },
-      alternate: { type: "string", minLength: 4, maxLength: 4 },
-      flightLevel: {
-        oneOf: [
-          { type: "integer", minimum: 0, maximum: 60000 },
-          { type: "string", pattern: "^(?:FL)?\\d{2,5}$" },
-        ],
-      },
-      registration: { type: "string", minLength: 1, maxLength: 16 },
-      passengers: { type: "integer", minimum: 0, maximum: 1000 },
-      cargo: { type: "number", minimum: 0, maximum: 9999 },
-      captainName: { type: "string", minLength: 1, maxLength: 120 },
-      customRemarks: { type: "string", maxLength: 2000 },
-      units: { type: "string", enum: ["KGS", "LBS"], default: "KGS" },
-      planFormat: { type: "string", minLength: 1, maxLength: 32 },
-      costIndex: {
-        oneOf: [
-          { type: "integer", minimum: 0, maximum: 999 },
-          { type: "string", enum: ["AUTO"] },
-        ],
-      },
-      taxiOutMinutes: { type: "integer", minimum: 0, maximum: 180 },
-      taxiInMinutes: { type: "integer", minimum: 0, maximum: 180 },
-      reserveMinutes: { type: "integer", minimum: 0, maximum: 600 },
-      navlog: { type: "boolean" },
-      etops: { type: "boolean" },
-      stepClimbs: { type: "boolean" },
-      runwayAnalysis: { type: "boolean" },
-      notams: { type: "boolean" },
-      firNotams: { type: "boolean" },
-      omitSids: { type: "boolean" },
-      omitStars: { type: "boolean" },
-      maps: { type: "string", enum: ["detail", "simple", "none"] },
-      sidStarPreference: { type: "string", enum: ["R", "C"] },
+      expectedFlightVersion: { type: "integer", minimum: 1 },
+      expectedAssignmentRevision: { type: "integer", minimum: 1 },
+      releaseId: schemaRef("Uuid"),
+      releaseRevision: { type: "integer", minimum: 1 },
     },
   },
   SeedVsasInput: {
@@ -2711,12 +2697,9 @@ export const openApiDocument = {
         operationId: "prepareSimbriefDispatch",
         summary: "Save a dispatcher planning revision",
         description:
-          "Dispatchers and admins atomically advance and save the canonical planning revision without using a personal SimBrief account. Dispatcher attribution is derived and snapshotted from active authenticated server context; dispatcherName is not accepted from the client.",
+          "Dispatchers and admins atomically prepare the current immutable dispatch release without using a personal SimBrief account. Route, alternate, cruise level, units, and remarks are server-derived from that release; the pilot reviews SimBrief's passenger/freight split before generation. Dispatcher attribution comes from active authenticated context. Stale flight, assignment, or release revisions fail with 409.",
         parameters: [pathParameter("flightId", "Flight ID.")],
-        requestBody: optionalJsonRequest(
-          schemaRef("CreateSimbriefDispatchInput"),
-          "Optional SimBrief planning overrides. Omitted fields are derived from the flight or use SimBrief defaults.",
-        ),
+        requestBody: jsonRequest(schemaRef("CreateSimbriefDispatchInput")),
         responses: {
           "201": jsonResponse(
             "Created prepared planning revision.",
@@ -2829,7 +2812,7 @@ export const openApiDocument = {
         operationId: "publishDispatchRelease",
         summary: "Publish an immutable dispatch release revision",
         description:
-          "Requires dispatcher. Fetches and stores a live AviationWeather.gov snapshot. The initial release moves Accepted to Scheduled (stored internally as briefed).",
+          "Requires dispatcher. Fetches a live AviationWeather.gov snapshot, then atomically inserts the immutable release, advances the flight version, moves an initial Accepted flight to Scheduled (stored internally as briefed), and records its audit. Every replacement release invalidates stale SimBrief preparations.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
         requestBody: jsonRequest(schemaRef("DispatchReleaseInput")),

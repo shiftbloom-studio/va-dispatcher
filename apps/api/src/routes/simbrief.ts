@@ -9,7 +9,7 @@ import { requireAuth } from "../middleware/auth.js";
 import * as simbriefService from "../domain/simbrief/service.js";
 import * as simbriefOauthService from "../domain/simbrief/oauth-service.js";
 import {
-  simbriefDispatchOptionsSchema,
+  prepareSimbriefDispatchSchema,
   simbriefUserIdSchema,
 } from "../domain/simbrief/validation.js";
 
@@ -148,12 +148,12 @@ simbriefRoutes.delete("/simbrief/connection", async (c) => {
 simbriefRoutes.post(
   "/flights/:flightId/simbrief/dispatches",
   zValidator("param", idParamsSchema.pick({ flightId: true })),
-  zValidator("json", simbriefDispatchOptionsSchema.optional()),
+  zValidator("json", prepareSimbriefDispatchSchema),
   async (c) => {
     const dispatch = await simbriefService.prepareDispatch(
       actor(c),
       c.req.valid("param").flightId,
-      c.req.valid("json") ?? simbriefDispatchOptionsSchema.parse({}),
+      c.req.valid("json"),
     );
     return c.json({ dispatch: serializeDispatch(dispatch) }, 201);
   },
@@ -282,6 +282,10 @@ function serializeDispatch(dispatch: SimbriefDispatch) {
     staticId: dispatch.staticId,
     status: dispatch.status,
     revision: dispatch.revision,
+    flightVersion: snapshotInteger(dispatch, "flightVersion"),
+    assignmentRevision: snapshotInteger(dispatch, "assignmentRevision"),
+    releaseId: snapshotString(dispatch, "dispatchReleaseId"),
+    releaseRevision: snapshotInteger(dispatch, "dispatchReleaseRevision"),
     request,
     ofp: dispatch.ofp,
     simbriefRequestId: dispatch.simbriefRequestId,
@@ -291,6 +295,22 @@ function serializeDispatch(dispatch: SimbriefDispatch) {
     createdAt: dispatch.createdAt.toISOString(),
     updatedAt: dispatch.updatedAt.toISOString(),
   };
+}
+
+function snapshotInteger(
+  dispatch: SimbriefDispatch,
+  key: string,
+): number | null {
+  const value = dispatch.flightSnapshot[key];
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
+function snapshotString(
+  dispatch: SimbriefDispatch,
+  key: string,
+): string | null {
+  const value = dispatch.flightSnapshot[key];
+  return typeof value === "string" ? value : null;
 }
 
 async function callbackRedirect(

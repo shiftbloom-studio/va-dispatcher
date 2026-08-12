@@ -6,6 +6,7 @@ import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { setDbForTests, type Db } from "../client.js";
+import { publishDispatchReleaseAtomic } from "./dispatch-releases.js";
 import {
   completeSimbriefDispatchAtomic,
   createSimbriefDispatchAtomic,
@@ -21,6 +22,7 @@ const otherTenantId = "20000000-0000-4000-8000-000000000099";
 const dispatcherId = "10000000-0000-4000-8000-000000000001";
 const pilotId = "10000000-0000-4000-8000-000000000002";
 const flightId = "30000000-0000-4000-8000-000000000001";
+const releaseId = "35000000-0000-4000-8000-000000000001";
 const dispatchA = "40000000-0000-4000-8000-000000000001";
 const dispatchB = "40000000-0000-4000-8000-000000000002";
 const now = new Date("2026-08-12T12:00:00.000Z");
@@ -33,6 +35,7 @@ const baseSchemaSql = `
     'completed', 'cancelled'
   );
   CREATE TYPE simbrief_dispatch_status AS ENUM ('pending', 'ready');
+  CREATE TYPE dispatch_unit AS ENUM ('kg', 'lb');
 
   CREATE TABLE tenants (
     id uuid PRIMARY KEY,
@@ -62,6 +65,7 @@ const baseSchemaSql = `
     id uuid PRIMARY KEY,
     tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     schedule_request_id uuid,
+    replaces_flight_id uuid,
     pilot_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
     flight_number text NOT NULL,
     dep_icao text NOT NULL,
@@ -69,6 +73,10 @@ const baseSchemaSql = `
     etd timestamptz NOT NULL,
     eta timestamptz NOT NULL,
     aircraft_type text,
+    version integer DEFAULT 1 NOT NULL,
+    assignment_revision integer DEFAULT 1 NOT NULL,
+    assignment_confirmed_revision integer,
+    assignment_confirmed_at timestamptz,
     status flight_status DEFAULT 'draft' NOT NULL,
     cancel_reason text,
     declined_reason text,
@@ -79,6 +87,33 @@ const baseSchemaSql = `
     in_at timestamptz,
     created_at timestamptz DEFAULT now() NOT NULL,
     updated_at timestamptz DEFAULT now() NOT NULL
+  );
+  CREATE TABLE dispatch_releases (
+    id uuid PRIMARY KEY,
+    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    flight_id uuid NOT NULL REFERENCES flights(id) ON DELETE CASCADE,
+    revision integer NOT NULL,
+    operational_route text NOT NULL,
+    sid text,
+    star text,
+    cruise_level integer NOT NULL,
+    alternate_icao text NOT NULL,
+    fuel_unit dispatch_unit NOT NULL,
+    payload_unit dispatch_unit NOT NULL,
+    taxi_fuel integer NOT NULL,
+    trip_fuel integer NOT NULL,
+    contingency_fuel integer NOT NULL,
+    alternate_fuel integer NOT NULL,
+    final_reserve_fuel integer NOT NULL,
+    additional_fuel integer DEFAULT 0 NOT NULL,
+    block_fuel integer NOT NULL,
+    planned_payload integer NOT NULL,
+    weather_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    release_notes text,
+    dispatcher_remarks text,
+    released_by_membership_id uuid REFERENCES memberships(id) ON DELETE SET NULL,
+    released_at timestamptz DEFAULT now() NOT NULL,
+    UNIQUE (tenant_id, flight_id, revision)
   );
   CREATE TABLE simbrief_dispatches (
     id uuid PRIMARY KEY,
@@ -132,6 +167,10 @@ function simbriefDb(client: Sql): Db {
 
 function snapshot(): SimbriefFlightSnapshot {
   return {
+    flightVersion: 1,
+    assignmentRevision: 1,
+    dispatchReleaseId: releaseId,
+    dispatchReleaseRevision: 1,
     pilotMembershipId: pilotId,
     flightNumber: "SK935",
     depIcao: "EKCH",
@@ -161,7 +200,10 @@ function prepare(id: string, preparedAt = now) {
     createdByMembershipId: dispatcherId,
     staticId: `VAD_${id.replaceAll("-", "")}`,
     request: request(),
-    flightSnapshot: snapshot(),
+    expectedFlightVersion: 1,
+    expectedAssignmentRevision: 1,
+    releaseId,
+    releaseRevision: 1,
     preparedAt,
   });
 }
@@ -176,6 +218,34 @@ function start(id: string, startedAt = new Date(now.getTime() + 2_000)) {
     callbackTokenMac: "callback-mac",
     callbackExpiresAt: new Date(startedAt.getTime() + 2 * 60 * 60_000),
     startedAt,
+  });
+}
+
+function publishRelease() {
+  return publishDispatchReleaseAtomic({
+    tenantId,
+    flightId,
+    expectedFlightVersion: 1,
+    operationalRoute: "NIKDA DCT GIMLI",
+    sid: null,
+    star: null,
+    cruiseLevel: 400,
+    alternateIcao: "KSEA",
+    fuelUnit: "kg",
+    payloadUnit: "kg",
+    taxiFuel: 1_000,
+    tripFuel: 50_000,
+    contingencyFuel: 2_500,
+    alternateFuel: 6_000,
+    finalReserveFuel: 3_000,
+    additionalFuel: 0,
+    blockFuel: 62_500,
+    plannedPayload: 25_000,
+    weatherSnapshot: { unavailable: [] },
+    releaseNotes: null,
+    dispatcherRemarks: "New release remarks",
+    releasedByMembershipId: dispatcherId,
+    publishedAt: now,
   });
 }
 
@@ -288,6 +358,19 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
         ${flightId}, ${tenantId}, ${pilotId}, 'SK935', 'EKCH', 'KSFO',
         '2026-08-13T10:05:00.000Z', '2026-08-13T21:35:00.000Z',
         'A359', 'accepted'
+      )
+    `;
+    await sqlClient!`
+      INSERT INTO dispatch_releases (
+        id, tenant_id, flight_id, revision, operational_route, cruise_level,
+        alternate_icao, fuel_unit, payload_unit, taxi_fuel, trip_fuel,
+        contingency_fuel, alternate_fuel, final_reserve_fuel, additional_fuel,
+        block_fuel, planned_payload, weather_snapshot,
+        released_by_membership_id
+      ) VALUES (
+        ${releaseId}, ${tenantId}, ${flightId}, 1, 'NIKDA DCT', 390,
+        'KORD', 'kg', 'kg', 1000, 50000, 2500, 6000, 3000, 0,
+        62500, 25000, '{}'::jsonb, ${dispatcherId}
       )
     `;
   });
@@ -489,6 +572,73 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
     });
   });
 
+  it("atomically publishes a new release, advances flight version, and invalidates the old preparation", async () => {
+    await prepare(dispatchA);
+
+    const published = await publishRelease();
+    expect(published).toMatchObject({
+      flight: { version: 2, status: "briefed" },
+      release: { revision: 2, dispatcherRemarks: "New release remarks" },
+    });
+    await expect(start(dispatchA)).resolves.toMatchObject({
+      status: "stale",
+      dispatch: null,
+    });
+    const [state] = await sqlClient!`
+      SELECT
+        (SELECT count(*)::int FROM dispatch_releases
+          WHERE flight_id = ${flightId}) AS release_count,
+        (SELECT count(*)::int FROM audit_events
+          WHERE action = 'flight.release_publish') AS audit_count
+    `;
+    expect(state).toMatchObject({ release_count: 2, audit_count: 1 });
+  });
+
+  it("allows only one same-version release publisher", async () => {
+    const results = await Promise.all([publishRelease(), publishRelease()]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const [state] = await sqlClient!`
+      SELECT
+        (SELECT version FROM flights WHERE id = ${flightId}) AS version,
+        (SELECT count(*)::int FROM dispatch_releases
+          WHERE flight_id = ${flightId}) AS release_count,
+        (SELECT count(*)::int FROM audit_events
+          WHERE action = 'flight.release_publish') AS audit_count
+    `;
+    expect(state).toMatchObject({
+      version: 2,
+      release_count: 2,
+      audit_count: 1,
+    });
+  });
+
+  it("rolls flight and release publication back when its audit fails", async () => {
+    await sqlClient!.unsafe(`
+      ALTER TABLE audit_events ADD CONSTRAINT reject_simbrief_audit
+      CHECK (action <> 'flight.release_publish')
+    `);
+
+    await expect(publishRelease()).rejects.toMatchObject({
+      cause: { code: "23514" },
+    });
+    const [state] = await sqlClient!`
+      SELECT
+        (SELECT version FROM flights WHERE id = ${flightId}) AS version,
+        (SELECT status FROM flights WHERE id = ${flightId}) AS status,
+        (SELECT count(*)::int FROM dispatch_releases
+          WHERE flight_id = ${flightId}) AS release_count,
+        (SELECT count(*)::int FROM audit_events
+          WHERE action = 'flight.release_publish') AS audit_count
+    `;
+    expect(state).toMatchObject({
+      version: 1,
+      status: "accepted",
+      release_count: 1,
+      audit_count: 0,
+    });
+  });
+
   it("does not let sync failures extend the callback lifetime", async () => {
     await prepare(dispatchA);
     const started = await start(dispatchA);
@@ -595,7 +745,10 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
         createdByMembershipId: dispatcherId,
         staticId: "VAD_CROSS_TENANT",
         request: request(),
-        flightSnapshot: snapshot(),
+        expectedFlightVersion: 1,
+        expectedAssignmentRevision: 1,
+        releaseId,
+        releaseRevision: 1,
         preparedAt: now,
       }),
     ).resolves.toBeNull();

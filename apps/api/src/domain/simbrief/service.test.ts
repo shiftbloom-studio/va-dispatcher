@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Flight, Membership, SimbriefDispatch } from "../../db/schema.js";
+import type {
+  DispatchRelease,
+  Flight,
+  Membership,
+  SimbriefDispatch,
+} from "../../db/schema.js";
 
 const mocks = vi.hoisted(() => ({
   findFlight: vi.fn(),
+  findLatestDispatchRelease: vi.fn(),
   findMembershipById: vi.fn(),
   updateMembership: vi.fn(),
   createSimbriefDispatchAtomic: vi.fn(),
@@ -20,6 +26,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../db/repositories/flights.js", () => ({
   findFlight: mocks.findFlight,
+}));
+vi.mock("../../db/repositories/dispatch-releases.js", () => ({
+  findLatestDispatchRelease: mocks.findLatestDispatchRelease,
 }));
 vi.mock("../../db/repositories/memberships.js", () => ({
   findMembershipById: mocks.findMembershipById,
@@ -51,7 +60,6 @@ vi.mock("../../simbrief/adapter.js", async (importOriginal) => {
 });
 
 import { loadEnv, resetEnvCache } from "../../env.js";
-import { simbriefDispatchOptionsSchema } from "./validation.js";
 import {
   completeDispatchCallback,
   disconnectAccount,
@@ -106,6 +114,33 @@ const flight: Flight = {
   updatedAt: now,
 };
 
+const release: DispatchRelease = {
+  id: "35000000-0000-4000-8000-000000000001",
+  tenantId: membership.tenantId,
+  flightId: flight.id,
+  revision: 1,
+  operationalRoute: "NIKDA DCT",
+  sid: null,
+  star: null,
+  cruiseLevel: 390,
+  alternateIcao: "KORD",
+  fuelUnit: "kg",
+  payloadUnit: "kg",
+  taxiFuel: 1_000,
+  tripFuel: 50_000,
+  contingencyFuel: 2_500,
+  alternateFuel: 6_000,
+  finalReserveFuel: 3_000,
+  additionalFuel: 0,
+  blockFuel: 62_500,
+  plannedPayload: 25_000,
+  weatherSnapshot: {},
+  releaseNotes: null,
+  dispatcherRemarks: "Use runway 28",
+  releasedByMembershipId: membership.id,
+  releasedAt: now,
+};
+
 function preparedDispatch(
   overrides: Partial<SimbriefDispatch> = {},
 ): SimbriefDispatch {
@@ -122,6 +157,10 @@ function preparedDispatch(
     status: "prepared",
     revision: 1,
     flightSnapshot: {
+      flightVersion: flight.version,
+      assignmentRevision: flight.assignmentRevision,
+      dispatchReleaseId: release.id,
+      dispatchReleaseRevision: release.revision,
       pilotMembershipId: flight.pilotMembershipId!,
       flightNumber: flight.flightNumber,
       depIcao: flight.depIcao,
@@ -163,6 +202,7 @@ describe("SimBrief dispatch service", () => {
       SIMBRIEF_CALLBACK_URL: "https://api.example.com/api/v1/simbrief/callback",
     });
     mocks.findFlight.mockResolvedValue(flight);
+    mocks.findLatestDispatchRelease.mockResolvedValue(release);
     mocks.findMembershipById.mockResolvedValue(membership);
     mocks.buildDispatchUrl.mockReturnValue(
       "https://www.simbrief.com/ofp/ofp.loader.api.php?signed=1",
@@ -173,7 +213,7 @@ describe("SimBrief dispatch service", () => {
     );
   });
 
-  it("lets dispatch save canonical inputs with trusted attribution but no pilot account side effect", async () => {
+  it("derives a release-bound preparation without duplicate planning input or pilot side effects", async () => {
     const result = await prepareDispatch(
       {
         tenantId: membership.tenantId,
@@ -181,12 +221,12 @@ describe("SimBrief dispatch service", () => {
         role: "dispatcher",
       },
       flight.id,
-      simbriefDispatchOptionsSchema.parse({
-        route: "NIKDA DCT",
-        passengers: 250,
-        notams: true,
-        customRemarks: "Use runway 28",
-      }),
+      {
+        expectedFlightVersion: flight.version,
+        expectedAssignmentRevision: flight.assignmentRevision,
+        releaseId: release.id,
+        releaseRevision: release.revision,
+      },
     );
 
     expect(result.status).toBe("prepared");
@@ -196,22 +236,17 @@ describe("SimBrief dispatch service", () => {
         flightId: flight.id,
         createdByMembershipId: membership.id,
         preparedAt: now,
-        flightSnapshot: {
-          pilotMembershipId: membership.id,
-          flightNumber: "SK935",
-          depIcao: "EKCH",
-          arrIcao: "KSFO",
-          etd: "2026-08-13T10:05:00.000Z",
-          eta: "2026-08-13T21:35:00.000Z",
-          aircraftType: "A359",
-        },
+        expectedFlightVersion: 1,
+        expectedAssignmentRevision: 1,
+        releaseId: release.id,
+        releaseRevision: 1,
         request: expect.objectContaining({
           orig: "EKCH",
           dest: "KSFO",
           route: "NIKDA DCT",
-          pax: "250",
+          altn: "KORD",
+          fl: "390",
           notams: "1",
-          dxname: "Test Pilot",
           manualrmk: "Use runway 28",
         }),
       }),
@@ -219,11 +254,24 @@ describe("SimBrief dispatch service", () => {
     expect(mocks.buildDispatchUrl).not.toHaveBeenCalled();
   });
 
-  it("does not accept a forgeable dispatcher name option", () => {
-    expect(
-      simbriefDispatchOptionsSchema.safeParse({ dispatcherName: "Attacker" })
-        .success,
-    ).toBe(false);
+  it("rejects a stale release or flight revision before reserving a preparation", async () => {
+    await expect(
+      prepareDispatch(
+        {
+          tenantId: membership.tenantId,
+          membershipId: membership.id,
+          role: "dispatcher",
+        },
+        flight.id,
+        {
+          expectedFlightVersion: flight.version - 1,
+          expectedAssignmentRevision: flight.assignmentRevision,
+          releaseId: release.id,
+          releaseRevision: release.revision,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(mocks.createSimbriefDispatchAtomic).not.toHaveBeenCalled();
   });
 
   it("lets only the assigned pilot launch a prepared plan in their account", async () => {
