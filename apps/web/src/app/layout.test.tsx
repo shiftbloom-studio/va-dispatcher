@@ -1,34 +1,29 @@
-import { isValidElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { Children, isValidElement, type ReactNode } from "react";
+import { describe, expect, it } from "vitest";
 
-vi.mock("@clerk/nextjs", () => ({
-  ClerkProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
+import { PrivacyControls } from "@/components/privacy-controls";
 
 import RootLayout from "./layout";
 
-describe("root Clerk routing", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("routes auth and pending session tasks through the vSAS application", () => {
-    vi.stubEnv("NEXT_PUBLIC_E2E_AUTH_BYPASS", "false");
-
+describe("root layout", () => {
+  it("keeps global privacy controls outside tenant authentication", () => {
     const layout = RootLayout({ children: <div /> });
     expect(isValidElement(layout)).toBe(true);
-    if (!isValidElement(layout)) throw new Error("Expected a React element");
+    if (!isValidElement<{ children: ReactNode }>(layout)) {
+      throw new Error("Expected a React element");
+    }
 
-    expect(layout.props).toMatchObject({
-      signInUrl: "/vsas/sign-in",
-      signUpUrl: "/vsas/sign-up",
-      signInFallbackRedirectUrl: "/vsas",
-      signUpFallbackRedirectUrl: "/vsas",
-      taskUrls: {
-        "choose-organization": "/vsas/tasks/choose-organization",
-        "reset-password": "/vsas/tasks/reset-password",
-        "setup-mfa": "/vsas/tasks/setup-mfa",
-      },
-    });
+    expect(layout.type).toBe("html");
+    const body = layout.props.children;
+    expect(isValidElement(body)).toBe(true);
+    if (!isValidElement<{ children: ReactNode }>(body)) {
+      throw new Error("Expected a body element");
+    }
+
+    expect(
+      Children.toArray(body.props.children).some(
+        (child) => isValidElement(child) && child.type === PrivacyControls,
+      ),
+    ).toBe(true);
   });
 });

@@ -14,7 +14,17 @@ const clerkProxy = clerkMiddleware(
         },
 );
 
+const clerkFreePaths = new Set([
+  "/privacy",
+  "/datenschutz",
+  "/impressum",
+  "/imprint",
+]);
+
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  if (clerkFreePaths.has(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
   if (
     process.env.E2E_AUTH_BYPASS === "true" &&
     process.env.NODE_ENV !== "production"
