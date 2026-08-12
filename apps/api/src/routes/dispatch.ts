@@ -7,8 +7,8 @@ import { listAcarsMessages } from "../db/repositories/acars.js";
 
 export const dispatchRoutes = new Hono<{ Variables: AppVariables }>();
 
-dispatchRoutes.use("*", requireAuth);
-dispatchRoutes.use("*", requireRole("dispatcher"));
+dispatchRoutes.use("/dispatch/*", requireAuth);
+dispatchRoutes.use("/dispatch/*", requireRole("dispatcher"));
 
 dispatchRoutes.get("/dispatch/board", async (c) => {
   const auth = c.get("auth");

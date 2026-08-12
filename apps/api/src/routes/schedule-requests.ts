@@ -8,7 +8,8 @@ import { paginationQuerySchema } from "../lib/pagination.js";
 
 export const scheduleRequestRoutes = new Hono<{ Variables: AppVariables }>();
 
-scheduleRequestRoutes.use("*", requireAuth);
+scheduleRequestRoutes.use("/schedule-requests", requireAuth);
+scheduleRequestRoutes.use("/schedule-requests/*", requireAuth);
 
 const availabilityIntervalSchema = z
   .object({

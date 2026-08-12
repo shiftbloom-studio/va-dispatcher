@@ -14,7 +14,8 @@ import { isUniqueViolation } from "../lib/postgres.js";
 
 export const meRoutes = new Hono<{ Variables: AppVariables }>();
 
-meRoutes.use("*", requireAuth);
+meRoutes.use("/me", requireAuth);
+meRoutes.use("/me/*", requireAuth);
 
 meRoutes.get("/me", async (c) => {
   const { clerkUserId, membership, tenant } = c.get("auth");

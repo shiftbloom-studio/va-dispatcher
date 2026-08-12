@@ -1,4 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { SQL } from "drizzle-orm";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import { setDbForTests, type Db } from "../client.js";
 import {
   administrativelyUpdateMembership,
   createDirectoryMembershipWithAudit,
+  listMemberships,
   provisionPilotMembershipWithAudit,
   recoverMembershipAsTenantAdmin,
 } from "./memberships.js";
@@ -110,7 +112,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     );
     expect(database.rows[0]?.currentDatabase).toBe(confirmedDatabase);
     adapter = new PgTestAdapter(pool);
-    setDbForTests(adapter as unknown as Db);
+    setDbForTests(createPgTestDatabase(pool, adapter));
   });
 
   beforeEach(async () => {
@@ -173,6 +175,25 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       [TENANT_ONE],
     );
     expect(audits.rows[0]?.count).toBe(1);
+  });
+
+  it("lists tenant members with unambiguous correlated work-impact counts", async () => {
+    const page = await listMemberships({
+      tenantId: TENANT_ONE,
+      search: "Pilot One",
+      limit: 10,
+    });
+
+    expect(page.nextCursor).toBeNull();
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      id: PILOT_ONE,
+      tenantId: TENANT_ONE,
+      openFlightCount: 1,
+      activeFlightCount: 0,
+      openScheduleRequestCount: 1,
+      terminalRequestLinkedFlightCount: 0,
+    });
   });
 
   it("rolls back the member update when its audit insert fails", async () => {
@@ -735,6 +756,19 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     expect(audit.rows[0]?.count).toBe(1);
   });
 });
+
+function createPgTestDatabase(pool: pg.Pool, batchAdapter: PgTestAdapter): Db {
+  const database = drizzle({ client: pool });
+  return new Proxy(database, {
+    get(target, property, receiver) {
+      if (property === "execute")
+        return batchAdapter.execute.bind(batchAdapter);
+      if (property === "batch") return batchAdapter.batch.bind(batchAdapter);
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as unknown as Db;
+}
 
 async function resetFixtures(pool: pg.Pool): Promise<void> {
   await pool.query("delete from tenants where id = any($1::uuid[])", [

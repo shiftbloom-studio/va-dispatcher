@@ -104,8 +104,24 @@ simbriefPublicRoutes.get(
 
 export const simbriefRoutes = new Hono<{ Variables: AppVariables }>();
 
-simbriefRoutes.use("*", requireAuth);
-simbriefRoutes.use("*", async (c, next) => {
+simbriefRoutes.use("/simbrief/*", requireAuth);
+simbriefRoutes.use("/flights/:flightId/simbrief", requireAuth);
+simbriefRoutes.use("/flights/:flightId/simbrief/*", requireAuth);
+simbriefRoutes.use("/simbrief/*", async (c, next) => {
+  try {
+    await next();
+  } finally {
+    c.header("Cache-Control", "private, no-store");
+  }
+});
+simbriefRoutes.use("/flights/:flightId/simbrief", async (c, next) => {
+  try {
+    await next();
+  } finally {
+    c.header("Cache-Control", "private, no-store");
+  }
+});
+simbriefRoutes.use("/flights/:flightId/simbrief/*", async (c, next) => {
   try {
     await next();
   } finally {
