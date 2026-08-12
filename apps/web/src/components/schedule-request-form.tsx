@@ -2,8 +2,9 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, Plus, Trash2 } from "lucide-react";
+import { CalendarPlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 
 import { PageHeading } from "@/components/page-heading";
@@ -16,28 +17,41 @@ import {
   Label,
   Textarea,
 } from "@/components/ui/fields";
-import { apiErrorMessage } from "@/lib/api/http";
-import { scheduleRequestResponseSchema } from "@/lib/api/schemas";
+import { ApiError, apiErrorMessage } from "@/lib/api/http";
+import {
+  scheduleRequestResponseSchema,
+  type ScheduleRequest,
+} from "@/lib/api/schemas";
 import { jsonBody, useApi } from "@/lib/api/use-api";
 import {
   scheduleRequestFormSchema,
   type ScheduleRequestFormValues,
 } from "@/lib/schedule-form-schema";
-import { utcInputToIso } from "@/lib/utc";
+import {
+  availabilityFromPreferences,
+  isoToUtcInput,
+  utcInputToIso,
+} from "@/lib/utc";
 
-export function ScheduleRequestForm({ slug }: { slug: string }) {
+export function ScheduleRequestForm({
+  slug,
+  request,
+}: {
+  slug: string;
+  request?: ScheduleRequest;
+}) {
   const api = useApi();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [conflict, setConflict] = useState<string | null>(null);
+  const editing = Boolean(request);
   const form = useForm<ScheduleRequestFormValues>({
     resolver: zodResolver(scheduleRequestFormSchema),
-    defaultValues: {
-      title: "",
-      notes: "",
-      desiredFlightCount: 1,
-      availability: [{ startAt: "", endAt: "" }],
-    },
+    defaultValues: request ? valuesFromRequest(request) : emptyValues,
   });
+  useEffect(() => {
+    if (request) form.reset(valuesFromRequest(request));
+  }, [form, request]);
   const intervals = useFieldArray({
     control: form.control,
     name: "availability",
@@ -55,24 +69,43 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
       if (!firstInterval || !lastInterval) {
         throw new Error("At least one availability interval is required");
       }
-      return api("/schedule-requests", {
-        method: "POST",
-        schema: scheduleRequestResponseSchema,
-        ...jsonBody({
-          title: values.title || null,
-          notes: values.notes || null,
-          desiredFlightCount: values.desiredFlightCount,
-          windowStart: firstInterval.startAt,
-          windowEnd: lastInterval.endAt,
-          preferences: { availability },
-        }),
-      });
+      return api(
+        request ? `/schedule-requests/${request.id}` : "/schedule-requests",
+        {
+          method: request ? "PATCH" : "POST",
+          schema: scheduleRequestResponseSchema,
+          ...jsonBody({
+            ...(request ? { expectedVersion: request.version } : {}),
+            title: values.title || null,
+            notes: values.notes || null,
+            desiredFlightCount: values.desiredFlightCount,
+            windowStart: firstInterval.startAt,
+            windowEnd: lastInterval.endAt,
+            preferences: { availability },
+          }),
+        },
+      );
     },
     onSuccess: async ({ request }) => {
-      await queryClient.invalidateQueries({
-        queryKey: [slug, "pilot", "schedule-requests"],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [slug, "pilot", "schedule-requests"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "schedule-request", request.id],
+        }),
+      ]);
       router.push(`/${slug}/portal/schedule-requests/${request.id}`);
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409 && request) {
+        setConflict(
+          "This request changed while you were editing it. The current server version was reloaded; review it before saving again.",
+        );
+        await queryClient.invalidateQueries({
+          queryKey: [slug, "schedule-request", request.id],
+        });
+      }
     },
   });
 
@@ -80,8 +113,12 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
     <>
       <PageHeading
         eyebrow="Pilot portal"
-        title="Request a schedule"
-        description="Tell dispatch how many flights you want and when you are available. Every date and time below is UTC / Zulu."
+        title={editing ? "Edit schedule request" : "Request a schedule"}
+        description={
+          editing
+            ? "Pending requests remain editable until dispatch starts review. Every date and time below is UTC / Zulu."
+            : "Tell dispatch how many flights you want and when you are available. Every date and time below is UTC / Zulu."
+        }
       />
       <form
         onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
@@ -230,7 +267,7 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
                 role="alert"
                 className="rounded-[2px] border border-red-200 bg-red-50 p-4 text-sm text-red-900"
               >
-                {apiErrorMessage(mutation.error)}
+                {conflict ?? apiErrorMessage(mutation.error)}
               </div>
             ) : null}
             <div className="flex gap-3">
@@ -239,8 +276,16 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
                 disabled={mutation.isPending}
                 className="flex-1"
               >
-                <CalendarPlus aria-hidden className="size-4" />{" "}
-                {mutation.isPending ? "Submitting…" : "Submit request"}
+                {editing ? (
+                  <Pencil aria-hidden className="size-4" />
+                ) : (
+                  <CalendarPlus aria-hidden className="size-4" />
+                )}{" "}
+                {mutation.isPending
+                  ? "Saving…"
+                  : editing
+                    ? "Save request"
+                    : "Submit request"}
               </Button>
               <Button variant="secondary" onClick={() => router.back()}>
                 Cancel
@@ -251,4 +296,29 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
       </form>
     </>
   );
+}
+
+const emptyValues: ScheduleRequestFormValues = {
+  title: "",
+  notes: "",
+  desiredFlightCount: 1,
+  availability: [{ startAt: "", endAt: "" }],
+};
+
+function valuesFromRequest(
+  request: ScheduleRequest,
+): ScheduleRequestFormValues {
+  const detailed = availabilityFromPreferences(request.preferences);
+  const availability = detailed.length
+    ? detailed
+    : [{ startAt: request.windowStart, endAt: request.windowEnd }];
+  return {
+    title: request.title ?? "",
+    notes: request.notes ?? "",
+    desiredFlightCount: request.desiredFlightCount,
+    availability: availability.map((interval) => ({
+      startAt: isoToUtcInput(interval.startAt),
+      endAt: isoToUtcInput(interval.endAt),
+    })),
+  };
 }

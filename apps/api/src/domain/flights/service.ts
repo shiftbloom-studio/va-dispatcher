@@ -6,10 +6,7 @@ import {
 } from "../../db/repositories/flight-events.js";
 import * as flightRepo from "../../db/repositories/flights.js";
 import { findMembershipById } from "../../db/repositories/memberships.js";
-import {
-  findScheduleRequest,
-  updateScheduleRequestStatus,
-} from "../../db/repositories/schedule-requests.js";
+import { findScheduleRequest } from "../../db/repositories/schedule-requests.js";
 import type {
   DispatchRelease,
   DispatchUnit,
@@ -56,7 +53,6 @@ export type DispatchReleaseDraft = {
 export async function createFlight(
   actor: Actor,
   input: {
-    scheduleRequestId?: string | null;
     pilotMembershipId?: string | null;
     flightNumber: string;
     depIcao: string;
@@ -71,30 +67,15 @@ export async function createFlight(
   requireDispatcher(actor);
   assertFlightTimes(input.etd, input.eta);
 
-  let scheduleRequest: ScheduleRequest | null = null;
-  if (input.scheduleRequestId) {
-    scheduleRequest = await findScheduleRequest(
-      actor.tenantId,
-      input.scheduleRequestId,
-    );
-    if (!scheduleRequest) {
-      throw new AppError("NOT_FOUND", "Schedule request not found");
-    }
-  }
-  const pilotMembershipId = resolveRequestAssignment(
-    input.pilotMembershipId,
-    scheduleRequest,
-  );
+  const pilotMembershipId = input.pilotMembershipId ?? null;
   await assertActivePilot(actor.tenantId, pilotMembershipId, {
     required: (input.status ?? "draft") === "offered",
   });
-  if (scheduleRequest) {
-    assertFlightInsideAvailability(input.etd, input.eta, scheduleRequest);
-  }
 
   const flight = await flightRepo.createFlight({
     tenantId: actor.tenantId,
-    scheduleRequestId: input.scheduleRequestId,
+    actorMembershipId: actor.membershipId,
+    scheduleRequestId: null,
     pilotMembershipId,
     flightNumber: input.flightNumber,
     depIcao: input.depIcao,
@@ -106,14 +87,6 @@ export async function createFlight(
     dispatcherNotes: input.dispatcherNotes,
   });
 
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
-    action: "flight.create",
-    entityType: "flight",
-    entityId: flight.id,
-    meta: { status: flight.status },
-  });
   return flight;
 }
 
@@ -121,6 +94,7 @@ export async function bulkCreateFlights(
   actor: Actor,
   input: {
     scheduleRequestId: string;
+    expectedRequestVersion: number;
     flights: Array<{
       flightNumber: string;
       depIcao: string;
@@ -140,6 +114,19 @@ export async function bulkCreateFlights(
   if (!scheduleRequest) {
     throw new AppError("NOT_FOUND", "Schedule request not found");
   }
+  if (scheduleRequest.version !== input.expectedRequestVersion) {
+    throw scheduleRequestConflict(scheduleRequest);
+  }
+  if (
+    scheduleRequest.status !== "in_review" &&
+    scheduleRequest.status !== "partially_fulfilled"
+  ) {
+    throw new AppError(
+      "CONFLICT",
+      "Flights can only be appended while a request is in review or partially fulfilled",
+      { details: { latest: safeScheduleRequestForConflict(scheduleRequest) } },
+    );
+  }
 
   await assertActivePilot(actor.tenantId, scheduleRequest.pilotMembershipId, {
     required: true,
@@ -156,60 +143,67 @@ export async function bulkCreateFlights(
     assertFlightInsideAvailability(flight.etd, flight.eta, scheduleRequest);
   }
 
-  const createdFlights = await flightRepo.createFlights(
-    input.flights.map((flight) => ({
-      tenantId: actor.tenantId,
-      scheduleRequestId: input.scheduleRequestId,
-      pilotMembershipId: scheduleRequest.pilotMembershipId,
+  const createdFlights = await flightRepo.fulfillScheduleRequest({
+    tenantId: actor.tenantId,
+    scheduleRequestId: input.scheduleRequestId,
+    expectedRequestVersion: input.expectedRequestVersion,
+    expectedRequestStatus: scheduleRequest.status,
+    actorMembershipId: actor.membershipId,
+    flights: input.flights.map((flight) => ({
       flightNumber: flight.flightNumber,
       depIcao: flight.depIcao,
       arrIcao: flight.arrIcao,
       etd: flight.etd,
       eta: flight.eta,
       aircraftType: flight.aircraftType,
-      status: "offered" as const,
     })),
-  );
-
-  // Move request into review/partial fulfillment heuristics
-  if (scheduleRequest.status === "pending") {
-    assertScheduleRequestTransition(scheduleRequest.status, "in_review");
-    await updateScheduleRequestStatus(
+  });
+  if (!createdFlights) {
+    const latest = await findScheduleRequest(
       actor.tenantId,
       scheduleRequest.id,
-      "in_review",
     );
-  }
-
-  const offeredCount = createdFlights.length;
-  if (offeredCount >= scheduleRequest.desiredFlightCount) {
-    if (
-      scheduleRequest.status === "in_review" ||
-      scheduleRequest.status === "pending"
-    ) {
-      await updateScheduleRequestStatus(
+    if (!latest) throw new AppError("NOT_FOUND", "Schedule request not found");
+    const existingFlightCount =
+      await flightRepo.countNonCancelledScheduleRequestFlights(
         actor.tenantId,
         scheduleRequest.id,
-        "fulfilled",
       );
-    }
-  } else if (createdFlights.length > 0) {
-    await updateScheduleRequestStatus(
-      actor.tenantId,
-      scheduleRequest.id,
-      "partially_fulfilled",
+    throw new AppError(
+      "CONFLICT",
+      "The request changed or the batch exceeds its remaining flight count",
+      {
+        details: {
+          latest: safeScheduleRequestForConflict(latest),
+          existingFlightCount,
+          remainingFlightCount: Math.max(
+            0,
+            latest.desiredFlightCount - existingFlightCount,
+          ),
+        },
+      },
     );
   }
-
-  await writeAudit({
-    tenantId: actor.tenantId,
-    actorMembershipId: actor.membershipId,
-    action: "flight.bulk_create",
-    entityType: "schedule_request",
-    entityId: input.scheduleRequestId,
-    meta: { count: createdFlights.length },
-  });
   return createdFlights;
+}
+
+function scheduleRequestConflict(scheduleRequest: ScheduleRequest): AppError {
+  return new AppError(
+    "CONFLICT",
+    "Schedule request changed since it was loaded",
+    { details: { latest: safeScheduleRequestForConflict(scheduleRequest) } },
+  );
+}
+
+function safeScheduleRequestForConflict(scheduleRequest: ScheduleRequest) {
+  return {
+    id: scheduleRequest.id,
+    pilotMembershipId: scheduleRequest.pilotMembershipId,
+    desiredFlightCount: scheduleRequest.desiredFlightCount,
+    version: scheduleRequest.version,
+    status: scheduleRequest.status,
+    updatedAt: scheduleRequest.updatedAt.toISOString(),
+  };
 }
 
 export async function getFlight(

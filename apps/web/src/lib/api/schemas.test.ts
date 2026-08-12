@@ -42,15 +42,17 @@ describe("live API contract smoke fixtures", () => {
       windowEnd: "2026-09-02T08:00:00.000Z",
       desiredFlightCount: 1,
       preferences: {},
+      version: 1,
       status: "pending",
       rejectReason: null,
+      cancelReason: null,
       createdAt: "2026-08-01T00:00:00.000Z",
       updatedAt: "2026-08-01T00:00:00.000Z",
     };
     expect(
       scheduleRequestDetailResponseSchema.parse({
         request,
-        flights: [{ raw: true }],
+        fulfillment: { linkedFlightCount: 0, remainingFlightCount: 1 },
       }).request.id,
     ).toBe("r1");
 

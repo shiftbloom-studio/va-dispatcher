@@ -14,9 +14,10 @@ import {
   scheduleRequestPageSchema,
   scheduleRequestResponseSchema,
   scheduleRequestStatusSchema,
+  type ScheduleRequest,
   type ScheduleRequestStatus,
 } from "@/lib/api/schemas";
-import { useApi } from "@/lib/api/use-api";
+import { jsonBody, useApi } from "@/lib/api/use-api";
 import { memberLabel } from "@/lib/member";
 import { formatUtc } from "@/lib/utc";
 
@@ -53,10 +54,11 @@ export function RequestQueue({ slug }: { slug: string }) {
     staleTime: Number.POSITIVE_INFINITY,
   });
   const review = useMutation({
-    mutationFn: (id: string) =>
-      api(`/schedule-requests/${id}/review`, {
+    mutationFn: (request: ScheduleRequest) =>
+      api(`/schedule-requests/${request.id}/review`, {
         method: "POST",
         schema: scheduleRequestResponseSchema,
+        ...jsonBody({ expectedVersion: request.version }),
       }),
     onSuccess: async () =>
       queryClient.invalidateQueries({
@@ -139,7 +141,7 @@ export function RequestQueue({ slug }: { slug: string }) {
                       variant="secondary"
                       size="sm"
                       disabled={review.isPending}
-                      onClick={() => review.mutate(request.id)}
+                      onClick={() => review.mutate(request)}
                     >
                       <SearchCheck aria-hidden className="size-4" /> Start
                       review

@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   createFlightEvent: vi.fn(),
   listFlightEvents: vi.fn(),
   createFlight: vi.fn(),
-  createFlights: vi.fn(),
+  fulfillScheduleRequest: vi.fn(),
+  countNonCancelledScheduleRequestFlights: vi.fn(),
   findFlight: vi.fn(),
   findReplacementFlight: vi.fn(),
   updateFlight: vi.fn(),
@@ -39,7 +40,9 @@ vi.mock("../../db/repositories/flight-events.js", () => ({
 }));
 vi.mock("../../db/repositories/flights.js", () => ({
   createFlight: mocks.createFlight,
-  createFlights: mocks.createFlights,
+  fulfillScheduleRequest: mocks.fulfillScheduleRequest,
+  countNonCancelledScheduleRequestFlights:
+    mocks.countNonCancelledScheduleRequestFlights,
   findFlight: mocks.findFlight,
   findReplacementFlight: mocks.findReplacementFlight,
   updateFlight: mocks.updateFlight,
@@ -77,6 +80,7 @@ const dispatcher = {
 };
 const actor = dispatcher;
 const flightRepo = mocks;
+const scheduleRepo = mocks;
 const findMembershipById = mocks.findMembershipById;
 const writeAudit = mocks.writeAudit;
 const pilotId = "pilot-test";
@@ -103,8 +107,10 @@ const request = {
       },
     ],
   },
+  version: 1,
   status: "in_review" as const,
   rejectReason: null,
+  cancelReason: null,
   createdAt: new Date("2026-08-12T00:00:00.000Z"),
   updatedAt: new Date("2026-08-12T00:00:00.000Z"),
 };
@@ -445,25 +451,15 @@ describe("flight server invariants", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.findMembershipById.mockResolvedValue({
-      id: "pilot-test",
-      tenantId: "tenant-test",
-      role: "pilot",
-      status: "active",
-    });
-    mocks.findScheduleRequest.mockResolvedValue(scheduleRequest);
-    const stored = makeFlight({
-      scheduleRequestId: "request-test",
-      status: "offered",
-      etd: new Date("2026-09-10T08:30:00.000Z"),
-      eta: new Date("2026-09-10T10:00:00.000Z"),
-    });
-    mocks.createFlight.mockResolvedValue(stored);
-    mocks.createFlights.mockResolvedValue([stored]);
-    mocks.findFlight.mockResolvedValue(stored);
-    mocks.findReplacementFlight.mockResolvedValue(null);
-    mocks.updateFlight.mockResolvedValue(stored);
-    mocks.createReplacementFlight.mockResolvedValue({
+    findMembershipById.mockResolvedValue(activePilot);
+    scheduleRepo.findScheduleRequest.mockResolvedValue(request);
+    flightRepo.countNonCancelledScheduleRequestFlights.mockResolvedValue(0);
+    flightRepo.createFlight.mockResolvedValue(storedFlight);
+    flightRepo.fulfillScheduleRequest.mockResolvedValue([storedFlight]);
+    flightRepo.findFlight.mockResolvedValue(storedFlight);
+    flightRepo.findReplacementFlight.mockResolvedValue(null);
+    flightRepo.updateFlight.mockResolvedValue(storedFlight);
+    flightRepo.createReplacementFlight.mockResolvedValue({
       ...storedFlight,
       id: "replacement-flight",
       replacesFlightId: flightId,
@@ -483,10 +479,7 @@ describe("flight server invariants", () => {
 
   it("requires an assigned active pilot for an offered flight", async () => {
     await expect(
-      createFlight(
-        dispatcher,
-        input({ pilotMembershipId: null, scheduleRequestId: null }),
-      ),
+      createFlight(actor, input({ pilotMembershipId: null })),
     ).rejects.toMatchObject({ code: "UNPROCESSABLE", status: 422 });
     expect(mocks.createFlight).not.toHaveBeenCalled();
   });
@@ -524,44 +517,55 @@ describe("flight server invariants", () => {
     },
   );
 
-  it("inherits the request owner and rejects assignment overrides", async () => {
+  it("rejects an assignment override on a request-linked batch", async () => {
     await expect(
-      createFlight(
-        dispatcher,
-        input({
-          scheduleRequestId: "request-test",
-          pilotMembershipId: "other-pilot",
-        }),
-      ),
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        expectedRequestVersion: 1,
+        flights: [
+          {
+            ...input(),
+            pilotMembershipId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          },
+        ],
+      }),
     ).rejects.toMatchObject({ code: "UNPROCESSABLE", status: 422 });
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+  });
 
-    await createFlight(
-      dispatcher,
-      input({ scheduleRequestId: "request-test", pilotMembershipId: null }),
-    );
-    expect(mocks.createFlight).toHaveBeenCalledWith(
-      expect.objectContaining({ pilotMembershipId: "pilot-test" }),
+  it("creates single flights as explicitly ad-hoc records", async () => {
+    await createFlight(actor, input());
+    expect(flightRepo.createFlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorMembershipId: actor.membershipId,
+        scheduleRequestId: null,
+        pilotMembershipId: pilotId,
+      }),
     );
   });
 
-  it("rejects a request-linked flight spanning an availability gap", async () => {
+  it("rejects a request-linked batch flight spanning the gap between slots", async () => {
     await expect(
-      createFlight(
-        dispatcher,
-        input({
-          scheduleRequestId: "request-test",
-          etd: new Date("2026-09-10T11:30:00.000Z"),
-          eta: new Date("2026-09-10T14:30:00.000Z"),
-        }),
-      ),
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        expectedRequestVersion: 1,
+        flights: [
+          {
+            ...input(),
+            etd: new Date("2026-09-10T11:30:00.000Z"),
+            eta: new Date("2026-09-10T14:30:00.000Z"),
+          },
+        ],
+      }),
     ).rejects.toMatchObject({ code: "UNPROCESSABLE", status: 422 });
-    expect(mocks.createFlight).not.toHaveBeenCalled();
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
   });
 
   it("validates every bulk flight before inserting the batch", async () => {
     await expect(
-      bulkCreateFlights(dispatcher, {
-        scheduleRequestId: "request-test",
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        expectedRequestVersion: 1,
         flights: [
           {
             flightNumber: "SK101",
@@ -580,7 +584,105 @@ describe("flight server invariants", () => {
         ],
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST", status: 400 });
-    expect(mocks.createFlights).not.toHaveBeenCalled();
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
+  });
+
+  it("appends only the cumulative remainder of a partially fulfilled request", async () => {
+    scheduleRepo.findScheduleRequest.mockResolvedValueOnce({
+      ...request,
+      desiredFlightCount: 3,
+      version: 4,
+      status: "partially_fulfilled",
+    });
+    flightRepo.fulfillScheduleRequest.mockResolvedValueOnce([storedFlight]);
+
+    await bulkCreateFlights(actor, {
+      scheduleRequestId: requestId,
+      expectedRequestVersion: 4,
+      flights: [
+        {
+          flightNumber: "SK103",
+          depIcao: "EKCH",
+          arrIcao: "ENGM",
+          etd: new Date("2026-09-10T08:30:00.000Z"),
+          eta: new Date("2026-09-10T10:00:00.000Z"),
+        },
+      ],
+    });
+
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedRequestVersion: 4,
+        expectedRequestStatus: "partially_fulfilled",
+        actorMembershipId: actor.membershipId,
+        flights: [expect.objectContaining({ flightNumber: "SK103" })],
+      }),
+    );
+  });
+
+  it("rejects a follow-up batch that exceeds cumulative remaining capacity", async () => {
+    scheduleRepo.findScheduleRequest.mockResolvedValueOnce({
+      ...request,
+      desiredFlightCount: 2,
+      status: "partially_fulfilled",
+    });
+    flightRepo.fulfillScheduleRequest.mockResolvedValueOnce(null);
+    flightRepo.countNonCancelledScheduleRequestFlights.mockResolvedValueOnce(1);
+
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        expectedRequestVersion: 1,
+        flights: [
+          {
+            flightNumber: "SK103",
+            depIcao: "EKCH",
+            arrIcao: "ENGM",
+            etd: new Date("2026-09-10T08:30:00.000Z"),
+            eta: new Date("2026-09-10T10:00:00.000Z"),
+          },
+          {
+            flightNumber: "SK104",
+            depIcao: "EKCH",
+            arrIcao: "ENGM",
+            etd: new Date("2026-09-10T10:15:00.000Z"),
+            eta: new Date("2026-09-10T11:30:00.000Z"),
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+      details: { existingFlightCount: 1, remainingFlightCount: 1 },
+    });
+    expect(flightRepo.fulfillScheduleRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects fulfillment while the request is pending or terminal", async () => {
+    scheduleRepo.findScheduleRequest.mockResolvedValueOnce({
+      ...request,
+      status: "pending",
+    });
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        expectedRequestVersion: 1,
+        flights: [],
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+
+    scheduleRepo.findScheduleRequest.mockResolvedValueOnce({
+      ...request,
+      status: "cancelled",
+    });
+    await expect(
+      bulkCreateFlights(actor, {
+        scheduleRequestId: requestId,
+        expectedRequestVersion: 1,
+        flights: [],
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+    expect(flightRepo.fulfillScheduleRequest).not.toHaveBeenCalled();
   });
 
   it("validates patch times against the merged record", async () => {

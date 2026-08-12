@@ -28,6 +28,7 @@ describe("OfferBuilder", () => {
           slug="vsas"
           requestId="request-1"
           desiredFlightCount={2}
+          expectedRequestVersion={3}
           onOffered={onOffered}
         />
       </TestQueryProvider>,
@@ -67,11 +68,12 @@ describe("OfferBuilder", () => {
       );
     }
     await user.click(
-      screen.getByRole("button", { name: "Offer complete schedule" }),
+      screen.getByRole("button", { name: "Offer flight batch" }),
     );
     await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1));
     const payload = JSON.parse(apiMock.mock.calls[0][1].body);
     expect(payload.scheduleRequestId).toBe("request-1");
+    expect(payload.expectedRequestVersion).toBe(3);
     expect(payload.flights).toHaveLength(2);
     expect(payload.flights[0]).toMatchObject({
       flightNumber: "SK101",
@@ -79,5 +81,55 @@ describe("OfferBuilder", () => {
       arrIcao: "ENGM",
     });
     expect(onOffered).toHaveBeenCalled();
+  });
+
+  it("offers one flight now and leaves the remainder for a follow-up batch", async () => {
+    const user = userEvent.setup();
+    apiMock.mockResolvedValue({ flights: [] });
+    const onOffered = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TestQueryProvider>
+        <OfferBuilder
+          slug="vsas"
+          requestId="request-1"
+          desiredFlightCount={3}
+          flightCount={2}
+          expectedRequestVersion={4}
+          onOffered={onOffered}
+        />
+      </TestQueryProvider>,
+    );
+
+    expect(screen.getByText("Flight 2 of 2")).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText("Flights in this batch"),
+      "1",
+    );
+    expect(screen.queryByText("Flight 2 of 2")).not.toBeInTheDocument();
+    expect(screen.getByText("Flight 1 of 1")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Flight number"), "SK201");
+    await user.type(screen.getByLabelText("Departure ICAO"), "EKCH");
+    await user.type(screen.getByLabelText("Arrival ICAO"), "ESSA");
+    fireEvent.change(screen.getByLabelText("ETD (UTC)"), {
+      target: { value: "2026-09-10T10:00" },
+    });
+    fireEvent.change(screen.getByLabelText("ETA (UTC)"), {
+      target: { value: "2026-09-10T11:10" },
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Offer flight batch" }),
+    );
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1));
+    const payload = JSON.parse(apiMock.mock.calls[0][1].body);
+    expect(payload).toMatchObject({
+      scheduleRequestId: "request-1",
+      expectedRequestVersion: 4,
+    });
+    expect(payload.flights).toHaveLength(1);
+    expect(
+      screen.getByText(/1 will remain for a follow-up batch/i),
+    ).toBeInTheDocument();
   });
 });

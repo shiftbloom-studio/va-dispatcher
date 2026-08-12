@@ -22,7 +22,6 @@ const icao = z
 
 const flightBodySchema = z
   .object({
-    scheduleRequestId: z.string().uuid().optional().nullable(),
     pilotMembershipId: z.string().uuid().optional().nullable(),
     flightNumber: z.string().min(2).max(12),
     depIcao: icao,
@@ -33,6 +32,7 @@ const flightBodySchema = z
     status: z.enum(["draft", "offered"]).optional(),
     dispatcherNotes: z.string().max(2000).optional().nullable(),
   })
+  .strict()
   .refine((value) => value.eta > value.etd, {
     message: "eta must be after etd",
     path: ["eta"],
@@ -87,6 +87,7 @@ flightRoutes.post(
     "json",
     z.object({
       scheduleRequestId: z.string().uuid(),
+      expectedRequestVersion: z.number().int().min(1),
       flights: z.array(bulkFlightItemSchema).min(1).max(50),
     }),
   ),

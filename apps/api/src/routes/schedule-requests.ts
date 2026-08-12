@@ -33,6 +33,14 @@ const createSchema = z.object({
     .catchall(z.unknown()),
 });
 
+const expectedVersionSchema = z.object({
+  expectedVersion: z.number().int().min(1),
+});
+
+const editSchema = createSchema.extend({
+  expectedVersion: z.number().int().min(1),
+});
+
 scheduleRequestRoutes.post(
   "/schedule-requests",
   zValidator("json", createSchema),
@@ -91,27 +99,58 @@ scheduleRequestRoutes.get("/schedule-requests/:id", async (c) => {
   );
   return c.json({
     request: serializeRequest(requestDetail.request),
-    flights: requestDetail.flights,
+    fulfillment: requestDetail.fulfillment,
   });
 });
 
-scheduleRequestRoutes.post("/schedule-requests/:id/cancel", async (c) => {
-  const auth = c.get("auth");
-  const scheduleRequest = await scheduleService.transitionRequest(
-    {
-      tenantId: auth.tenantId,
-      membershipId: auth.membershipId,
-      role: auth.role,
-    },
-    c.req.param("id"),
-    "cancelled",
-  );
-  return c.json({ request: serializeRequest(scheduleRequest) });
-});
+scheduleRequestRoutes.patch(
+  "/schedule-requests/:id",
+  zValidator("json", editSchema),
+  async (c) => {
+    const auth = c.get("auth");
+    const { expectedVersion, ...input } = c.req.valid("json");
+    const scheduleRequest = await scheduleService.editRequest(
+      {
+        tenantId: auth.tenantId,
+        membershipId: auth.membershipId,
+        role: auth.role,
+      },
+      c.req.param("id"),
+      expectedVersion,
+      input,
+    );
+    return c.json({ request: serializeRequest(scheduleRequest) });
+  },
+);
+
+scheduleRequestRoutes.post(
+  "/schedule-requests/:id/cancel",
+  zValidator(
+    "json",
+    expectedVersionSchema.extend({
+      linkedFlightAction: z.enum(["keep", "cancel_predeparture"]),
+      reason: z.string().trim().max(500).optional(),
+    }),
+  ),
+  async (c) => {
+    const auth = c.get("auth");
+    const scheduleRequest = await scheduleService.cancelRequest(
+      {
+        tenantId: auth.tenantId,
+        membershipId: auth.membershipId,
+        role: auth.role,
+      },
+      c.req.param("id"),
+      c.req.valid("json"),
+    );
+    return c.json({ request: serializeRequest(scheduleRequest) });
+  },
+);
 
 scheduleRequestRoutes.post(
   "/schedule-requests/:id/review",
   requireRole("dispatcher"),
+  zValidator("json", expectedVersionSchema),
   async (c) => {
     const auth = c.get("auth");
     const scheduleRequest = await scheduleService.transitionRequest(
@@ -122,6 +161,7 @@ scheduleRequestRoutes.post(
       },
       c.req.param("id"),
       "in_review",
+      c.req.valid("json"),
     );
     return c.json({ request: serializeRequest(scheduleRequest) });
   },
@@ -132,11 +172,13 @@ scheduleRequestRoutes.post(
   requireRole("dispatcher"),
   zValidator(
     "json",
-    z.object({ reason: z.string().max(500).optional() }).optional(),
+    expectedVersionSchema.extend({
+      reason: z.string().trim().max(500).optional(),
+    }),
   ),
   async (c) => {
     const auth = c.get("auth");
-    const body = c.req.valid("json") ?? {};
+    const body = c.req.valid("json");
     const scheduleRequest = await scheduleService.transitionRequest(
       {
         tenantId: auth.tenantId,
@@ -145,7 +187,7 @@ scheduleRequestRoutes.post(
       },
       c.req.param("id"),
       "rejected",
-      { reason: body.reason },
+      body,
     );
     return c.json({ request: serializeRequest(scheduleRequest) });
   },
@@ -160,8 +202,10 @@ function serializeRequest(scheduleRequest: {
   windowEnd: Date;
   desiredFlightCount: number;
   preferences: Record<string, unknown>;
+  version: number;
   status: string;
   rejectReason: string | null;
+  cancelReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -174,8 +218,10 @@ function serializeRequest(scheduleRequest: {
     windowEnd: scheduleRequest.windowEnd.toISOString(),
     desiredFlightCount: scheduleRequest.desiredFlightCount,
     preferences: scheduleRequest.preferences,
+    version: scheduleRequest.version,
     status: scheduleRequest.status,
     rejectReason: scheduleRequest.rejectReason,
+    cancelReason: scheduleRequest.cancelReason,
     createdAt: scheduleRequest.createdAt.toISOString(),
     updatedAt: scheduleRequest.updatedAt.toISOString(),
   };
