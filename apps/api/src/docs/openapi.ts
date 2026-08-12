@@ -98,6 +98,15 @@ const paginationParameters = [
   }),
 ];
 
+const flightPaginationParameters = [
+  queryParameter(
+    "cursor",
+    "Opaque, versioned continuation token returned as nextCursor by this operation. Pass it unchanged with the same filters; cursors from older versions or other resource lists are rejected.",
+    { type: "string" },
+  ),
+  paginationParameters[1],
+];
+
 const authenticatedErrors = {
   "400": responseRef("BadRequest"),
   "401": responseRef("Unauthorized"),
@@ -2328,13 +2337,17 @@ export const openApiDocument = {
         operationId: "listFlights",
         summary: "List visible flights",
         description:
-          "Pilots see only assigned flights; dispatchers and admins see all tenant flights.",
+          "Pilots see only assigned flights; dispatchers and admins see all tenant flights. Results use a stable newest-scheduled-departure-first order with a deterministic tie-breaker.",
         parameters: [
-          ...paginationParameters,
-          queryParameter("status", "Comma-separated flight statuses.", {
-            type: "string",
-            example: "offered,accepted",
-          }),
+          ...flightPaginationParameters,
+          queryParameter(
+            "status",
+            "Comma-separated FlightStatus values. Empty or unknown values are rejected and duplicates are ignored.",
+            {
+              type: "string",
+              example: "offered,accepted",
+            },
+          ),
           queryParameter(
             "fromEtd",
             "Earliest estimated departure time.",

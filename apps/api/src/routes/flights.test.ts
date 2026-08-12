@@ -39,6 +39,7 @@ const flightService = vi.hoisted(() => ({
 vi.mock("../domain/flights/service.js", () => flightService);
 
 import { errorHandler } from "../middleware/error.js";
+import { encodeCursor, encodeFlightCursor } from "../lib/pagination.js";
 import { flightRoutes } from "./flights.js";
 
 const app = new Hono();
@@ -106,6 +107,10 @@ describe("flight HTTP creation contract", () => {
         flightIds: [storedFlight.id],
       },
     });
+    flightService.listFlightsForActor.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    });
   });
 
   it("rejects schedule-linked fields on the ad-hoc create endpoint", async () => {
@@ -160,5 +165,72 @@ describe("flight HTTP creation contract", () => {
         flightIds: [storedFlight.id],
       },
     });
+  });
+});
+
+describe("flight list query contract", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    flightService.listFlightsForActor.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    });
+  });
+
+  it("decodes a versioned cursor and deduplicates valid status filters", async () => {
+    const cursor = encodeFlightCursor({
+      etd: validAdHocFlight.etd,
+      id: storedFlight.id,
+    });
+    const query = new URLSearchParams({
+      status: "offered,accepted,offered",
+      cursor,
+      fromEtd: "2026-09-10T08:00:00.000Z",
+      toEtd: "2026-09-10T18:00:00.000Z",
+      scheduleRequestId: fixture.requestId,
+    });
+    const response = await app.request(`/flights?${query}`);
+
+    expect(response.status).toBe(200);
+    expect(flightService.listFlightsForActor).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "dispatcher" }),
+      expect.objectContaining({
+        status: ["offered", "accepted"],
+        fromEtd: new Date("2026-09-10T08:00:00.000Z"),
+        toEtd: new Date("2026-09-10T18:00:00.000Z"),
+        scheduleRequestId: fixture.requestId,
+        cursor: {
+          v: 1,
+          kind: "flight-etd-desc",
+          etd: validAdHocFlight.etd,
+          id: storedFlight.id,
+        },
+      }),
+    );
+  });
+
+  it.each(["", "offered,,accepted", "offered,unknown"])(
+    "rejects an invalid status set (%s)",
+    async (status) => {
+      const response = await app.request(
+        `/flights?status=${encodeURIComponent(status)}`,
+      );
+
+      expect(response.status).toBe(400);
+      expect(flightService.listFlightsForActor).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an unversioned cursor from the former creation-time contract", async () => {
+    const oldCursor = encodeCursor({
+      sortAt: storedFlight.createdAt.toISOString(),
+      id: storedFlight.id,
+    });
+    const response = await app.request(
+      `/flights?cursor=${encodeURIComponent(oldCursor)}`,
+    );
+
+    expect(response.status).toBe(400);
+    expect(flightService.listFlightsForActor).not.toHaveBeenCalled();
   });
 });

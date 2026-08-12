@@ -135,6 +135,22 @@ describe("API documentation", () => {
     });
   });
 
+  it("documents the opaque versioned flight continuation contract", () => {
+    const operation = openApiDocument.paths["/flights"].get;
+    const parameters = operation.parameters as unknown as Array<{
+      name: string;
+      description: string;
+    }>;
+    const cursor = parameters.find((parameter) => parameter.name === "cursor");
+    const status = parameters.find((parameter) => parameter.name === "status");
+
+    expect(operation.description).toContain("deterministic tie-breaker");
+    expect(cursor?.description).toContain("Opaque, versioned");
+    expect(cursor?.description).toContain("same filters");
+    expect(cursor?.description).toContain("older versions");
+    expect(status?.description).toContain("unknown values are rejected");
+  });
+
   it("has resolvable references and unique, described operations", () => {
     const operationIds: string[] = [];
 

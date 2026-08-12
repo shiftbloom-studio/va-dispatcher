@@ -13,8 +13,8 @@ import {
   type ScheduleFulfillmentAttempt,
 } from "../schema.js";
 import {
-  decodeCursor,
-  encodeCursor,
+  encodeFlightCursor,
+  type FlightCursorPayload,
   type PageResult,
 } from "../../lib/pagination.js";
 
@@ -538,7 +538,7 @@ export async function listFlights(input: {
   fromEtd?: Date;
   toEtd?: Date;
   scheduleRequestId?: string;
-  cursor?: string;
+  cursor?: FlightCursorPayload;
   limit: number;
 }): Promise<PageResult<Flight>> {
   const db = getDb();
@@ -564,21 +564,12 @@ export async function listFlights(input: {
     conditions.push(lte(flights.etd, input.toEtd));
   }
   if (input.cursor) {
-    const cursor = decodeCursor(input.cursor);
-    const cursorTimestamp = new Date(cursor.sortAt);
+    const cursorEtd = new Date(input.cursor.etd);
     conditions.push(
-      cursor.legacy
-        ? or(
-            lt(flights.createdAt, cursorTimestamp),
-            and(
-              eq(flights.createdAt, cursorTimestamp),
-              lt(flights.id, cursor.id),
-            ),
-          )!
-        : or(
-            lt(flights.etd, cursorTimestamp),
-            and(eq(flights.etd, cursorTimestamp), lt(flights.id, cursor.id)),
-          )!,
+      or(
+        lt(flights.etd, cursorEtd),
+        and(eq(flights.etd, cursorEtd), lt(flights.id, input.cursor.id)),
+      )!,
     );
   }
 
@@ -594,8 +585,8 @@ export async function listFlights(input: {
   const lastItem = items.at(-1);
   const nextCursor =
     hasMore && lastItem
-      ? encodeCursor({
-          sortAt: lastItem.etd.toISOString(),
+      ? encodeFlightCursor({
+          etd: lastItem.etd.toISOString(),
           id: lastItem.id,
         })
       : null;
