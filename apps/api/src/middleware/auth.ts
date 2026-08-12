@@ -4,6 +4,8 @@ import { env } from "../env.js";
 import { AppError } from "../lib/errors.js";
 import {
   findMembership,
+  provisionPilotMembershipWithAudit,
+  recoverMembershipAsTenantAdmin,
   upsertMembership,
 } from "../db/repositories/memberships.js";
 import {
@@ -147,13 +149,31 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     }
 
     let membership = await findMembership(tenant.id, clerkUserId);
+    const clerkRole = mapClerkOrgRole(jwtPayload.org_role ?? jwtPayload.o?.rol);
     if (!membership) {
-      // Auto-provision pilot membership on first login
-      membership = await upsertMembership({
+      // Every new Clerk member starts as a pilot and is atomically audited.
+      // A Clerk organization admin may be promoted
+      // only by the serialized, audited no-active-admin recovery statement.
+      // Dispatcher/admin privilege otherwise requires an audited directory
+      // sync or explicit application-admin change.
+      membership = await provisionPilotMembershipWithAudit({
         tenantId: tenant.id,
         clerkUserId,
-        role: mapClerkOrgRole(jwtPayload.org_role ?? jwtPayload.o?.rol),
       });
+    }
+
+    // Explicit break-glass recovery: a verified Clerk organization admin may
+    // repair their own local membership only when no active app admin exists.
+    // Normal role changes continue through the audited admin control plane.
+    if (
+      clerkRole === "admin" &&
+      (membership.role !== "admin" || membership.status !== "active")
+    ) {
+      const recovered = await recoverMembershipAsTenantAdmin({
+        tenantId: tenant.id,
+        membershipId: membership.id,
+      });
+      if (recovered) membership = recovered;
     }
 
     if (membership.status !== "active") {

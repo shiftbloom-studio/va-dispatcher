@@ -155,13 +155,20 @@ describe("live API contract smoke fixtures", () => {
         items: [
           {
             id: "m1",
+            clerkUserId: "user_1",
             role: "pilot",
             displayName: "A Pilot",
             pilotCallsign: "SAS101",
             status: "active",
             createdAt: "2026-08-01T00:00:00.000Z",
+            updatedAt: "2026-08-01T00:00:00.000Z",
+            openFlightCount: 0,
+            activeFlightCount: 0,
+            openScheduleRequestCount: 0,
+            terminalRequestLinkedFlightCount: 0,
           },
         ],
+        nextCursor: null,
       }).items,
     ).toHaveLength(1);
     expect(

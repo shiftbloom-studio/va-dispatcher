@@ -168,6 +168,12 @@ jobs:
           test "$(psql --dbname va_dispatch_rollback --tuples-only --no-align --command "SELECT to_regclass('public.migration_partial_execution_probe') IS NULL")" = "t"
           test "$(psql --dbname va_dispatch_rollback --tuples-only --no-align --command "SELECT count(*) FROM drizzle.__drizzle_migrations")" = "0"
 
+      - name: Verify administrative PostgreSQL invariants
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/va_dispatch_fresh
+          ADMIN_TEST_CONFIRM_DATABASE: va_dispatch_fresh
+        run: pnpm --filter @va-dispatch/api test:postgres
+
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
