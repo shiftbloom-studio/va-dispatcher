@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { tenants, type Tenant } from "../schema.js";
 
@@ -16,7 +16,11 @@ export async function findTenantByClerkOrgId(
 
 export async function findTenantById(id: string): Promise<Tenant | null> {
   const db = getDb();
-  const rows = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1);
+  const rows = await db
+    .select()
+    .from(tenants)
+    .where(eq(tenants.id, id))
+    .limit(1);
   return rows[0] ?? null;
 }
 
@@ -33,6 +37,11 @@ export async function findTenantBySlug(slug: string): Promise<Tenant | null> {
 export async function listTenants(): Promise<Tenant[]> {
   const db = getDb();
   return db.select().from(tenants);
+}
+
+export async function listHoppieTenants(): Promise<Tenant[]> {
+  const db = getDb();
+  return db.select().from(tenants).where(isNotNull(tenants.hoppieLogonEnc));
 }
 
 export async function upsertTenantBySlug(input: {

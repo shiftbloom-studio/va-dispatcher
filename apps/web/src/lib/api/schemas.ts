@@ -35,9 +35,20 @@ export type Tenant = z.infer<typeof tenantSchema>;
 
 export const tenantDetailSchema = tenantSchema.extend({
   hasHoppieLogon: z.boolean(),
+  acarsProvider: z.enum(["mock", "hoppie"]),
+  hoppiePollingEnabled: z.boolean(),
+  hoppieLastTestedAt: z.string().nullable(),
   settings: z.record(z.string(), z.unknown()),
 });
 export type TenantDetail = z.infer<typeof tenantDetailSchema>;
+
+export const acarsConfigSchema = tenantDetailSchema.pick({
+  hoppieStation: true,
+  hasHoppieLogon: true,
+  acarsProvider: true,
+  hoppiePollingEnabled: true,
+  hoppieLastTestedAt: true,
+});
 
 export const meSchema = z.object({
   user: z
@@ -58,6 +69,10 @@ export const meSchema = z.object({
   tenant: tenantSchema.nullable(),
 });
 export type Me = z.infer<typeof meSchema>;
+
+export const meUpdateResponseSchema = z.object({
+  membership: meSchema.shape.membership.unwrap(),
+});
 
 export const scheduleRequestSchema = z.object({
   id: z.string(),
