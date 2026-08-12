@@ -1,7 +1,6 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 
-import { QueryProvider } from "@/components/query-provider";
 import { getTenantAuthRoutes } from "@/lib/auth-routes";
 
 export default async function TenantLayout({
@@ -13,13 +12,12 @@ export default async function TenantLayout({
 }) {
   const { slug } = await params;
   const authRoutes = getTenantAuthRoutes(slug);
-  const content = <QueryProvider>{children}</QueryProvider>;
   const fixtureMode =
     process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS === "true" &&
     process.env.NODE_ENV !== "production";
 
   return fixtureMode ? (
-    content
+    children
   ) : (
     <ClerkProvider
       signInUrl={authRoutes.signIn}
@@ -28,7 +26,7 @@ export default async function TenantLayout({
       signUpFallbackRedirectUrl={authRoutes.home}
       taskUrls={authRoutes.taskUrls}
     >
-      {content}
+      {children}
     </ClerkProvider>
   );
 }

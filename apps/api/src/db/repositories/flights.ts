@@ -115,14 +115,20 @@ export async function listFlights(input: {
   }
   if (input.cursor) {
     const cursor = decodeCursor(input.cursor);
+    const cursorTimestamp = new Date(cursor.sortAt);
     conditions.push(
-      or(
-        lt(flights.createdAt, new Date(cursor.createdAt)),
-        and(
-          eq(flights.createdAt, new Date(cursor.createdAt)),
-          lt(flights.id, cursor.id),
-        ),
-      )!,
+      cursor.legacy
+        ? or(
+            lt(flights.createdAt, cursorTimestamp),
+            and(
+              eq(flights.createdAt, cursorTimestamp),
+              lt(flights.id, cursor.id),
+            ),
+          )!
+        : or(
+            lt(flights.etd, cursorTimestamp),
+            and(eq(flights.etd, cursorTimestamp), lt(flights.id, cursor.id)),
+          )!,
     );
   }
 
@@ -139,7 +145,7 @@ export async function listFlights(input: {
   const nextCursor =
     hasMore && lastItem
       ? encodeCursor({
-          createdAt: lastItem.createdAt.toISOString(),
+          sortAt: lastItem.etd.toISOString(),
           id: lastItem.id,
         })
       : null;

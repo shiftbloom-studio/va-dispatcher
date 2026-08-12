@@ -11,7 +11,7 @@ import {
   upsertTenantBySlug,
 } from "../db/repositories/tenants.js";
 import { mapClerkOrgRole, roleAtLeast } from "../domain/members/roles.js";
-import type { MemberRole } from "../db/schema.js";
+import type { MemberRole, Membership, Tenant } from "../db/schema.js";
 import { hasDatabase } from "../db/client.js";
 
 export type AuthContext = {
@@ -20,6 +20,8 @@ export type AuthContext = {
   membershipId: string;
   role: MemberRole;
   clerkOrgId: string;
+  tenant: Tenant;
+  membership: Membership;
 };
 
 export type AppVariables = {
@@ -82,6 +84,8 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
         membershipId: membership.id,
         role: membership.role,
         clerkOrgId,
+        tenant,
+        membership,
       });
       await next();
       return;
@@ -162,6 +166,8 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       membershipId: membership.id,
       role: membership.role,
       clerkOrgId,
+      tenant,
+      membership,
     });
 
     await next();

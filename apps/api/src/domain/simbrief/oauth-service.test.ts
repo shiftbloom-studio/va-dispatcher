@@ -233,7 +233,10 @@ describe("Navigraph OAuth service", () => {
     resetEnvCache();
     loadEnv({
       NODE_ENV: "production",
+      DATABASE_URL: "postgresql://user:pass@localhost/va_dispatch",
+      CLERK_SECRET_KEY: "sk_test_configured",
       TENANT_SECRETS_KEY: encryptionKey,
+      CRON_SECRET: "production-cron-secret",
       NAVIGRAPH_CLIENT_ID: "client-id",
       NAVIGRAPH_CLIENT_SECRET: "client-secret",
       NAVIGRAPH_REDIRECT_URI:
