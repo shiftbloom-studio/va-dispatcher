@@ -7,7 +7,6 @@ import {
   Link2,
   RefreshCw,
   Send,
-  TestTube2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,7 +24,6 @@ import {
   acarsMessageResponseSchema,
   flightPageSchema,
   membersSchema,
-  simulateAcarsResponseSchema,
   tenantDetailSchema,
   type AcarsMessage,
   type Member,
@@ -90,7 +88,6 @@ function MessageCard({
         <span className="rounded bg-slate-100 px-2 py-1 font-bold uppercase">
           {message.msgType}
         </span>
-        <span>Provider: {message.provider}</span>
         {message.flightId ? (
           <Link
             href={`/${slug}/dispatch/flights/${message.flightId}`}
@@ -178,7 +175,7 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
       <PageHeading
         eyebrow="Dispatcher suite"
         title="ACARS workspace"
-        description={`Dispatcher-only station conversations and free-text telex traffic via ${tenant.data.acarsProvider === "hoppie" ? "Hoppie's ACARS" : "the mock provider"}. Times are UTC / Zulu.`}
+        description="Dispatcher-only station conversations and free-text telex traffic via Hoppie's ACARS network. Times are UTC / Zulu."
         action={
           <Link
             href={`/${slug}/settings`}
@@ -263,39 +260,32 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
               ) : null}
             </div>
           </Card>
-          {tenant.data.acarsProvider === "mock" ? (
-            <MockSimulator
-              onStored={async () => {
-                await Promise.all([
-                  inbox.refetch(),
-                  station ? conversation.refetch() : Promise.resolve(),
-                ]);
-              }}
-            />
-          ) : null}
         </div>
-        <ComposeTelex
-          key={station ?? "new-message"}
-          flights={flights.data.items}
-          members={members.data.items}
-          provider={tenant.data.acarsProvider}
-          defaultRecipient={station ?? ""}
-          onSent={async () => {
-            await Promise.all([
-              queryClient.invalidateQueries({ queryKey: [slug, "acars"] }),
-              inbox.refetch(),
-            ]);
-          }}
-        />
+        {tenant.data.hasHoppieLogon ? (
+          <ComposeTelex
+            key={station ?? "new-message"}
+            flights={flights.data.items}
+            members={members.data.items}
+            defaultRecipient={station ?? ""}
+            onSent={async () => {
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: [slug, "acars"] }),
+                inbox.refetch(),
+              ]);
+            }}
+          />
+        ) : (
+          <HoppieSetupRequired slug={slug} />
+        )}
       </div>
       <p className="mt-4 text-xs text-slate-500">
         Inbox and open station conversations refresh every 10 seconds while
         visible and online.{" "}
-        {tenant.data.acarsProvider === "hoppie"
+        {tenant.data.hasHoppieLogon
           ? tenant.data.hoppiePollingEnabled
             ? "The ground station checks Hoppie for inbound messages on its scheduled poll, normally once per minute. "
-            : "Scheduled inbound Hoppie polling is currently disabled in the deployment settings. "
-          : "Mock inbound messages are ingested during simulation. "}
+            : "Scheduled inbound Hoppie polling is currently unavailable. "
+          : "Connect the Virtual Airline's Hoppie ground station to enable live traffic. "}
         Failed sends are never retried automatically.
       </p>
     </>
@@ -305,7 +295,6 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
 function ComposeTelex({
   flights,
   members,
-  provider,
   defaultRecipient,
   onSent,
 }: {
@@ -317,7 +306,6 @@ function ComposeTelex({
     pilotMembershipId: string | null;
   }>;
   members: Member[];
-  provider: "mock" | "hoppie";
   defaultRecipient: string;
   onSent: () => Promise<void>;
 }) {
@@ -339,9 +327,7 @@ function ComposeTelex({
       }),
     onSuccess: async () => {
       setSuccess(
-        provider === "hoppie"
-          ? `Hoppie accepted the telex to ${recipient.trim().toUpperCase()} for store-and-forward. This is not a delivery or read receipt.`
-          : `Mock telex stored for ${recipient.trim().toUpperCase()}.`,
+        `Hoppie accepted the telex to ${recipient.trim().toUpperCase()} for store-and-forward. This is not a delivery or read receipt.`,
       );
       setBody("");
       await onSent();
@@ -352,7 +338,7 @@ function ComposeTelex({
     <Card className="h-fit overflow-hidden 2xl:sticky 2xl:top-22">
       <CardHeader
         title="Compose telex"
-        description="A successful response means the provider accepted and stored this outbound message."
+        description="A successful response means Hoppie accepted and stored this outbound message."
       />
       <form
         onSubmit={(event) => {
@@ -464,104 +450,26 @@ function ComposeTelex({
   );
 }
 
-function MockSimulator({ onStored }: { onStored: () => Promise<void> }) {
-  const api = useApi();
-  const [from, setFrom] = useState("");
-  const [body, setBody] = useState("");
-  const [msgType, setMsgType] = useState("telex");
-  const [result, setResult] = useState<string | null>(null);
-  const simulate = useMutation({
-    mutationFn: () =>
-      api("/acars/simulate", {
-        method: "POST",
-        schema: simulateAcarsResponseSchema,
-        ...jsonBody({ from: from.trim().toUpperCase(), body, msgType }),
-      }),
-    onSuccess: async (data) => {
-      setResult(
-        data.queued
-          ? "Inbound message queued. It will appear after the next ACARS poll, normally within one minute."
-          : `Inbound message stored for ${data.to} and available in the inbox now.`,
-      );
-      setBody("");
-      await onStored();
-    },
-  });
+function HoppieSetupRequired({ slug }: { slug: string }) {
   return (
-    <Card className="overflow-hidden">
+    <Card className="h-fit overflow-hidden 2xl:sticky 2xl:top-22">
       <CardHeader
-        title="Mock inbound simulator"
-        description="Visible only while the API health endpoint reports the mock ACARS provider."
+        title="Hoppie setup required"
+        description="ACARS stays read-only until this Virtual Airline has a verified ground-station connection."
       />
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          setResult(null);
-          if (from.trim() && body.trim()) simulate.mutate();
-        }}
-        className="grid gap-4 p-5 md:grid-cols-[1fr_1fr_2fr_auto] md:items-end"
-      >
-        <div>
-          <Label htmlFor="simulate-from">From station</Label>
-          <Input
-            id="simulate-from"
-            required
-            maxLength={20}
-            className="uppercase"
-            value={from}
-            onChange={(event) => setFrom(event.target.value)}
-            placeholder="SAS123"
-          />
-        </div>
-        <div>
-          <Label htmlFor="simulate-type">Message type</Label>
-          <Select
-            id="simulate-type"
-            value={msgType}
-            onChange={(event) => setMsgType(event.target.value)}
-          >
-            <option value="telex">Telex</option>
-            <option value="progress">Progress</option>
-            <option value="cpdlc">CPDLC</option>
-            <option value="position">Position</option>
-            <option value="other">Other</option>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="simulate-body">Inbound message</Label>
-          <Input
-            id="simulate-body"
-            required
-            maxLength={4000}
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            placeholder="Request latest operational information"
-          />
-        </div>
-        <Button
-          type="submit"
-          disabled={simulate.isPending || !from.trim() || !body.trim()}
+      <div className="space-y-4 p-5 text-sm leading-6 text-slate-700">
+        <p>
+          An administrator must add and test the Virtual Airline&apos;s Hoppie
+          ground-station callsign and logon before dispatchers can send or
+          receive live messages.
+        </p>
+        <Link
+          href={`/${slug}/settings`}
+          className="inline-flex min-h-11 items-center rounded-lg bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
-          <TestTube2 aria-hidden className="size-4" />{" "}
-          {simulate.isPending ? "Simulating…" : "Simulate"}
-        </Button>
-        {result ? (
-          <p
-            role="status"
-            className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900 md:col-span-4"
-          >
-            {result}
-          </p>
-        ) : null}
-        {simulate.isError ? (
-          <p
-            role="alert"
-            className="rounded-lg bg-red-50 p-3 text-sm text-red-800 md:col-span-4"
-          >
-            {apiErrorMessage(simulate.error)}
-          </p>
-        ) : null}
-      </form>
+          Open ACARS settings
+        </Link>
+      </div>
     </Card>
   );
 }

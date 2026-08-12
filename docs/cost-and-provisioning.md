@@ -23,14 +23,14 @@ Goal: **near-zero cost when nobody is using the tool**, while staying ready for 
 
 - Fluid Compute / Active CPU: billed when handling requests, not for sitting idle.
 - Hobby/Pro free allowances cover light VA traffic.
-- The production cron is **every minute** but exits before opening Neon while `ACARS_PROVIDER=mock`. With `hoppie`, it polls only tenants with a saved logon. Vercel Pro is required for that frequency.
+- The production Hoppie cron runs **every minute** and polls only tenants with a saved logon. Vercel Pro is required for that frequency.
 
 ### ACARS
 
-| Mode                    | Idle impact                                                                                          |
-| ----------------------- | ---------------------------------------------------------------------------------------------------- |
-| `ACARS_PROVIDER=mock`   | Cron exits before DB access; tenant Hoppie sends can be tested, but scheduled inbound polling is off |
-| `ACARS_PROVIDER=hoppie` | Cron polls only configured tenants once per minute; outbound sends are immediate                     |
+| Environment        | Behavior                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| Development / test | `ACARS_PROVIDER=mock` uses the internal adapter; no background Hoppie polling                      |
+| Production         | Hoppie is enforced; the cron checks configured tenants once per minute and outbound sends are live |
 
 ## Provisioning steps
 
@@ -49,7 +49,7 @@ vercel integration add clerk --yes
 vercel env pull apps/api/.env.local --yes
 cp apps/api/.env.local apps/api/.env
 # ensure: AUTH_DEV_BYPASS=true for local without Clerk UI
-#         ACARS_PROVIDER=mock (deployment fallback; tenants opt in from Settings)
+#         ACARS_PROVIDER=hoppie (production; tenants configure credentials in Settings)
 #         CRON_SECRET=...
 
 pnpm db:push
@@ -70,5 +70,5 @@ vercel integration open clerk
 
 - Upstash Redis / queues (idle or minimum cost; not needed)
 - Always-on Neon compute
-- 1-minute cron while still on mock ACARS
+- 1-minute Hoppie polling cron before live ACARS is required
 - Extra observability SaaS until you have production traffic

@@ -5,7 +5,7 @@ import {
 import type { AcarsProvider, InboundMessage, SendResult } from "./types.js";
 
 /**
- * DB-backed mock Hoppie network for demos and tests.
+ * DB-backed Hoppie test adapter for local development and automated tests.
  * Outbound telex can optionally enqueue an echo reply to the ground station.
  */
 export class MockAcarsProvider implements AcarsProvider {

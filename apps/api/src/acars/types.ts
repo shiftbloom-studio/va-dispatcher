@@ -20,6 +20,7 @@ export type SendResult = {
 export type AcarsProviderName = "mock" | "hoppie";
 
 export type AcarsProviderErrorCode =
+  | "not_configured"
   | "authentication"
   | "callsign_in_use"
   | "rate_limited"

@@ -9,7 +9,7 @@ Multi-tenant Virtual Airline Live Dispatch & ACARS tool.
 - **One tenant = one Virtual Airline** (first: **vSAS**)
 - **API**: Hono + TypeScript on Vercel Services (`apps/api`)
 - **Web**: Next.js pilot portal + dispatcher suite (`apps/web`)
-- **ACARS**: Hoppie's ACARS via a tenant-scoped adapter (mock until configured)
+- **ACARS**: Hoppie's ACARS with tenant-scoped encrypted ground-station credentials
 
 ## Monorepo
 
@@ -56,10 +56,11 @@ Clerk Organizations must be enabled, organization slugs must be enabled, and the
 
 ## ACARS
 
-Each Virtual Airline starts on the mock provider. An administrator can open
-`/:slug/settings`, enter the VA ground-station callsign and Hoppie logon code,
-and run a connection test. The code is encrypted with `TENANT_SECRETS_KEY` and
-is never returned by the API. Once saved, only that tenant switches to Hoppie.
+Production ACARS uses Hoppie exclusively. An administrator opens
+`/:slug/settings`, enters the VA ground-station callsign and Hoppie logon code,
+and runs a connection test. The code is encrypted with `TENANT_SECRETS_KEY` and
+is never returned by the API. Until that succeeds, ACARS is explicitly
+unconfigured and outbound sends fail safely.
 
 Members save their aircraft callsign on the same settings page. Their personal
 Hoppie logon remains in their simulator ACARS client; this application never
@@ -69,9 +70,9 @@ the same network affiliation.
 Hoppie registration is free and self-service; no separate API approval is
 required: <https://www.hoppie.nl/acars/system/register.html>.
 
-Mock mode supports `POST /api/v1/acars/simulate` for demos. Simulation keeps
-the existing queued response contract and completes ingestion during the active
-request, so background mock polling remains disabled for scale-to-zero.
+Local development and automated tests can use the internal DB-backed adapter
+with `ACARS_PROVIDER=mock`. Its `POST /api/v1/acars/simulate` fixture is never
+enabled in production, even if a stale production variable says `mock`.
 
 ## Cost model (no idle cost)
 
@@ -84,11 +85,11 @@ request, so background mock polling remains disabled for scale-to-zero.
 
 Do **not** add Redis/queues for v1 — they would add idle or minimum footprint.
 
-The poll cron selects only tenants with an encrypted Hoppie logon. Mock tenants
-never make Hoppie requests. Set `ACARS_PROVIDER=hoppie` on a deployment that has
-at least one configured ground station; while it remains `mock`, the cron exits
-before touching Neon. Vercel Pro is required for the one-minute schedule; slower
-cron schedules delay inbound messages but do not affect outbound sends.
+The production poll cron selects only tenants with an encrypted Hoppie logon.
+Set `ACARS_PROVIDER=hoppie` in production for an explicit, self-documenting
+configuration; the runtime enforces Hoppie there regardless. Vercel Pro is
+required for the one-minute schedule; slower cron schedules delay inbound
+messages but do not affect outbound sends.
 
 ## Deploy
 

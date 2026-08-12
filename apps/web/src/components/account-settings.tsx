@@ -317,9 +317,7 @@ function HoppieConfigCard({
     onSuccess: (data) => {
       applyConfig(data);
       setLogon("");
-      setStatus(
-        "Hoppie was disconnected. This Virtual Airline now uses the mock provider.",
-      );
+      setStatus("Hoppie credentials were removed. ACARS is now unconfigured.");
     },
   });
   const mutationError = save.error ?? test.error ?? disconnect.error;
@@ -333,17 +331,17 @@ function HoppieConfigCard({
         action={
           <span
             className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
-              tenant.acarsProvider === "hoppie"
+              tenant.hasHoppieLogon
                 ? "bg-emerald-100 text-emerald-800"
                 : "bg-slate-100 text-slate-700"
             }`}
           >
-            {tenant.acarsProvider === "hoppie" ? (
+            {tenant.hasHoppieLogon ? (
               <CircleCheck aria-hidden className="size-4" />
             ) : (
               <RadioTower aria-hidden className="size-4" />
             )}
-            {tenant.acarsProvider}
+            {tenant.hasHoppieLogon ? "Connected" : "Not configured"}
           </span>
         }
       />
@@ -435,18 +433,14 @@ function HoppieConfigCard({
                 </div>
               </div>
             </div>
-            {tenant.acarsProvider === "hoppie" &&
-            !tenant.hoppiePollingEnabled ? (
+            {tenant.hasHoppieLogon && !tenant.hoppiePollingEnabled ? (
               <p
                 role="alert"
                 className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 lg:col-span-2"
               >
-                Outbound Hoppie sends are active, but scheduled inbound polling
-                is disabled for this deployment. Set{" "}
-                <code className="font-mono font-semibold">
-                  ACARS_PROVIDER=hoppie
-                </code>{" "}
-                in Vercel and redeploy before using the ground station live.
+                The saved Hoppie credential can send messages, but scheduled
+                inbound polling is not active. Contact the deployment operator
+                before using this ground station live.
               </p>
             ) : null}
             {tenant.hoppieLastTestedAt ? (
@@ -487,6 +481,7 @@ function HoppieConfigCard({
                 {save.isPending ? "Testing and saving…" : "Test and save"}
               </Button>
               <Button
+                type="button"
                 variant="secondary"
                 onClick={() => {
                   setStatus(null);
@@ -499,6 +494,7 @@ function HoppieConfigCard({
               </Button>
               {tenant.hasHoppieLogon ? (
                 <Button
+                  type="button"
                   variant="danger"
                   onClick={() => {
                     setStatus(null);
@@ -507,9 +503,7 @@ function HoppieConfigCard({
                   disabled={busy}
                 >
                   <Unplug aria-hidden className="size-4" />
-                  {disconnect.isPending
-                    ? "Switching…"
-                    : "Disconnect and use mock"}
+                  {disconnect.isPending ? "Removing…" : "Remove credentials"}
                 </Button>
               ) : null}
             </div>

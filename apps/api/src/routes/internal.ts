@@ -7,6 +7,7 @@ import { pollAllTenants } from "../domain/acars/service.js";
 import { upsertTenantBySlug } from "../db/repositories/tenants.js";
 import { upsertMembership } from "../db/repositories/memberships.js";
 import { hasDatabase } from "../db/client.js";
+import { isMockAcarsEnabled } from "../acars/factory.js";
 
 export const internalRoutes = new Hono();
 
@@ -19,9 +20,8 @@ function assertCronAuth(authHeader: string | undefined) {
 
 internalRoutes.on(["GET", "POST"], "/internal/cron/acars-poll", async (c) => {
   assertCronAuth(c.req.header("authorization"));
-  // Keep Neon asleep until this deployment intentionally enables live inbound
-  // Hoppie polling. Outbound provider selection remains tenant-scoped.
-  if (env().ACARS_PROVIDER === "mock") {
+  // The local test adapter never needs a background poll or a database wakeup.
+  if (isMockAcarsEnabled()) {
     return c.json({
       ok: true,
       tenants: 0,
