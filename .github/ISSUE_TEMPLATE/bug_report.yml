@@ -1,0 +1,94 @@
+name: Bug report
+description: Report a reproducible problem in VA Dispatch.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Do not include credentials, personal data, or security-sensitive details. Report vulnerabilities through the private link in the issue chooser.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I removed credentials and sensitive data from this report.
+          required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Web application
+        - API
+        - Database or migrations
+        - Authentication or tenancy
+        - ACARS integration
+        - Deployment or tooling
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Provide a release, branch, or commit SHA.
+      placeholder: main at abc1234
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the OS, Node.js and pnpm versions, browser, and relevant deployment mode.
+      placeholder: macOS 15, Node.js 24, pnpm 11.21.0, Chrome 140, local development
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reliable sequence that demonstrates the problem.
+      placeholder: |
+        1. Start ...
+        2. Open ...
+        3. Select ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Redact secrets, tokens, personal data, and operationally sensitive values.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

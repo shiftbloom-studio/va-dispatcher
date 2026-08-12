@@ -5,6 +5,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "server-only": fileURLToPath(
+        new URL("./src/test/server-only.ts", import.meta.url),
+      ),
     },
   },
   test: {
@@ -13,7 +16,16 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     css: true,
     coverage: {
-      reporter: ["text", "html"],
+      provider: "istanbul",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.{test,spec}.{ts,tsx}", "src/test/**"],
+      reporter: ["text", "html", "lcov", "json-summary"],
+      thresholds: {
+        statements: 34,
+        branches: 24,
+        functions: 27,
+        lines: 34,
+      },
     },
   },
 });

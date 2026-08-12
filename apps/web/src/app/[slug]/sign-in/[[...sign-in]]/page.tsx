@@ -2,6 +2,7 @@ import { SignIn } from "@clerk/nextjs";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 
+import { LegalNotice } from "@/components/legal-notice";
 import { getTenantConfig } from "@/lib/tenant";
 
 export default async function SignInPage({
@@ -80,6 +81,7 @@ export default async function SignInPage({
               },
             }}
           />
+          <LegalNotice className="mt-8 text-center text-xs leading-5 text-slate-500" />
         </div>
       </section>
     </main>

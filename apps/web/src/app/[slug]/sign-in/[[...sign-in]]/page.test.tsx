@@ -32,6 +32,14 @@ describe("tenant sign-in", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Source code" })).toHaveAttribute(
+      "href",
+      "https://github.com/shiftbloom-studio/va-dispatcher",
+    );
+    expect(
+      screen.getByRole("link", { name: "AGPL-3.0-or-later" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No warranty")).toBeInTheDocument();
   });
 
   it("rejects an unknown tenant", async () => {
