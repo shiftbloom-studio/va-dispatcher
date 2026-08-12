@@ -106,14 +106,15 @@ describe("Navigraph OAuth service", () => {
     });
   });
 
-  it("creates one-time encrypted state with a valid S256 PKCE challenge", async () => {
+  it("creates server-authenticated state with a valid S256 PKCE challenge", async () => {
     const result = await startNavigraphOauth(actor);
     const authorizationUrl = new URL(result.authorizationUrl);
     const state = authorizationUrl.searchParams.get("state")!;
+    const [version, stateId, mac] = state.split(".");
     const transactionInput = mocks.createTransaction.mock.calls[0]?.[0] as {
       tenantId: string;
       membershipId: string;
-      stateHash: string;
+      stateId: string;
       codeVerifierEnc: string;
       expiresAt: Date;
     };
@@ -125,13 +126,15 @@ describe("Navigraph OAuth service", () => {
       .update(codeVerifier)
       .digest("base64url");
 
-    expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(state).toMatch(/^v1\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
+    expect(version).toBe("v1");
     expect(transactionInput).toMatchObject({
       tenantId: actor.tenantId,
       membershipId: actor.membershipId,
-      stateHash: createHash("sha256").update(state).digest("hex"),
+      stateId,
       expiresAt: new Date("2026-08-12T12:10:00.000Z"),
     });
+    expect(JSON.stringify(transactionInput)).not.toContain(mac);
     expect(transactionInput.codeVerifierEnc).not.toContain(codeVerifier);
     expect(codeVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(authorizationUrl.searchParams.get("code_challenge")).toBe(
@@ -146,8 +149,9 @@ describe("Navigraph OAuth service", () => {
     const started = await startNavigraphOauth(actor);
     const authorizationUrl = new URL(started.authorizationUrl);
     const state = authorizationUrl.searchParams.get("state")!;
+    const stateId = state.split(".")[1]!;
     const transactionInput = mocks.createTransaction.mock.calls.at(-1)?.[0] as {
-      stateHash: string;
+      stateId: string;
       codeVerifierEnc: string;
       expiresAt: Date;
     };
@@ -155,7 +159,7 @@ describe("Navigraph OAuth service", () => {
       id: "30000000-0000-4000-8000-000000000001",
       tenantId: actor.tenantId,
       membershipId: actor.membershipId,
-      stateHash: transactionInput.stateHash,
+      stateId: transactionInput.stateId,
       codeVerifierEnc: transactionInput.codeVerifierEnc,
       expiresAt: transactionInput.expiresAt,
       consumedAt: now,
@@ -168,10 +172,7 @@ describe("Navigraph OAuth service", () => {
       code: "authorization-code",
     });
 
-    expect(mocks.consumeTransaction).toHaveBeenCalledWith(
-      createHash("sha256").update(state).digest("hex"),
-      now,
-    );
+    expect(mocks.consumeTransaction).toHaveBeenCalledWith(stateId, now);
     expect(mocks.exchangeAuthorizationCode).toHaveBeenCalledWith({
       clientId: "client-id",
       clientSecret: "client-secret",
@@ -198,11 +199,27 @@ describe("Navigraph OAuth service", () => {
   });
 
   it("rejects a replayed or expired state before contacting Navigraph", async () => {
+    const started = await startNavigraphOauth(actor);
+    const state = new URL(started.authorizationUrl).searchParams.get("state")!;
     mocks.consumeTransaction.mockResolvedValue(null);
 
     await expect(
-      completeNavigraphOauth({ state: "s".repeat(43), code: "code" }),
+      completeNavigraphOauth({ state, code: "code" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled();
+  });
+
+  it("rejects tampered state before querying the transaction store", async () => {
+    const started = await startNavigraphOauth(actor);
+    const state = new URL(started.authorizationUrl).searchParams.get("state")!;
+    const replacement = state.endsWith("A") ? "B" : "A";
+    const tampered = state.slice(0, -1) + replacement;
+    mocks.consumeTransaction.mockClear();
+
+    await expect(
+      completeNavigraphOauth({ state: tampered, code: "code" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(mocks.consumeTransaction).not.toHaveBeenCalled();
     expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled();
   });
 

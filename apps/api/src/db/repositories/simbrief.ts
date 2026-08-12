@@ -9,7 +9,7 @@ export async function createSimbriefDispatch(input: {
   createdByMembershipId: string;
   simbriefUserId: string;
   staticId: string;
-  callbackTokenHash: string;
+  callbackTokenMac: string;
   request: Record<string, string>;
 }): Promise<SimbriefDispatch> {
   const db = getDb();
@@ -22,7 +22,7 @@ export async function createSimbriefDispatch(input: {
       createdByMembershipId: input.createdByMembershipId,
       simbriefUserId: input.simbriefUserId,
       staticId: input.staticId,
-      callbackTokenHash: input.callbackTokenHash,
+      callbackTokenMac: input.callbackTokenMac,
       request: input.request,
     })
     .returning();
@@ -96,7 +96,7 @@ export async function completeSimbriefDispatch(input: {
       simbriefRequestId: input.simbriefRequestId,
       generatedAt: input.generatedAt,
       syncedAt: input.syncedAt,
-      callbackTokenHash: null,
+      callbackTokenMac: null,
       lastError: null,
       updatedAt: new Date(),
     })

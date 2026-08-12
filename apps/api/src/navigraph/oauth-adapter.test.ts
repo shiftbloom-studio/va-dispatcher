@@ -6,7 +6,7 @@ import {
 
 describe("buildNavigraphAuthorizationUrl", () => {
   it("builds the documented Authorization Code + S256 PKCE request", () => {
-    const state = "s".repeat(43);
+    const state = `v1.${"s".repeat(22)}.${"m".repeat(43)}`;
     const codeChallenge = "c".repeat(43);
     const redirectUri =
       "https://www.va-dispatcher.world/api/v1/simbrief/oauth/callback";
@@ -31,6 +31,17 @@ describe("buildNavigraphAuthorizationUrl", () => {
       code_challenge_method: "S256",
     });
     expect(result).not.toContain("client_secret");
+  });
+
+  it("rejects malformed state before constructing an authorization URL", () => {
+    expect(() =>
+      buildNavigraphAuthorizationUrl({
+        clientId: "va-dispatcher",
+        redirectUri: "https://example.test/callback",
+        state: "line-break\nstate",
+        codeChallenge: "c".repeat(43),
+      }),
+    ).toThrow("Navigraph OAuth state must be 11-512 URL-safe characters");
   });
 });
 

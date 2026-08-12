@@ -7,7 +7,12 @@ import {
 import * as oauthRepo from "../../db/repositories/navigraph-oauth.js";
 import type { Membership } from "../../db/schema.js";
 import { env } from "../../env.js";
-import { decryptSecret, encryptSecret } from "../../lib/crypto.js";
+import {
+  createTokenMac,
+  decryptSecret,
+  encryptSecret,
+  verifyTokenMac,
+} from "../../lib/crypto.js";
 import { AppError } from "../../lib/errors.js";
 import { isUniqueViolation } from "../../lib/postgres.js";
 import {
@@ -18,6 +23,10 @@ import {
 import type { SimbriefActor } from "./service.js";
 
 const OAUTH_TRANSACTION_TTL_MS = 10 * 60 * 1_000;
+const OAUTH_STATE_VERSION = "v1";
+const OAUTH_STATE_ID_LENGTH_BYTES = 16;
+const OAUTH_STATE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+const OAUTH_STATE_MAC_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export type NavigraphOauthStart = {
   authorizationUrl: string;
@@ -43,19 +52,19 @@ export async function startNavigraphOauth(
 ): Promise<NavigraphOauthStart> {
   await requireMembership(actor.tenantId, actor.membershipId);
   const config = requireNavigraphOauthConfig();
-  const state = randomBytes(32).toString("base64url");
+  const { state, stateId } = issueOauthState(config.secretsKey);
   const codeVerifier = randomBytes(32).toString("base64url");
   const codeChallenge = createHash("sha256")
     .update(codeVerifier)
     .digest("base64url");
   const expiresAt = new Date(Date.now() + OAUTH_TRANSACTION_TTL_MS);
-  const codeVerifierEnc = encryptSecret(codeVerifier, env().TENANT_SECRETS_KEY);
+  const codeVerifierEnc = encryptSecret(codeVerifier, config.secretsKey);
 
   await oauthRepo.deleteExpiredNavigraphOauthTransactions(new Date());
   await oauthRepo.createNavigraphOauthTransaction({
     tenantId: actor.tenantId,
     membershipId: actor.membershipId,
-    stateHash: hashState(state),
+    stateId,
     codeVerifierEnc,
     expiresAt,
   });
@@ -80,16 +89,18 @@ export async function startNavigraphOauth(
 export async function completeNavigraphOauth(
   callback: NavigraphOauthCallback,
 ): Promise<Membership> {
+  const config = requireNavigraphOauthConfig();
+  const stateId = verifyOauthState(callback.state, config.secretsKey);
+  if (!stateId) {
+    throw invalidOauthState();
+  }
   const consumedAt = new Date();
   const transaction = await oauthRepo.consumeNavigraphOauthTransaction(
-    hashState(callback.state),
+    stateId,
     consumedAt,
   );
   if (!transaction) {
-    throw new AppError(
-      "UNAUTHORIZED",
-      "Invalid, expired, or already used Navigraph OAuth state",
-    );
+    throw invalidOauthState();
   }
 
   if (callback.error) {
@@ -115,10 +126,9 @@ export async function completeNavigraphOauth(
     );
   }
 
-  const config = requireNavigraphOauthConfig();
   const codeVerifier = decryptSecret(
     transaction.codeVerifierEnc,
-    env().TENANT_SECRETS_KEY,
+    config.secretsKey,
   );
   const adapter = new NavigraphOauthAdapter();
   try {
@@ -174,12 +184,14 @@ function requireNavigraphOauthConfig(): {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  secretsKey: string;
 } {
   const config = env();
   if (
     !config.NAVIGRAPH_CLIENT_ID ||
     !config.NAVIGRAPH_CLIENT_SECRET ||
-    !config.NAVIGRAPH_REDIRECT_URI
+    !config.NAVIGRAPH_REDIRECT_URI ||
+    !config.TENANT_SECRETS_KEY
   ) {
     throw new AppError("INTERNAL", "Navigraph OAuth is not configured", {
       status: 503,
@@ -218,6 +230,7 @@ function requireNavigraphOauthConfig(): {
     clientId: config.NAVIGRAPH_CLIENT_ID,
     clientSecret: config.NAVIGRAPH_CLIENT_SECRET,
     redirectUri: redirect.toString(),
+    secretsKey: config.TENANT_SECRETS_KEY,
   };
 }
 
@@ -233,8 +246,41 @@ async function requireMembership(
   return membership;
 }
 
-function hashState(state: string): string {
-  return createHash("sha256").update(state).digest("hex");
+function issueOauthState(secretsKey: string): {
+  state: string;
+  stateId: string;
+} {
+  const stateId = randomBytes(OAUTH_STATE_ID_LENGTH_BYTES).toString(
+    "base64url",
+  );
+  const payload = `${OAUTH_STATE_VERSION}.${stateId}`;
+  const mac = createTokenMac(payload, secretsKey, "navigraph-oauth-state");
+  return { state: `${payload}.${mac}`, stateId };
+}
+
+function verifyOauthState(state: string, secretsKey: string): string | null {
+  const [version, stateId, mac, ...extra] = state.split(".");
+  if (
+    extra.length > 0 ||
+    version !== OAUTH_STATE_VERSION ||
+    !stateId ||
+    !mac ||
+    !OAUTH_STATE_ID_PATTERN.test(stateId) ||
+    !OAUTH_STATE_MAC_PATTERN.test(mac)
+  ) {
+    return null;
+  }
+  const payload = `${version}.${stateId}`;
+  return verifyTokenMac(payload, mac, secretsKey, "navigraph-oauth-state")
+    ? stateId
+    : null;
+}
+
+function invalidOauthState(): AppError {
+  return new AppError(
+    "UNAUTHORIZED",
+    "Invalid, expired, or already used Navigraph OAuth state",
+  );
 }
 
 function safeProviderError(error: string): string {
