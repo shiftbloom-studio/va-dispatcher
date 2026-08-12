@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as acarsService from "../domain/acars/service.js";
+import { acarsStationSchema } from "../domain/acars/validation.js";
 import { paginationQuerySchema } from "../lib/pagination.js";
 
 export const acarsRoutes = new Hono<{ Variables: AppVariables }>();
@@ -47,28 +48,24 @@ acarsRoutes.get(
   },
 );
 
-acarsRoutes.get(
-  "/acars/messages/:id",
-  requireRole("dispatcher"),
-  async (c) => {
-    const auth = c.get("auth");
-    const m = await acarsService.getMessage(auth.tenantId, c.req.param("id"));
-    return c.json({
-      message: {
-        id: m.id,
-        direction: m.direction,
-        msgType: m.msgType,
-        fromStation: m.fromStation,
-        toStation: m.toStation,
-        body: m.body,
-        hoppieRaw: m.hoppieRaw,
-        flightId: m.flightId,
-        provider: m.provider,
-        createdAt: m.createdAt.toISOString(),
-      },
-    });
-  },
-);
+acarsRoutes.get("/acars/messages/:id", requireRole("dispatcher"), async (c) => {
+  const auth = c.get("auth");
+  const m = await acarsService.getMessage(auth.tenantId, c.req.param("id"));
+  return c.json({
+    message: {
+      id: m.id,
+      direction: m.direction,
+      msgType: m.msgType,
+      fromStation: m.fromStation,
+      toStation: m.toStation,
+      body: m.body,
+      hoppieRaw: m.hoppieRaw,
+      flightId: m.flightId,
+      provider: m.provider,
+      createdAt: m.createdAt.toISOString(),
+    },
+  });
+});
 
 acarsRoutes.post(
   "/acars/messages",
@@ -76,7 +73,7 @@ acarsRoutes.post(
   zValidator(
     "json",
     z.object({
-      to: z.string().min(1).max(20),
+      to: acarsStationSchema,
       body: z.string().min(1).max(4000),
       flightId: z.string().uuid().optional().nullable(),
     }),
@@ -114,8 +111,8 @@ acarsRoutes.post(
   zValidator(
     "json",
     z.object({
-      from: z.string().min(1).max(20),
-      to: z.string().min(1).max(20).optional(),
+      from: acarsStationSchema,
+      to: acarsStationSchema.optional(),
       body: z.string().min(1).max(4000),
       msgType: z
         .enum(["telex", "progress", "cpdlc", "position", "other"])

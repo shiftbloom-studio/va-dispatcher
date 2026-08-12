@@ -6,6 +6,7 @@ export type ErrorCode =
   | "CONFLICT"
   | "INVALID_TRANSITION"
   | "UNPROCESSABLE"
+  | "UPSTREAM"
   | "INTERNAL";
 
 export class AppError extends Error {
@@ -41,6 +42,8 @@ function statusForCode(code: ErrorCode): number {
       return 409;
     case "UNPROCESSABLE":
       return 422;
+    case "UPSTREAM":
+      return 502;
     default:
       return 500;
   }

@@ -19,13 +19,14 @@ function assertCronAuth(authHeader: string | undefined) {
 
 internalRoutes.on(["GET", "POST"], "/internal/cron/acars-poll", async (c) => {
   assertCronAuth(c.req.header("authorization"));
-  // Cheap exit before any DB connection when mock (keeps Neon scale-to-zero)
+  // Keep Neon asleep until this deployment intentionally enables live inbound
+  // Hoppie polling. Outbound provider selection remains tenant-scoped.
   if (env().ACARS_PROVIDER === "mock") {
     return c.json({
       ok: true,
       tenants: 0,
       messages: 0,
-      skipped: "ACARS_PROVIDER=mock — poll disabled (zero idle cost)",
+      skipped: "deployment-level Hoppie polling is disabled",
     });
   }
   if (!hasDatabase()) {

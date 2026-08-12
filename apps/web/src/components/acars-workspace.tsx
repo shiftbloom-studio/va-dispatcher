@@ -24,11 +24,13 @@ import {
   acarsMessagePageSchema,
   acarsMessageResponseSchema,
   flightPageSchema,
-  healthSchema,
+  membersSchema,
   simulateAcarsResponseSchema,
+  tenantDetailSchema,
   type AcarsMessage,
+  type Member,
 } from "@/lib/api/schemas";
-import { getHealth, jsonBody, useApi } from "@/lib/api/use-api";
+import { jsonBody, useApi } from "@/lib/api/use-api";
 import { formatUtc } from "@/lib/utc";
 
 function messageTime(message: AcarsMessage): string {
@@ -122,15 +124,19 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
     enabled: Boolean(station),
     refetchInterval: 10_000,
   });
-  const health = useQuery({
-    queryKey: ["api", "health"],
-    queryFn: () => getHealth(healthSchema),
-    staleTime: 60_000,
-    retry: false,
-  });
   const flights = useQuery({
     queryKey: [slug, "dispatch", "acars", "flights"],
     queryFn: () => api("/flights?limit=100", { schema: flightPageSchema }),
+    staleTime: 30_000,
+  });
+  const members = useQuery({
+    queryKey: [slug, "dispatch", "acars", "members"],
+    queryFn: () => api("/members", { schema: membersSchema }),
+    staleTime: 60_000,
+  });
+  const tenant = useQuery({
+    queryKey: [slug, "dispatch", "acars", "tenant"],
+    queryFn: () => api("/tenant", { schema: tenantDetailSchema }),
     staleTime: 30_000,
   });
 
@@ -143,13 +149,27 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
     );
   }
 
-  if (inbox.isPending || flights.isPending)
+  if (
+    inbox.isPending ||
+    flights.isPending ||
+    members.isPending ||
+    tenant.isPending
+  )
     return <LoadingState label="Loading ACARS workspace" />;
-  if (inbox.isError || flights.isError)
+  if (inbox.isError || flights.isError || members.isError || tenant.isError)
     return (
       <ErrorState
-        message={apiErrorMessage(inbox.error ?? flights.error)}
-        onRetry={() => void Promise.all([inbox.refetch(), flights.refetch()])}
+        message={apiErrorMessage(
+          inbox.error ?? flights.error ?? members.error ?? tenant.error,
+        )}
+        onRetry={() =>
+          void Promise.all([
+            inbox.refetch(),
+            flights.refetch(),
+            members.refetch(),
+            tenant.refetch(),
+          ])
+        }
       />
     );
 
@@ -158,7 +178,15 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
       <PageHeading
         eyebrow="Dispatcher suite"
         title="ACARS workspace"
-        description="Dispatcher-only station conversations and free-text telex traffic. Times are UTC / Zulu."
+        description={`Dispatcher-only station conversations and free-text telex traffic via ${tenant.data.acarsProvider === "hoppie" ? "Hoppie's ACARS" : "the mock provider"}. Times are UTC / Zulu.`}
+        action={
+          <Link
+            href={`/${slug}/settings`}
+            className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          >
+            ACARS settings
+          </Link>
+        }
       />
       <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_28rem]">
         <div className="space-y-6">
@@ -235,7 +263,7 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
               ) : null}
             </div>
           </Card>
-          {health.data?.acarsProvider === "mock" ? (
+          {tenant.data.acarsProvider === "mock" ? (
             <MockSimulator
               onStored={async () => {
                 await Promise.all([
@@ -247,7 +275,10 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
           ) : null}
         </div>
         <ComposeTelex
+          key={station ?? "new-message"}
           flights={flights.data.items}
+          members={members.data.items}
+          provider={tenant.data.acarsProvider}
           defaultRecipient={station ?? ""}
           onSent={async () => {
             await Promise.all([
@@ -259,7 +290,13 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
       </div>
       <p className="mt-4 text-xs text-slate-500">
         Inbox and open station conversations refresh every 10 seconds while
-        visible and online. Failed sends are never retried automatically.
+        visible and online.{" "}
+        {tenant.data.acarsProvider === "hoppie"
+          ? tenant.data.hoppiePollingEnabled
+            ? "The ground station checks Hoppie for inbound messages on its scheduled poll, normally once per minute. "
+            : "Scheduled inbound Hoppie polling is currently disabled in the deployment settings. "
+          : "Mock inbound messages are ingested during simulation. "}
+        Failed sends are never retried automatically.
       </p>
     </>
   );
@@ -267,6 +304,8 @@ export function AcarsWorkspace({ slug }: { slug: string }) {
 
 function ComposeTelex({
   flights,
+  members,
+  provider,
   defaultRecipient,
   onSent,
 }: {
@@ -275,7 +314,10 @@ function ComposeTelex({
     flightNumber: string;
     depIcao: string;
     arrIcao: string;
+    pilotMembershipId: string | null;
   }>;
+  members: Member[];
+  provider: "mock" | "hoppie";
   defaultRecipient: string;
   onSent: () => Promise<void>;
 }) {
@@ -296,7 +338,11 @@ function ComposeTelex({
         }),
       }),
     onSuccess: async () => {
-      setSuccess(`Telex sent to ${recipient.trim().toUpperCase()}.`);
+      setSuccess(
+        provider === "hoppie"
+          ? `Hoppie accepted the telex to ${recipient.trim().toUpperCase()} for store-and-forward. This is not a delivery or read receipt.`
+          : `Mock telex stored for ${recipient.trim().toUpperCase()}.`,
+      );
       setBody("");
       await onSent();
     },
@@ -326,7 +372,27 @@ function ComposeTelex({
             value={recipient}
             onChange={(event) => setRecipient(event.target.value)}
             placeholder="SAS123"
+            list="acars-member-callsigns"
           />
+          <datalist id="acars-member-callsigns">
+            {members
+              .filter(
+                (member) =>
+                  member.status === "active" && Boolean(member.pilotCallsign),
+              )
+              .map((member) => (
+                <option
+                  key={member.id}
+                  value={member.pilotCallsign ?? ""}
+                  label={
+                    member.displayName ?? member.pilotCallsign ?? undefined
+                  }
+                />
+              ))}
+          </datalist>
+          <p className="mt-1 text-sm text-slate-500">
+            Choose a member callsign or enter another active Hoppie station.
+          </p>
         </div>
         <div>
           <Label htmlFor="acars-body">Message</Label>
@@ -344,7 +410,17 @@ function ComposeTelex({
           <Select
             id="acars-flight"
             value={flightId}
-            onChange={(event) => setFlightId(event.target.value)}
+            onChange={(event) => {
+              const nextFlightId = event.target.value;
+              setFlightId(nextFlightId);
+              const flight = flights.find(
+                (candidate) => candidate.id === nextFlightId,
+              );
+              const pilot = members.find(
+                (member) => member.id === flight?.pilotMembershipId,
+              );
+              if (nextFlightId) setRecipient(pilot?.pilotCallsign ?? "");
+            }}
           >
             <option value="">No flight link</option>
             {flights.map((flight) => (

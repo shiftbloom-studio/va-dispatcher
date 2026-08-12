@@ -4,6 +4,7 @@ import type {
   InboundMessage,
   SendResult,
 } from "./types.js";
+import { AcarsProviderError } from "./types.js";
 
 /**
  * Real Hoppie ACARS HTTP client.
@@ -14,10 +15,9 @@ import type {
  * Poll etiquette: ~45–75s between polls; 15s HTTP timeout; no hammering.
  * Prefer type=poll for stations; peek only for offline loggers.
  *
- * v1 skeleton: fully structured; enable via ACARS_PROVIDER=hoppie when logon is set.
+ * A tenant uses this provider as soon as an encrypted Hoppie logon is set.
  */
-const DEFAULT_BASE =
-  "https://www.hoppie.nl/acars/system/connect.html";
+const DEFAULT_BASE = "https://www.hoppie.nl/acars/system/connect.html";
 
 export class HoppieAcarsProvider implements AcarsProvider {
   readonly name = "hoppie" as const;
@@ -35,9 +35,7 @@ export class HoppieAcarsProvider implements AcarsProvider {
     return this.opts.baseUrl ?? DEFAULT_BASE;
   }
 
-  private async connect(
-    params: Record<string, string>,
-  ): Promise<{ ok: boolean; text: string }> {
+  private async connect(params: Record<string, string>): Promise<string> {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
@@ -52,7 +50,29 @@ export class HoppieAcarsProvider implements AcarsProvider {
         signal: controller.signal,
       });
       const text = await res.text();
-      return { ok: res.ok, text };
+      if (!res.ok) {
+        throw new AcarsProviderError(
+          res.status === 429 ? "rate_limited" : "unavailable",
+          res.status === 429
+            ? "Hoppie is rate-limiting this station. Wait before retrying."
+            : "Hoppie is temporarily unavailable.",
+        );
+      }
+      return assertHoppieSuccess(text);
+    } catch (error) {
+      if (error instanceof AcarsProviderError) throw error;
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new AcarsProviderError(
+          "timeout",
+          "Hoppie did not respond within 15 seconds.",
+          { cause: error },
+        );
+      }
+      throw new AcarsProviderError(
+        "unavailable",
+        "Hoppie could not be reached.",
+        { cause: error },
+      );
     } finally {
       clearTimeout(timeout);
     }
@@ -65,7 +85,7 @@ export class HoppieAcarsProvider implements AcarsProvider {
     body: string;
   }): Promise<SendResult> {
     const logon = input.logon ?? this.opts.logon;
-    const { ok, text } = await this.connect({
+    const text = await this.connect({
       logon,
       from: input.from,
       to: input.to,
@@ -73,8 +93,7 @@ export class HoppieAcarsProvider implements AcarsProvider {
       packet: input.body,
     });
     return {
-      ok,
-      providerMessageId: `hoppie-${Date.now()}`,
+      ok: true,
       raw: text,
     };
   }
@@ -84,7 +103,7 @@ export class HoppieAcarsProvider implements AcarsProvider {
     station: string;
   }): Promise<InboundMessage[]> {
     const logon = input.logon ?? this.opts.logon;
-    const { text } = await this.connect({
+    const text = await this.connect({
       logon,
       from: input.station,
       to: "SERVER",
@@ -96,15 +115,57 @@ export class HoppieAcarsProvider implements AcarsProvider {
 
   async ping(input?: { logon?: string; station?: string }): Promise<boolean> {
     const logon = input?.logon ?? this.opts.logon;
-    const { ok, text } = await this.connect({
+    await this.connect({
       logon,
       from: input?.station ?? "SERVER",
       to: "SERVER",
       type: "ping",
       packet: "",
     });
-    return ok && /ok/i.test(text);
+    return true;
   }
+}
+
+/**
+ * Hoppie uses HTTP 200 for both accepted and rejected application requests.
+ * Treat only a protocol-level `ok` response as success.
+ */
+export function assertHoppieSuccess(text: string): string {
+  const response = text.trim();
+  if (/^ok(?:\s|$)/i.test(response)) return response;
+
+  if (!/^error(?:\s|$)/i.test(response)) {
+    throw new AcarsProviderError(
+      "invalid_response",
+      "Hoppie returned an invalid response.",
+    );
+  }
+
+  const detail = response
+    .replace(/^error\s*/i, "")
+    .replace(/^\{([\s\S]*)\}$/, "$1")
+    .trim()
+    .toLowerCase();
+
+  if (/illegal logon|invalid logon|logon.*(?:invalid|unknown)/i.test(detail)) {
+    throw new AcarsProviderError(
+      "authentication",
+      "Hoppie rejected the logon code.",
+    );
+  }
+  if (/callsign.*(?:already|in use|locked)/i.test(detail)) {
+    throw new AcarsProviderError(
+      "callsign_in_use",
+      "This Hoppie callsign is already in use. Wait about two minutes before retrying.",
+    );
+  }
+  if (/rate|too (?:many|fast)|flood/i.test(detail)) {
+    throw new AcarsProviderError(
+      "rate_limited",
+      "Hoppie is rate-limiting this station. Wait before retrying.",
+    );
+  }
+  throw new AcarsProviderError("rejected", "Hoppie rejected the request.");
 }
 
 /**
