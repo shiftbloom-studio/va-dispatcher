@@ -32,6 +32,7 @@ export type TelemetryIngest = z.infer<typeof telemetryIngestSchema>;
 
 export const oooiCorrectionSchema = z
   .object({
+    expectedVersion: z.number().int().min(1),
     outAt: z.coerce.date().nullable().optional(),
     offAt: z.coerce.date().nullable().optional(),
     onAt: z.coerce.date().nullable().optional(),

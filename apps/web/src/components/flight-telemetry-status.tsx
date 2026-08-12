@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Activity, MapPin } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input, Label, Textarea } from "@/components/ui/fields";
 import { ErrorState, LoadingState } from "@/components/ui/states";
-import { apiErrorMessage } from "@/lib/api/http";
+import { ApiError, apiErrorMessage } from "@/lib/api/http";
 import {
   flightTelemetryResponseSchema,
   oooiCorrectionResponseSchema,
@@ -40,21 +40,16 @@ export function FlightTelemetryStatus({
   slug,
   flightId,
   mode,
-  initialOooi,
   onOooiUpdated,
 }: {
   slug: string;
   flightId: string;
   mode: "pilot" | "dispatcher";
-  initialOooi?: Partial<Omit<FlightOooi, "id">>;
   onOooiUpdated?: () => void | Promise<void>;
 }) {
   const api = useApi();
-  const queryClient = useQueryClient();
   const telemetryQueryKey = [slug, "flight", flightId, "telemetry"] as const;
-  const [inputs, setInputs] = useState<OooiInputs>(() =>
-    oooiInputs(initialOooi),
-  );
+  const [draftInputs, setDraftInputs] = useState<Partial<OooiInputs>>({});
   const [touched, setTouched] = useState<Set<OooiField>>(() => new Set());
   const [reason, setReason] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -69,19 +64,19 @@ export function FlightTelemetryStatus({
     refetchInterval: 10_000,
   });
   const correction = useMutation({
-    mutationFn: (body: Record<string, string | null>) =>
+    mutationFn: (body: Record<string, string | number | null>) =>
       api(`/flights/${flightId}/oooi`, {
         method: "PATCH",
         schema: oooiCorrectionResponseSchema,
         ...jsonBody(body),
       }),
-    onSuccess: async (data) => {
-      setInputs(oooiInputs(data.flight));
+    onSuccess: async () => {
+      setDraftInputs({});
       setTouched(new Set());
       setReason("");
       setFormError(null);
       setNotice("OOOI timestamps and provenance were updated.");
-      await queryClient.invalidateQueries({ queryKey: telemetryQueryKey });
+      await telemetry.refetch();
       await onOooiUpdated?.();
     },
   });
@@ -97,15 +92,37 @@ export function FlightTelemetryStatus({
       setFormError("Enter the operational reason for this correction.");
       return;
     }
+    const expectedVersion = telemetry.data?.flight.version;
+    if (expectedVersion === undefined) {
+      setFormError(
+        "The latest flight version is not available. Reload and try again.",
+      );
+      return;
+    }
 
     try {
-      const payload: Record<string, string | null> = { reason: reason.trim() };
+      const payload: Record<string, string | number | null> = {
+        expectedVersion,
+        reason: reason.trim(),
+      };
       for (const field of touched) {
-        payload[field] = inputs[field] ? utcInputToIso(inputs[field]) : null;
+        const value = draftInputs[field] ?? "";
+        payload[field] = value ? utcInputToIso(value) : null;
       }
       setFormError(null);
       await correction.mutateAsync(payload);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setDraftInputs({});
+        setTouched(new Set());
+        setReason("");
+        setFormError(
+          "This flight changed while you were editing it. Latest OOOI values were reloaded.",
+        );
+        await telemetry.refetch();
+        await onOooiUpdated?.();
+        return;
+      }
       if (!(error instanceof Error && "status" in error)) {
         setFormError(apiErrorMessage(error));
       }
@@ -123,6 +140,7 @@ export function FlightTelemetryStatus({
     );
 
   const current = telemetry.data.current;
+  const serverInputs = oooiInputs(telemetry.data.flight);
   return (
     <Card className="overflow-hidden">
       <CardHeader
@@ -241,9 +259,13 @@ export function FlightTelemetryStatus({
                     <Input
                       id={`${flightId}-${field}`}
                       type="datetime-local"
-                      value={inputs[field]}
+                      value={
+                        touched.has(field)
+                          ? (draftInputs[field] ?? "")
+                          : serverInputs[field]
+                      }
                       onChange={(event) => {
-                        setInputs((currentInputs) => ({
+                        setDraftInputs((currentInputs) => ({
                           ...currentInputs,
                           [field]: event.target.value,
                         }));

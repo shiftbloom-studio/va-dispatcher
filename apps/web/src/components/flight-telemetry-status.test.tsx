@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FlightTelemetryStatus } from "@/components/flight-telemetry-status";
+import { ApiError } from "@/lib/api/http";
 import { TestQueryProvider } from "@/test/test-query-provider";
 
 const apiMock = vi.fn();
@@ -39,6 +40,14 @@ describe("FlightTelemetryStatus", () => {
           !options.method
         ) {
           return Promise.resolve({
+            flight: {
+              id: "flight-1",
+              version: 1,
+              outAt: null,
+              offAt: "2026-08-12T12:00:01.000Z",
+              onAt: null,
+              inAt: null,
+            },
             presence: "online",
             current,
             track: [],
@@ -60,6 +69,7 @@ describe("FlightTelemetryStatus", () => {
           return Promise.resolve({
             flight: {
               id: "flight-1",
+              version: 2,
               outAt: "2026-08-12T11:55:00.000Z",
               offAt: "2026-08-12T12:00:01.000Z",
               onAt: null,
@@ -99,12 +109,6 @@ describe("FlightTelemetryStatus", () => {
           slug="vsas"
           flightId="flight-1"
           mode="dispatcher"
-          initialOooi={{
-            outAt: null,
-            offAt: "2026-08-12T12:00:01.000Z",
-            onAt: null,
-            inAt: null,
-          }}
           onOooiUpdated={onOooiUpdated}
         />
       </TestQueryProvider>,
@@ -126,6 +130,7 @@ describe("FlightTelemetryStatus", () => {
         path === "/flights/flight-1/oooi" && options.method === "PATCH",
     );
     expect(JSON.parse(correctionCall?.[1].body ?? "{}")).toEqual({
+      expectedVersion: 1,
       reason: "Corrected from the pilot report",
       outAt: "2026-08-12T11:55:00.000Z",
     });
@@ -155,5 +160,77 @@ describe("FlightTelemetryStatus", () => {
     expect(
       apiMock.mock.calls.filter(([path]) => path.endsWith("/oooi")),
     ).toHaveLength(0);
+  });
+
+  it("reloads the latest flight after an optimistic-concurrency conflict", async () => {
+    const user = userEvent.setup();
+    const onOooiUpdated = vi.fn();
+    let telemetryReads = 0;
+    apiMock.mockImplementation(
+      (path: string, options: { method?: string; body?: string }) => {
+        if (
+          path === "/flights/flight-1/telemetry?trackLimit=0" &&
+          !options.method
+        ) {
+          telemetryReads += 1;
+          return Promise.resolve({
+            flight: {
+              id: "flight-1",
+              version: telemetryReads === 1 ? 1 : 2,
+              outAt: telemetryReads === 1 ? null : "2026-08-12T11:57:00.000Z",
+              offAt: "2026-08-12T12:00:01.000Z",
+              onAt: null,
+              inAt: null,
+            },
+            presence: "online",
+            current,
+            track: [],
+            oooiEvents: [],
+          });
+        }
+        if (path === "/flights/flight-1/oooi" && options.method === "PATCH") {
+          return Promise.reject(
+            new ApiError({
+              status: 409,
+              code: "CONFLICT",
+              message: "Flight changed since it was loaded",
+            }),
+          );
+        }
+        throw new Error(
+          `Unexpected API call: ${options.method ?? "GET"} ${path}`,
+        );
+      },
+    );
+
+    render(
+      <TestQueryProvider>
+        <FlightTelemetryStatus
+          slug="vsas"
+          flightId="flight-1"
+          mode="dispatcher"
+          onOooiUpdated={onOooiUpdated}
+        />
+      </TestQueryProvider>,
+    );
+
+    fireEvent.change(await screen.findByLabelText("OUT · off blocks"), {
+      target: { value: "2026-08-12T11:55" },
+    });
+    await user.type(screen.getByLabelText("Correction reason"), "Pilot report");
+    await user.click(
+      screen.getByRole("button", { name: "Save OOOI correction" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "This flight changed while you were editing it. Latest OOOI values were reloaded.",
+      ),
+    ).toBeVisible();
+    await waitFor(() => expect(telemetryReads).toBeGreaterThan(1));
+    expect(onOooiUpdated).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("OUT · off blocks")).toHaveValue(
+      "2026-08-12T11:57",
+    );
   });
 });

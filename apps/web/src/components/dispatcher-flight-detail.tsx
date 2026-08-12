@@ -281,12 +281,6 @@ export function DispatcherFlightDetail({
             slug={slug}
             flightId={flightId}
             mode="dispatcher"
-            initialOooi={{
-              outAt: currentFlight.outAt,
-              offAt: currentFlight.offAt,
-              onAt: currentFlight.onAt,
-              inAt: currentFlight.inAt,
-            }}
             onOooiUpdated={() =>
               refreshFlightData("OOOI timestamps refreshed from the server.")
             }

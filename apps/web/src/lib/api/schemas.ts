@@ -358,6 +358,7 @@ export const oooiEventSchema = z.object({
 export type OooiEvent = z.infer<typeof oooiEventSchema>;
 export const flightOooiSchema = z.object({
   id: z.string(),
+  version: z.number().int().min(1),
   outAt: z.string().nullable(),
   offAt: z.string().nullable(),
   onAt: z.string().nullable(),
@@ -369,6 +370,7 @@ export const oooiCorrectionResponseSchema = z.object({
   oooiEvents: z.array(oooiEventSchema),
 });
 export const flightTelemetryResponseSchema = z.object({
+  flight: flightOooiSchema,
   presence: presenceSchema,
   current: flightTelemetrySchema.nullable(),
   track: z.array(flightTelemetrySchema),

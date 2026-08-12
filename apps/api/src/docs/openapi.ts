@@ -967,9 +967,14 @@ const schemas = {
   },
   FlightOooi: {
     type: "object",
-    required: ["id", "outAt", "offAt", "onAt", "inAt"],
+    required: ["id", "version", "outAt", "offAt", "onAt", "inAt"],
     properties: {
       id: schemaRef("Uuid"),
+      version: {
+        type: "integer",
+        minimum: 1,
+        description: "Flight version used for optimistic concurrency.",
+      },
       outAt: schemaRef("NullableDateTime"),
       offAt: schemaRef("NullableDateTime"),
       onAt: schemaRef("NullableDateTime"),
@@ -1357,11 +1362,12 @@ const schemas = {
   },
   OooiCorrectionInput: {
     type: "object",
-    required: ["reason"],
+    required: ["expectedVersion", "reason"],
     additionalProperties: false,
     description:
       "Provide at least one OOOI field. A null value clears that timestamp; all resulting timestamps must remain chronological.",
     properties: {
+      expectedVersion: { type: "integer", minimum: 1 },
       outAt: schemaRef("NullableDateTime"),
       offAt: schemaRef("NullableDateTime"),
       onAt: schemaRef("NullableDateTime"),
@@ -1717,8 +1723,9 @@ const schemas = {
   },
   FlightTelemetryResponse: {
     type: "object",
-    required: ["presence", "current", "track", "oooiEvents"],
+    required: ["flight", "presence", "current", "track", "oooiEvents"],
     properties: {
+      flight: schemaRef("FlightOooi"),
       presence: schemaRef("PresenceState"),
       current: {
         allOf: [schemaRef("FlightTelemetry")],
@@ -3131,7 +3138,7 @@ export const openApiDocument = {
         operationId: "correctFlightOooi",
         summary: "Correct or clear flight OOOI timestamps",
         description:
-          "Requires the dispatcher role or higher. The timestamp changes, manual provenance events, and audit record are committed atomically after chronological validation.",
+          "Requires the dispatcher role or higher and the current expectedVersion. The versioned timestamp changes, manual provenance events, and audit record are committed atomically after chronological validation.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
         requestBody: jsonRequest(schemaRef("OooiCorrectionInput")),

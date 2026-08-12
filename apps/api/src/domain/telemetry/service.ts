@@ -192,6 +192,7 @@ export async function getFlightTelemetry(
     telemetryRepo.listOooiEvents(actor.tenantId, flight.id),
   ]);
   return {
+    flight,
     current,
     track,
     oooiEvents,
@@ -224,11 +225,15 @@ export async function correctOooi(
     throw new AppError("FORBIDDEN", "Dispatchers only");
   }
   const flight = await requireAccessibleFlight(actor, flightId);
+  if (flight.version !== correction.expectedVersion) {
+    throw flightVersionConflict(flight);
+  }
   const operationAt = new Date();
   const applied = await telemetryRepo.correctOooiAtomic({
     tenantId: actor.tenantId,
     flightId,
     actorMembershipId: actor.membershipId,
+    expectedVersion: correction.expectedVersion,
     reason: correction.reason,
     outAt: correction.outAt,
     offAt: correction.offAt,
@@ -237,6 +242,11 @@ export async function correctOooi(
     operationAt,
   });
   if (!applied) {
+    const latest = await findFlight(actor.tenantId, flightId);
+    if (!latest) throw new AppError("NOT_FOUND", "Flight not found");
+    if (latest.version !== correction.expectedVersion) {
+      throw flightVersionConflict(latest);
+    }
     throw new AppError(
       "UNPROCESSABLE",
       "OOOI timestamps must remain chronological",
@@ -248,6 +258,12 @@ export async function correctOooi(
   ]);
   if (!updated) throw new AppError("NOT_FOUND", "Flight not found");
   return { flight: updated, oooiEvents: events };
+}
+
+function flightVersionConflict(flight: Flight): AppError {
+  return new AppError("CONFLICT", "Flight changed since it was loaded", {
+    details: { latest: { id: flight.id, version: flight.version } },
+  });
 }
 
 async function authenticateDevice(

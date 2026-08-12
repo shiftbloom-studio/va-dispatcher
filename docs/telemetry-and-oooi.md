@@ -62,6 +62,9 @@ manually overridden, and the new server receipt time remains chronological
 with every OOOI value already stored. The field update, telemetry current
 state, track point, device sequence, lease, append-only provenance, and audit
 record are one PostgreSQL statement: any failure rolls all of them back.
+Every inferred event also advances `flights.version` and records the exact
+`fromVersion` and `toVersion` in the audit metadata. Ordinary telemetry samples
+without an OOOI transition do not change the flight version.
 
 Duplicate phases, reversed phases, and phase changes not listed above still
 update current telemetry but do not create OOOI. A skipped departure phase can
@@ -73,27 +76,22 @@ them.
 ## Manual correction precedence
 
 A dispatcher or administrator can set or clear one or more OOOI values with a
-required reason. The server validates the resulting non-null timestamps as
-`OUT <= OFF <= ON <= IN`. The authenticated actor, reason, supplied value (or
-clear), audit record, and flight update commit atomically.
+required reason and the current `expectedVersion`. The server validates the
+resulting non-null timestamps as `OUT <= OFF <= ON <= IN`. The authenticated
+actor, reason, supplied value (or clear), version increment, audit record, and
+flight update commit atomically. A stale correction returns a conflict and the
+web client reloads the latest values before the dispatcher retries.
 
 A supplied manual value, including an explicit clear, marks that individual
 event as manually overridden. Later simulator phases cannot overwrite or
-recreate it. Automatic ingestion locks the tenant flight row before reading or
-writing OOOI, so a concurrent correction is serialized: the correction is the
-authoritative final value and its provenance is never lost. A correction that
-would conflict with existing timestamps is rejected in full with no partial
-field or provenance changes.
-
-### Mandatory issue #17 integration
-
-This branch predates issue #17 and therefore has no `flights.version` column to
-update. When the streams are combined, both the automatic OOOI statement and
-the manual correction statement **must** increment the locked flight version
-and include `fromVersion` and `toVersion` in their audit metadata. The combined
-change must prove that a concurrent version-checked dispatcher edit cannot
-silently overwrite an OOOI mutation. #22 is not integration-complete on a
-versioned-flight baseline until that commit and contract test are present.
+recreate it. Automatic ingestion locks the tenant flight row, while manual and
+dispatcher mutations use the same version contract. Concurrent operations
+therefore produce an ordered pair of versions or one explicit stale-version
+loser; neither can silently overwrite the other. Once a manual correction
+commits, its value and provenance are authoritative. A correction that would
+conflict with existing timestamps is rejected in full with no partial field,
+version, or provenance changes. PostgreSQL race tests cover both a concurrent
+manual correction and an unrelated versioned dispatcher edit.
 
 ## Current state and retained track
 

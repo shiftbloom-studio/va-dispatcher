@@ -76,6 +76,14 @@ describe("PilotFlightDetail decisions", () => {
         });
       if (path === "/flights/flight-1/telemetry?trackLimit=0")
         return Promise.resolve({
+          flight: {
+            id: "flight-1",
+            version: currentFlight.version,
+            outAt: currentFlight.outAt,
+            offAt: currentFlight.offAt,
+            onAt: currentFlight.onAt,
+            inAt: currentFlight.inAt,
+          },
           presence: "disconnected",
           current: null,
           track: [],

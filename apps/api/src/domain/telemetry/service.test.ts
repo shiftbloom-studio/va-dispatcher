@@ -343,13 +343,18 @@ describe("telemetry service", () => {
     const result = await correctOooi(
       { tenantId, membershipId, role: "dispatcher" },
       flightId,
-      { onAt: now, reason: "Touchdown corrected from flight log" },
+      {
+        expectedVersion: 1,
+        onAt: now,
+        reason: "Touchdown corrected from flight log",
+      },
     );
 
     expect(mocks.correctOooiAtomic).toHaveBeenCalledWith({
       tenantId,
       flightId,
       actorMembershipId: membershipId,
+      expectedVersion: 1,
       reason: "Touchdown corrected from flight log",
       outAt: undefined,
       offAt: undefined,
@@ -364,10 +369,41 @@ describe("telemetry service", () => {
     mocks.correctOooiAtomic.mockResolvedValue(false);
     await expect(
       correctOooi({ tenantId, membershipId, role: "dispatcher" }, flightId, {
+        expectedVersion: 1,
         onAt: new Date(now.getTime() - 5_000),
         reason: "Correction test",
       }),
     ).rejects.toMatchObject({ code: "UNPROCESSABLE" });
+    expect(mocks.listOooiEvents).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale correction before attempting the atomic write", async () => {
+    await expect(
+      correctOooi({ tenantId, membershipId, role: "dispatcher" }, flightId, {
+        expectedVersion: 2,
+        onAt: now,
+        reason: "Stale correction",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(mocks.correctOooiAtomic).not.toHaveBeenCalled();
+  });
+
+  it("reports a version race detected by the atomic correction", async () => {
+    mocks.correctOooiAtomic.mockResolvedValue(false);
+    mocks.findFlight
+      .mockResolvedValueOnce(flight)
+      .mockResolvedValueOnce({ ...flight, version: 2 });
+
+    await expect(
+      correctOooi({ tenantId, membershipId, role: "dispatcher" }, flightId, {
+        expectedVersion: 1,
+        onAt: now,
+        reason: "Concurrent correction",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { latest: { id: flightId, version: 2 } },
+    });
     expect(mocks.listOooiEvents).not.toHaveBeenCalled();
   });
 });
