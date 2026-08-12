@@ -29,6 +29,7 @@ export default async function SignInPage({
               fill
               sizes="160px"
               src={tenant.logo.src}
+              unoptimized
             />
           </span>
           <span className="font-display text-xl font-bold">
@@ -62,6 +63,7 @@ export default async function SignInPage({
                 fill
                 sizes="160px"
                 src={tenant.logo.src}
+                unoptimized
               />
             </div>
             <h1 className="mt-4 font-display text-3xl font-semibold text-slate-950">
