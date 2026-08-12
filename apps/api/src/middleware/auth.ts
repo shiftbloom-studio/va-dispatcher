@@ -95,7 +95,12 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       throw new AppError("UNAUTHORIZED", "Missing bearer token");
     }
 
-    let payload: { sub?: string; org_id?: string; o?: { id?: string }; org_role?: string };
+    let payload: {
+      sub?: string;
+      org_id?: string;
+      o?: { id?: string; rol?: string };
+      org_role?: string;
+    };
     try {
       payload = (await verifyToken(token, {
         secretKey: e.CLERK_SECRET_KEY,
@@ -130,7 +135,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       membership = await upsertMembership({
         tenantId: tenant.id,
         clerkUserId,
-        role: mapClerkOrgRole(payload.org_role),
+        role: mapClerkOrgRole(payload.org_role ?? payload.o?.rol),
       });
     }
 
