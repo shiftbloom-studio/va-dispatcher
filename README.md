@@ -1,5 +1,9 @@
 # VA Dispatch — Live Dispatch & ACARS
 
+[![CI](https://github.com/shiftbloom-studio/va-dispatcher/actions/workflows/ci.yml/badge.svg)](https://github.com/shiftbloom-studio/va-dispatcher/actions/workflows/ci.yml)
+[![Security](https://github.com/shiftbloom-studio/va-dispatcher/actions/workflows/security.yml/badge.svg)](https://github.com/shiftbloom-studio/va-dispatcher/actions/workflows/security.yml)
+[![License: AGPL v3 or later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+
 Multi-tenant Virtual Airline Live Dispatch & ACARS tool.
 
 - **One tenant = one Virtual Airline** (first: **vSAS**)
@@ -96,7 +100,33 @@ vercel deploy
 | `pnpm dev`                                | Run API and web together          |
 | `pnpm test:api`                           | API unit and isolation tests      |
 | `pnpm test:web`                           | Frontend unit and component tests |
+| `pnpm test:coverage`                      | Full-source tests and coverage    |
+| `pnpm security:audit`                     | High-severity dependency audit    |
 | `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests |
 | `pnpm db:generate`                        | Drizzle migrations                |
 | `pnpm db:push`                            | Push schema to DB                 |
 | `pnpm typecheck`                          | TypeScript check                  |
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
+quality checks, and pull request expectations. Participation is governed by the
+[Code of Conduct](CODE_OF_CONDUCT.md), and support guidance is available in
+[SUPPORT.md](SUPPORT.md). Repository administrators should also complete the
+[maintainer setup checklist](docs/maintainer-setup.md) after these files land on
+`main`.
+
+## Security
+
+Do not report vulnerabilities in public issues. Follow the private reporting
+process in [SECURITY.md](SECURITY.md).
+
+## License
+
+Copyright is held by the respective VA Dispatch contributors. The project is
+free software licensed under the [GNU Affero General Public License version 3
+or any later version](LICENSE) (`AGPL-3.0-or-later`). Operators who make a
+modified version available over a network must offer its corresponding source
+to users as required by the license. Hosted forks must set
+`NEXT_PUBLIC_SOURCE_URL` to the corresponding source for their deployed version;
+the application exposes this link in its legal notice.

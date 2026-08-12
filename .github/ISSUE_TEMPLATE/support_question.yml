@@ -1,0 +1,59 @@
+name: Support question
+description: Ask for help using or developing VA Dispatch.
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Support is provided on a best-effort basis. Do not include credentials, personal data, or vulnerability details.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I read the README, SUPPORT.md, and relevant documentation.
+          required: true
+        - label: I searched existing issues for an answer.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Area
+      options:
+        - Local development
+        - Web application
+        - API
+        - Database
+        - Authentication or tenancy
+        - ACARS integration
+        - Deployment
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Explain what you are trying to accomplish and where you are blocked.
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the revision and relevant OS, runtime, browser, or deployment details.
