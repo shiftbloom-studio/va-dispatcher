@@ -57,6 +57,23 @@ describe("PilotFlightDetail decisions", () => {
           releaseRevisions: [],
           events: [],
         });
+      if (path === "/flights/flight-1/simbrief/dispatches")
+        return Promise.resolve({ items: [] });
+      if (path === "/simbrief/connection")
+        return Promise.resolve({
+          connection: {
+            connected: false,
+            userId: null,
+            verified: false,
+            verifiedAt: null,
+            oauth: {
+              configured: false,
+              connected: false,
+              username: null,
+              connectedAt: null,
+            },
+          },
+        });
       if (path === "/flights/flight-1/decline") {
         currentFlight = {
           ...offeredFlight,

@@ -100,34 +100,109 @@ export async function disconnectAccount(
   return updated;
 }
 
-export async function createDispatch(
+export async function prepareDispatch(
   actor: SimbriefActor,
   flightId: string,
   options: SimbriefDispatchOptions,
-): Promise<{ dispatch: SimbriefDispatch; dispatchUrl: string }> {
-  const [flight, membership] = await Promise.all([
+): Promise<SimbriefDispatch> {
+  if (!roleAtLeast(actor.role, "dispatcher")) {
+    throw new AppError("FORBIDDEN", "Dispatchers only");
+  }
+  const [flight, dispatcher] = await Promise.all([
     requireAccessibleFlight(actor, flightId),
     requireMembership(actor.tenantId, actor.membershipId),
   ]);
   assertDispatchableFlight(flight);
+  if (!flight.pilotMembershipId) {
+    throw new AppError(
+      "UNPROCESSABLE",
+      "Assign a pilot before preparing a SimBrief flight plan",
+    );
+  }
+  const id = randomUUID();
+  const staticId = `VAD_${id.replaceAll("-", "")}`;
+  const dispatcherName =
+    dispatcher.displayName?.trim() ||
+    dispatcher.pilotCallsign?.trim() ||
+    "VA Dispatcher";
+  const parameters = dispatchParameters(
+    flight,
+    staticId,
+    options,
+    dispatcherName,
+  );
+
+  const dispatch = await simbriefRepo.createSimbriefDispatch({
+    id,
+    tenantId: actor.tenantId,
+    flightId: flight.id,
+    createdByMembershipId: actor.membershipId,
+    simbriefUserId: null,
+    staticId,
+    callbackTokenMac: null,
+    request: parameters,
+    status: "prepared",
+  });
+  await writeAudit({
+    tenantId: actor.tenantId,
+    actorMembershipId: actor.membershipId,
+    action: "simbrief.dispatch_prepare",
+    entityType: "simbrief_dispatch",
+    entityId: dispatch.id,
+    meta: {
+      flightId: flight.id,
+      staticId,
+      hasRemarks: Boolean(options.customRemarks),
+    },
+  });
+  return dispatch;
+}
+
+export async function generateDispatch(
+  actor: SimbriefActor,
+  flightId: string,
+  dispatchId: string,
+): Promise<{ dispatch: SimbriefDispatch; dispatchUrl: string }> {
+  const [flight, membership, prepared] = await Promise.all([
+    requireAccessibleFlight(actor, flightId),
+    requireMembership(actor.tenantId, actor.membershipId),
+    simbriefRepo.findSimbriefDispatch(actor.tenantId, flightId, dispatchId),
+  ]);
+  assertDispatchableFlight(flight);
+  if (flight.pilotMembershipId !== actor.membershipId) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Only the assigned pilot can generate this plan in SimBrief",
+    );
+  }
+  if (!prepared) {
+    throw new AppError("NOT_FOUND", "SimBrief preparation not found");
+  }
+  if (prepared.status !== "prepared") {
+    throw new AppError(
+      "CONFLICT",
+      "This SimBrief preparation has already been launched",
+    );
+  }
   if (!membership.simbriefUserId) {
     throw new AppError(
       "UNPROCESSABLE",
-      "Connect your numeric SimBrief Pilot ID before creating a flight plan",
+      "Connect your numeric SimBrief Pilot ID before generating a flight plan",
     );
   }
 
   const config = requireSimbriefConfig();
-  const id = randomUUID();
-  const staticId = `VAD_${id.replaceAll("-", "")}`;
   const callbackToken = randomBytes(32).toString("base64url");
-  const outputPage = callbackUrl(config.callbackUrl, id, callbackToken);
-  const parameters = dispatchParameters(
-    flight,
-    membership.simbriefUserId,
-    staticId,
-    options,
+  const outputPage = callbackUrl(
+    config.callbackUrl,
+    prepared.id,
+    callbackToken,
   );
+  const parameters = {
+    ...prepared.request,
+    userid: membership.simbriefUserId,
+    pid: membership.simbriefUserId,
+  };
   const timestamp = Math.floor(Date.now() / 1000);
   const dispatchUrl = buildSimbriefDispatchUrl({
     signer: config.signer,
@@ -142,13 +217,12 @@ export async function createDispatch(
     );
   }
 
-  const dispatch = await simbriefRepo.createSimbriefDispatch({
-    id,
+  const dispatch = await simbriefRepo.startSimbriefDispatch({
+    id: prepared.id,
     tenantId: actor.tenantId,
-    flightId: flight.id,
-    createdByMembershipId: actor.membershipId,
+    flightId,
+    generatedByMembershipId: actor.membershipId,
     simbriefUserId: membership.simbriefUserId,
-    staticId,
     callbackTokenMac: createTokenMac(
       callbackToken,
       config.secretsKey,
@@ -156,19 +230,33 @@ export async function createDispatch(
     ),
     request: parameters,
   });
+  if (!dispatch) {
+    throw new AppError(
+      "CONFLICT",
+      "This SimBrief preparation was launched from another session",
+    );
+  }
   await writeAudit({
     tenantId: actor.tenantId,
     actorMembershipId: actor.membershipId,
-    action: "simbrief.dispatch_create",
+    action: "simbrief.dispatch_generate",
     entityType: "simbrief_dispatch",
     entityId: dispatch.id,
     meta: {
       flightId: flight.id,
-      staticId,
-      generatedForOwnFlight: flight.pilotMembershipId === actor.membershipId,
+      staticId: prepared.staticId,
+      preparedByMembershipId: prepared.createdByMembershipId,
     },
   });
   return { dispatch, dispatchUrl };
+}
+
+export async function listDispatches(
+  actor: SimbriefActor,
+  flightId: string,
+): Promise<SimbriefDispatch[]> {
+  await requireAccessibleFlight(actor, flightId);
+  return simbriefRepo.listSimbriefDispatches(actor.tenantId, flightId);
 }
 
 export async function getLatestDispatch(
@@ -224,7 +312,7 @@ export async function completeDispatchCallback(
     await simbriefRepo.findSimbriefDispatchForCallback(dispatchId);
   if (
     !dispatch?.callbackTokenMac ||
-    Date.now() - dispatch.createdAt.getTime() > CALLBACK_MAX_AGE_MS ||
+    Date.now() - dispatch.updatedAt.getTime() > CALLBACK_MAX_AGE_MS ||
     !verifyTokenMac(
       callbackToken,
       dispatch.callbackTokenMac,
@@ -241,6 +329,16 @@ async function syncStoredDispatch(
   dispatch: SimbriefDispatch,
 ): Promise<SimbriefDispatch> {
   if (dispatch.status === "ready" && dispatch.ofp) return dispatch;
+  if (
+    dispatch.status !== "pending" ||
+    !dispatch.simbriefUserId ||
+    !dispatch.staticId
+  ) {
+    throw new AppError(
+      "CONFLICT",
+      "Generate this prepared plan in SimBrief before synchronizing it",
+    );
+  }
 
   const adapter = new SimbriefAdapter();
   let result: Awaited<ReturnType<SimbriefAdapter["fetchFlightPlan"]>>;
@@ -276,17 +374,17 @@ async function syncStoredDispatch(
     throw new AppError("NOT_FOUND", "SimBrief dispatch not found");
   }
 
-  if (dispatch.createdByMembershipId) {
+  if (dispatch.generatedByMembershipId) {
     await markSimbriefVerified({
       tenantId: dispatch.tenantId,
-      membershipId: dispatch.createdByMembershipId,
+      membershipId: dispatch.generatedByMembershipId,
       simbriefUserId: dispatch.simbriefUserId,
       verifiedAt: syncedAt,
     });
   }
   await writeAudit({
     tenantId: dispatch.tenantId,
-    actorMembershipId: dispatch.createdByMembershipId,
+    actorMembershipId: dispatch.generatedByMembershipId,
     action: "simbrief.dispatch_ready",
     entityType: "simbrief_dispatch",
     entityId: dispatch.id,
@@ -300,9 +398,9 @@ async function syncStoredDispatch(
 
 function dispatchParameters(
   flight: Flight,
-  simbriefUserId: string,
   staticId: string,
   options: SimbriefDispatchOptions,
+  dispatcherName: string,
 ): Record<string, string> {
   const aircraftType = options.aircraftType ?? flight.aircraftType;
   if (!aircraftType) {
@@ -340,10 +438,9 @@ function dispatchParameters(
     depm: twoDigits(flight.etd.getUTCMinutes()),
     steh: String(Math.floor(durationMinutes / 60)),
     stem: twoDigits(durationMinutes % 60),
-    userid: simbriefUserId,
-    pid: simbriefUserId,
     static_id: staticId,
     units: options.units,
+    dxname: dispatcherName,
   };
 
   setOptional(parameters, "airline", options.airline);
@@ -355,7 +452,6 @@ function dispatchParameters(
   setOptional(parameters, "pax", options.passengers);
   setOptional(parameters, "cargo", options.cargo);
   setOptional(parameters, "cpt", options.captainName);
-  setOptional(parameters, "dxname", options.dispatcherName);
   setOptional(parameters, "manualrmk", options.customRemarks);
   setOptional(parameters, "planformat", options.planFormat);
   setOptional(parameters, "taxiout", options.taxiOutMinutes);

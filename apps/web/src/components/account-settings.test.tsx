@@ -32,12 +32,39 @@ const me = {
   },
 };
 
+const simbriefConnection = {
+  connection: {
+    connected: false,
+    userId: null,
+    verified: false,
+    verifiedAt: null,
+    oauth: {
+      configured: true,
+      connected: false,
+      username: null,
+      connectedAt: null,
+    },
+  },
+};
+
 describe("personal account settings", () => {
   beforeEach(() => {
     apiMock.mockReset();
     apiMock.mockImplementation(
       (path: string, options: { method?: string; body?: string }) => {
         if (path === "/me" && !options.method) return Promise.resolve(me);
+        if (path === "/simbrief/connection" && !options.method)
+          return Promise.resolve(simbriefConnection);
+        if (path === "/simbrief/connection" && options.method === "PUT") {
+          const body = JSON.parse(options.body ?? "{}") as { userId: string };
+          return Promise.resolve({
+            connection: {
+              ...simbriefConnection.connection,
+              connected: true,
+              userId: body.userId,
+            },
+          });
+        }
         if (path === "/me" && options.method === "PATCH") {
           const body = JSON.parse(options.body ?? "{}") as {
             displayName: string | null;
@@ -96,5 +123,23 @@ describe("personal account settings", () => {
       "href",
       "https://www.hoppie.nl/acars/system/register.html",
     );
+  });
+
+  it("connects a numeric SimBrief Pilot ID without asking for a password", async () => {
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AccountSettings slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    const pilotId = await screen.findByLabelText("SimBrief numeric Pilot ID");
+    await user.type(pilotId, "123456");
+    await user.click(screen.getByRole("button", { name: "Connect Pilot ID" }));
+
+    expect(
+      await screen.findByText("SimBrief Pilot ID connected."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
   });
 });

@@ -52,7 +52,6 @@ export const simbriefDispatchOptionsSchema = z
     passengers: z.number().int().min(0).max(1_000).optional(),
     cargo: z.number().min(0).max(9_999).optional(),
     captainName: z.string().trim().min(1).max(120).optional(),
-    dispatcherName: z.string().trim().min(1).max(120).optional(),
     customRemarks: z.string().trim().max(2_000).optional(),
     units: z.enum(["KGS", "LBS"]).default("KGS"),
     planFormat: z.string().trim().min(1).max(32).transform(upper).optional(),

@@ -7,10 +7,11 @@ export async function createSimbriefDispatch(input: {
   tenantId: string;
   flightId: string;
   createdByMembershipId: string;
-  simbriefUserId: string;
+  simbriefUserId?: string | null;
   staticId: string;
-  callbackTokenMac: string;
+  callbackTokenMac?: string | null;
   request: Record<string, string>;
+  status?: "prepared" | "pending";
 }): Promise<SimbriefDispatch> {
   const db = getDb();
   const [created] = await db
@@ -20,13 +21,64 @@ export async function createSimbriefDispatch(input: {
       tenantId: input.tenantId,
       flightId: input.flightId,
       createdByMembershipId: input.createdByMembershipId,
-      simbriefUserId: input.simbriefUserId,
+      simbriefUserId: input.simbriefUserId ?? null,
       staticId: input.staticId,
-      callbackTokenMac: input.callbackTokenMac,
+      callbackTokenMac: input.callbackTokenMac ?? null,
       request: input.request,
+      status: input.status ?? "pending",
     })
     .returning();
   return created!;
+}
+
+export async function listSimbriefDispatches(
+  tenantId: string,
+  flightId: string,
+): Promise<SimbriefDispatch[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(simbriefDispatches)
+    .where(
+      and(
+        eq(simbriefDispatches.tenantId, tenantId),
+        eq(simbriefDispatches.flightId, flightId),
+      ),
+    )
+    .orderBy(desc(simbriefDispatches.createdAt), desc(simbriefDispatches.id));
+}
+
+export async function startSimbriefDispatch(input: {
+  id: string;
+  tenantId: string;
+  flightId: string;
+  generatedByMembershipId: string;
+  simbriefUserId: string;
+  callbackTokenMac: string;
+  request: Record<string, string>;
+}): Promise<SimbriefDispatch | null> {
+  const db = getDb();
+  const [updated] = await db
+    .update(simbriefDispatches)
+    .set({
+      generatedByMembershipId: input.generatedByMembershipId,
+      simbriefUserId: input.simbriefUserId,
+      callbackTokenMac: input.callbackTokenMac,
+      request: input.request,
+      status: "pending",
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(simbriefDispatches.tenantId, input.tenantId),
+        eq(simbriefDispatches.flightId, input.flightId),
+        eq(simbriefDispatches.id, input.id),
+        eq(simbriefDispatches.status, "prepared"),
+      ),
+    )
+    .returning();
+  return updated ?? null;
 }
 
 export async function findSimbriefDispatch(

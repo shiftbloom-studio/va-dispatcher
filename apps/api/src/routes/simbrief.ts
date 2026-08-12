@@ -2,6 +2,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { SimbriefDispatch } from "../db/schema.js";
+import { findTenantById } from "../db/repositories/tenants.js";
+import { env } from "../env.js";
 import type { AppVariables } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
 import * as simbriefService from "../domain/simbrief/service.js";
@@ -58,7 +60,13 @@ simbriefPublicRoutes.get(
         ? { state: query.state, code: query.code }
         : { state: query.state, error: query.error! },
     );
-    return c.json({ connection: serializeConnection(membership) });
+    const redirect = await callbackRedirect(
+      membership.tenantId,
+      "/settings?simbrief=navigraph-connected",
+    );
+    return redirect
+      ? c.redirect(redirect, 303)
+      : c.json({ connection: serializeConnection(membership) });
   },
 );
 
@@ -78,6 +86,11 @@ simbriefPublicRoutes.get(
       query.dispatchId,
       query.token,
     );
+    const redirect = await callbackRedirect(
+      dispatch.tenantId,
+      `/portal/flights/${dispatch.flightId}?simbrief=ready`,
+    );
+    if (redirect) return c.redirect(redirect, 303);
     return c.json({
       dispatch: {
         id: dispatch.id,
@@ -137,18 +150,41 @@ simbriefRoutes.post(
   zValidator("param", idParamsSchema.pick({ flightId: true })),
   zValidator("json", simbriefDispatchOptionsSchema.optional()),
   async (c) => {
-    const result = await simbriefService.createDispatch(
+    const dispatch = await simbriefService.prepareDispatch(
       actor(c),
       c.req.valid("param").flightId,
       c.req.valid("json") ?? simbriefDispatchOptionsSchema.parse({}),
     );
-    return c.json(
-      {
-        dispatch: serializeDispatch(result.dispatch),
-        dispatchUrl: result.dispatchUrl,
-      },
-      201,
+    return c.json({ dispatch: serializeDispatch(dispatch) }, 201);
+  },
+);
+
+simbriefRoutes.get(
+  "/flights/:flightId/simbrief/dispatches",
+  zValidator("param", idParamsSchema.pick({ flightId: true })),
+  async (c) => {
+    const dispatches = await simbriefService.listDispatches(
+      actor(c),
+      c.req.valid("param").flightId,
     );
+    return c.json({ items: dispatches.map(serializeDispatch) });
+  },
+);
+
+simbriefRoutes.post(
+  "/flights/:flightId/simbrief/dispatches/:dispatchId/generate",
+  zValidator("param", idParamsSchema.required()),
+  async (c) => {
+    const params = c.req.valid("param");
+    const result = await simbriefService.generateDispatch(
+      actor(c),
+      params.flightId,
+      params.dispatchId,
+    );
+    return c.json({
+      dispatch: serializeDispatch(result.dispatch),
+      dispatchUrl: result.dispatchUrl,
+    });
   },
 );
 
@@ -229,11 +265,20 @@ function serializeConnection(membership: {
 }
 
 function serializeDispatch(dispatch: SimbriefDispatch) {
-  const { userid: _userId, pid: _pilotId, ...request } = dispatch.request;
+  const {
+    userid: _userId,
+    pid: _pilotId,
+    dxname: dispatcherName,
+    manualrmk: dispatcherRemarks,
+    ...request
+  } = dispatch.request;
   return {
     id: dispatch.id,
     flightId: dispatch.flightId,
-    createdByMembershipId: dispatch.createdByMembershipId,
+    preparedByMembershipId: dispatch.createdByMembershipId,
+    generatedByMembershipId: dispatch.generatedByMembershipId,
+    dispatcherName: dispatcherName ?? "VA Dispatcher",
+    dispatcherRemarks: dispatcherRemarks ?? null,
     staticId: dispatch.staticId,
     status: dispatch.status,
     request,
@@ -245,4 +290,19 @@ function serializeDispatch(dispatch: SimbriefDispatch) {
     createdAt: dispatch.createdAt.toISOString(),
     updatedAt: dispatch.updatedAt.toISOString(),
   };
+}
+
+async function callbackRedirect(
+  tenantId: string,
+  tenantPath: string,
+): Promise<string | null> {
+  const origin = env().APP_ORIGIN;
+  if (!origin) return null;
+  const tenant = await findTenantById(tenantId);
+  if (!tenant) return null;
+  const url = new URL(`/${tenant.slug}${tenantPath}`, origin);
+  if (env().NODE_ENV === "production" && url.protocol !== "https:") {
+    return null;
+  }
+  return url.toString();
 }

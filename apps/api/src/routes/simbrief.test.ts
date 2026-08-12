@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   getConnection: vi.fn(),
   connectAccount: vi.fn(),
   disconnectAccount: vi.fn(),
-  createDispatch: vi.fn(),
+  prepareDispatch: vi.fn(),
+  generateDispatch: vi.fn(),
+  listDispatches: vi.fn(),
   getLatestDispatch: vi.fn(),
   getDispatch: vi.fn(),
   syncDispatch: vi.fn(),
@@ -49,6 +51,7 @@ const dispatch: SimbriefDispatch = {
   tenantId: "20000000-0000-4000-8000-000000000001",
   flightId: "30000000-0000-4000-8000-000000000001",
   createdByMembershipId: "10000000-0000-4000-8000-000000000001",
+  generatedByMembershipId: "10000000-0000-4000-8000-000000000001",
   simbriefUserId: "123456",
   staticId: "VAD_40000000000040008000000000000001",
   callbackTokenMac: "mac-is-never-serialized",
@@ -77,10 +80,18 @@ app.route("/", simbriefRoutes);
 describe("SimBrief routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.createDispatch.mockResolvedValue({
+    mocks.prepareDispatch.mockResolvedValue({
+      ...dispatch,
+      status: "prepared",
+      generatedByMembershipId: null,
+      simbriefUserId: null,
+      callbackTokenMac: null,
+    });
+    mocks.generateDispatch.mockResolvedValue({
       dispatch,
       dispatchUrl: "https://www.simbrief.com/ofp/ofp.loader.api.php?signed=1",
     });
+    mocks.listDispatches.mockResolvedValue([dispatch]);
     mocks.completeDispatchCallback.mockResolvedValue({
       ...dispatch,
       status: "ready",
@@ -111,7 +122,7 @@ describe("SimBrief routes", () => {
     mocks.isNavigraphOauthConfigured.mockReturnValue(true);
   });
 
-  it("allows an authenticated pilot to create a dispatch and hides internal identifiers", async () => {
+  it("saves a preparation and hides internal identifiers", async () => {
     const response = await app.request(
       `/flights/${dispatch.flightId}/simbrief/dispatches`,
       {
@@ -121,7 +132,6 @@ describe("SimBrief routes", () => {
       },
     );
     const body = (await response.json()) as {
-      dispatchUrl: string;
       dispatch: {
         request: Record<string, string>;
         [key: string]: unknown;
@@ -129,12 +139,11 @@ describe("SimBrief routes", () => {
     };
 
     expect(response.status).toBe(201);
-    expect(mocks.createDispatch).toHaveBeenCalledWith(
+    expect(mocks.prepareDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ role: "pilot" }),
       dispatch.flightId,
       expect.objectContaining({ notams: true, units: "KGS" }),
     );
-    expect(body.dispatchUrl).toContain("simbrief.com");
     expect(body.dispatch).not.toHaveProperty("callbackTokenMac");
     expect(body.dispatch.request).not.toHaveProperty("userid");
     expect(body.dispatch.request).not.toHaveProperty("pid");
@@ -148,7 +157,7 @@ describe("SimBrief routes", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(mocks.createDispatch).toHaveBeenCalledWith(
+    expect(mocks.prepareDispatch).toHaveBeenCalledWith(
       expect.anything(),
       dispatch.flightId,
       expect.objectContaining({ units: "KGS" }),
@@ -166,7 +175,23 @@ describe("SimBrief routes", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(mocks.createDispatch).not.toHaveBeenCalled();
+    expect(mocks.prepareDispatch).not.toHaveBeenCalled();
+  });
+
+  it("launches a prepared revision through the assigned-pilot generation endpoint", async () => {
+    const response = await app.request(
+      `/flights/${dispatch.flightId}/simbrief/dispatches/${dispatch.id}/generate`,
+      { method: "POST" },
+    );
+    const body = (await response.json()) as { dispatchUrl: string };
+
+    expect(response.status).toBe(200);
+    expect(mocks.generateDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ membershipId: expect.any(String) }),
+      dispatch.flightId,
+      dispatch.id,
+    );
+    expect(body.dispatchUrl).toContain("simbrief.com");
   });
 
   it("accepts only a numeric SimBrief Pilot ID for connection", async () => {
