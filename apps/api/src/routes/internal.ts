@@ -17,7 +17,7 @@ function assertCronAuth(authHeader: string | undefined) {
   }
 }
 
-internalRoutes.post("/internal/cron/acars-poll", async (c) => {
+internalRoutes.on(["GET", "POST"], "/internal/cron/acars-poll", async (c) => {
   assertCronAuth(c.req.header("authorization"));
   // Cheap exit before any DB connection when mock (keeps Neon scale-to-zero)
   if (env().ACARS_PROVIDER === "mock") {
@@ -62,8 +62,7 @@ internalRoutes.post(
     }
 
     const body = c.req.valid("json") ?? {};
-    const clerkOrgId =
-      body.clerkOrgId ?? e.VSAS_CLERK_ORG_ID ?? "org_vsas_dev";
+    const clerkOrgId = body.clerkOrgId ?? e.VSAS_CLERK_ORG_ID ?? "org_vsas_dev";
 
     const tenant = await upsertTenantBySlug({
       slug: "vsas",
