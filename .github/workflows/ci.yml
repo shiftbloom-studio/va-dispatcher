@@ -17,10 +17,6 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [24.15.0, 26.7.0]
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,7 +29,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 24.15.0
           cache: pnpm
 
       - name: Install dependencies
@@ -55,7 +51,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-reports-node-${{ matrix.node-version }}
+          name: coverage-reports-node-24.15.0
           path: |
             apps/api/coverage
             apps/web/coverage
@@ -66,17 +62,15 @@ jobs:
         run: pnpm build
 
       - name: Install Playwright Chromium
-        if: matrix.node-version == '26.7.0'
         run: pnpm --filter @va-dispatch/web exec playwright install --with-deps chromium
 
       - name: Browser smoke tests
-        if: matrix.node-version == '26.7.0'
         run: pnpm --filter @va-dispatch/web test:e2e
 
       - name: Upload Playwright report
-        if: failure() && matrix.node-version == '26.7.0'
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-report-node-${{ matrix.node-version }}
+          name: playwright-report-node-24.15.0
           path: apps/web/playwright-report
           retention-days: 7
