@@ -8,3 +8,9 @@ allowBuilds:
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - "@clerk/backend@3.16.4"
+  - "@clerk/nextjs@7.7.4"
+  - "@testing-library/user-event@14.6.4"
+  - "@vitest/mocker@5.0.0-rc.1"
+  - "@vitest/spy@5.0.0-rc.1"
+  - vitest@5.0.0-rc.1
+  - "@vitest/coverage-istanbul@5.0.0-rc.1"
