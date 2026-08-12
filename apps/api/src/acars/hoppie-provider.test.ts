@@ -119,6 +119,15 @@ describe("parseHoppiePollResponse", () => {
       type: "progress",
       body: "OUT/1234Z",
     });
+    expect(msgs[0]?.providerMessageId).toMatch(/^hoppie-sha256-[a-f0-9]{64}$/);
+  });
+
+  it("uses a stable identifier when Hoppie returns the same stored message again", () => {
+    const raw = "ok {SAS123 telex {REQUESTING GATE ASSIGNMENT}}";
+
+    expect(parseHoppiePollResponse(raw, "VSAS")[0]?.providerMessageId).toBe(
+      parseHoppiePollResponse(raw, "VSAS")[0]?.providerMessageId,
+    );
   });
 
   it("returns empty on error response", () => {

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   AcarsMsgType,
   AcarsProvider,
@@ -191,13 +193,20 @@ export function parseHoppiePollResponse(
   const messageBlockPattern =
     /\{([A-Z0-9-]+)\s+([a-z]+)\s+\{([\s\S]*?)\}\s*\}/gi;
   let match: RegExpExecArray | null;
-  let messageIndex = 0;
   while ((match = messageBlockPattern.exec(payload)) !== null) {
     const fromStation = match[1] ?? "UNKNOWN";
     const rawMessageType = (match[2] ?? "other").toLowerCase();
     const body = match[3] ?? "";
+    const canonicalMessage = JSON.stringify({
+      from: fromStation.toUpperCase(),
+      to: defaultTo.toUpperCase(),
+      type: rawMessageType,
+      body: body.replace(/\r\n?/g, "\n").trim(),
+    });
     messages.push({
-      providerMessageId: `hoppie-poll-${Date.now()}-${messageIndex++}`,
+      providerMessageId: `hoppie-sha256-${createHash("sha256")
+        .update(canonicalMessage)
+        .digest("hex")}`,
       from: fromStation,
       to: defaultTo,
       type: mapHoppieType(rawMessageType),
