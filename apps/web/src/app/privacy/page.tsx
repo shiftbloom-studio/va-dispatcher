@@ -34,6 +34,12 @@ export default async function PrivacyPage() {
         </p>
         <address className="not-italic">
           <strong className="text-slate-950">{config.operatorName}</strong>
+          {config.operatorDescription ? (
+            <>
+              <br />
+              <span>{config.operatorDescription}</span>
+            </>
+          ) : null}
           <br />
           {config.addressLines.map((line) => (
             <span key={line}>
@@ -56,7 +62,8 @@ export default async function PrivacyPage() {
           This notice covers the web application, its same-origin API, and the
           operational data handled through them. Data comes from you, Virtual
           Airline administrators and dispatchers, the configured authentication
-          provider, and—when live ACARS is enabled—participating ACARS stations.
+          provider, and—when live ACARS is enabled—participating Hoppie&apos;s
+          ACARS stations.
         </p>
         <p>
           The service is multi-tenant. Membership and operational records are
@@ -73,23 +80,23 @@ export default async function PrivacyPage() {
             [
               "Account identifiers, name, email or login identifier, organization, role, display name, and pilot callsign",
               "Authenticate you, maintain membership, authorize tenant and role access, and administer the service",
-              "Article 6(1)(b) GDPR (provide the requested member service); Article 6(1)(f) GDPR for access security",
+              "Article 6(1)(b) GDPR where needed to provide the requested member service; otherwise Article 6(1)(f) GDPR (operate and secure the voluntary service)",
               "For the active account or membership and afterwards only while needed for account closure, legal obligations, or legal claims",
             ],
             [
               "Availability windows, schedule requests, preferences, notes, assigned flights, timestamps, and operational status",
               "Build and coordinate requested virtual flight schedules and keep an operational history",
-              "Article 6(1)(b) GDPR",
+              "Article 6(1)(b) GDPR where needed for the member service; otherwise Article 6(1)(f) GDPR (coordinate Virtual Airline operations)",
               "While required for the member service and operational history; then deleted or anonymized unless obligations or claims require longer retention",
             ],
             [
-              "Simulated ACARS station identifiers, message text, direction, provider metadata, and timestamps",
-              "Exchange and display simulated operational messages",
-              "Article 6(1)(b) GDPR",
+              "Hoppie's ACARS station identifiers, virtual message text, direction, provider metadata, and timestamps",
+              "Exchange and display virtual operational messages through Hoppie's ACARS",
+              "Article 6(1)(b) GDPR where needed for the member service; otherwise Article 6(1)(f) GDPR (operate Virtual Airline communications)",
               "While needed for current operations, support, abuse handling, and legal claims. The external Hoppie queue states a 24-hour message lifetime",
             ],
             [
-              "Audit events, request IDs, authentication events, IP address, device/browser and server log data",
+              "Audit events, request IDs, authentication events, IP address, device/browser and server log data, and BotID challenge results and browser/request signals on protected mutations",
               "Protect accounts and infrastructure, diagnose faults, prevent abuse, and establish or defend legal claims",
               "Article 6(1)(f) GDPR (legitimate interests in secure and reliable operations)",
               "Only for the period necessary for security review, incident response, troubleshooting, and applicable claims; records are then deleted or aggregated",
@@ -97,7 +104,7 @@ export default async function PrivacyPage() {
             [
               "Aggregated page routes, referrers, coarse location and device categories, and browser performance metrics",
               "Understand service usage and improve reliability and performance",
-              "Article 6(1)(f) GDPR (legitimate interests in privacy-preserving service measurement and improvement)",
+              "Article 6(1)(a) GDPR (consent); the optional telemetry remains off until allowed",
               "According to the configured Vercel Analytics and Speed Insights retention periods; Web Analytics visitor hashes reset daily",
             ],
           ]}
@@ -145,7 +152,7 @@ export default async function PrivacyPage() {
             .
           </li>
           <li>
-            <strong>Neon, Inc.</strong> — managed application database and
+            <strong>Neon, LLC</strong> — managed application database and
             backups. See the{" "}
             <a
               href="https://neon.com/dpa"
@@ -196,11 +203,12 @@ export default async function PrivacyPage() {
       >
         <p>
           The current application does not use advertising or marketing cookies.
-          Vercel Web Analytics stores anonymized aggregate data without cookies,
-          Speed Insights reports browser performance metrics, and Vercel BotID
-          performs security challenges on protected requests. The cookie banner
-          is an informational notice, not a request for an optional cookie
-          category.
+          Optional Vercel Web Analytics stores anonymized aggregate data without
+          analytics cookies, and Speed Insights reports browser performance
+          metrics. Both remain off until you select “Allow anonymous analytics”.
+          Vercel BotID is always active on protected mutations: it runs a
+          browser challenge and sends proof and security signals with those
+          requests.
         </p>
         <LegalTable
           caption="Browser storage used by the application"
@@ -208,8 +216,7 @@ export default async function PrivacyPage() {
           rows={[
             [
               <code key="clerk-cookies">
-                __session, __client, __client_uat (and equivalent Clerk session
-                keys)
+                __session, __client_uat (and equivalent Clerk session keys)
               </code>,
               "Clerk",
               "Authentication, session continuity, organization selection, and security",
@@ -222,15 +229,9 @@ export default async function PrivacyPage() {
               "Provider-controlled security lifetime",
             ],
             [
-              <code key="botid-cookies">KP_* security keys (where set)</code>,
-              "Vercel BotID",
-              "Validate protected browser requests and prevent automated abuse",
-              "Provider-controlled security lifetime",
-            ],
-            [
-              <code key="notice-storage">va-dispatch.cookie-notice</code>,
+              <code key="notice-storage">va-dispatch.privacy-preferences</code>,
               "vSAS Live Operations",
-              "Remember the notice version and acknowledgement time so the notice is not repeatedly shown",
+              "Remember the notice version, analytics choice, and decision time so your preference is applied",
               "Local storage until the notice version changes, you use ‘Show notice again’, or you clear browser data; never sent automatically with requests",
             ],
           ]}
@@ -238,10 +239,12 @@ export default async function PrivacyPage() {
         <p>
           Authentication and security storage is strictly necessary to provide
           the signed-in service requested by the user (Section 25(2)(2) TDDDG).
-          The notice acknowledgement is stored only after the user explicitly
-          requests it by selecting “Understood”. You can inspect or clear site
-          data in your browser at any time and reopen the controls through
-          “Cookie settings” in the footer.
+          The privacy preference is stored only after you make a choice.
+          Optional Analytics and Speed Insights rely on your consent under
+          Section 25(1) TDDDG and Article 6(1)(a) GDPR. You can withdraw that
+          consent at any time through “Cookie settings” in the footer; future
+          optional telemetry then stops. You can also inspect or clear site data
+          in your browser at any time.
         </p>
       </LegalSection>
 
@@ -252,8 +255,8 @@ export default async function PrivacyPage() {
           erase data (Article 17), restrict processing (Article 18), receive
           portable data (Article 20), and object to processing based on
           legitimate interests (Article 21). You may also withdraw consent at
-          any time for future processing; the current deployment does not rely
-          on consent for optional cookies.
+          any time for future processing. This deployment relies on consent only
+          for optional Vercel Analytics and Speed Insights.
         </p>
         <p>
           Send a request to{" "}
@@ -292,8 +295,9 @@ export default async function PrivacyPage() {
           transport, encrypted storage for provider credentials, request-level
           audit identifiers, and security headers. Access is limited to people
           and providers who need it for the stated purposes. No solely automated
-          decision with legal or similarly significant effects and no profiling
-          is performed by this application.
+          decision with legal or similarly significant effects is made. BotID
+          automatically classifies protected requests for abuse prevention as
+          described above; it is not used for marketing or member evaluation.
         </p>
       </LegalSection>
 

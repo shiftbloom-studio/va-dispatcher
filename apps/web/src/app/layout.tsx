@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 
+import { OptionalTelemetry } from "@/components/optional-telemetry";
 import { PrivacyControls } from "@/components/privacy-controls";
 
 import "./globals.css";
@@ -27,8 +26,7 @@ export default function RootLayout({
         </a>
         {children}
         <PrivacyControls />
-        <Analytics />
-        <SpeedInsights />
+        <OptionalTelemetry />
       </body>
     </html>
   );
