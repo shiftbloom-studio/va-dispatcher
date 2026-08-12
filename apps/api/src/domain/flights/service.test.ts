@@ -41,6 +41,13 @@ vi.mock("../../db/repositories/flight-events.js", () => ({
   listFlightEvents: mocks.listFlightEvents,
 }));
 vi.mock("../../db/repositories/flights.js", () => ({
+  dispatchBoardWindow: (now = new Date()) => ({
+    generatedAt: now,
+    overdueFrom: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+    upcomingTo: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+    overdueLookbackHours: 24,
+    upcomingHorizonDays: 7,
+  }),
   createFlight: mocks.createFlight,
   fulfillScheduleRequest: mocks.fulfillScheduleRequest,
   findScheduleFulfillmentAttempt: mocks.findScheduleFulfillmentAttempt,
