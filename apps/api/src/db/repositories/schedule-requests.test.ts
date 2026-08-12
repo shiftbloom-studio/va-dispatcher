@@ -125,6 +125,20 @@ describe("schedule request repository concurrency boundary", () => {
       /update "flights"[\s\S]*"version" = "flights"\."version" \+ 1/i,
     );
     expect(query.sql).toContain("'schedule_request_cancellation'");
+    expect(query.sql).toContain("'fromVersion'");
+    expect(query.sql).toContain("'toVersion'");
+    expect(query.params).toContain(
+      JSON.stringify({
+        from: "partially_fulfilled",
+        to: "cancelled",
+        fromVersion: 2,
+        toVersion: 3,
+        reason: "Pilot unavailable",
+        linkedFlightAction: "cancel_predeparture",
+        linkedFlightPolicy:
+          "cancel draft, offered, accepted, and briefed; preserve active and terminal flights",
+      }),
+    );
     expect(query.sql).toMatch(/from cancelled_flights/i);
     expect(query.sql).toMatch(/audit_totals\.count = cancelled_totals\.count/i);
     expect(execute).toHaveBeenCalledTimes(1);

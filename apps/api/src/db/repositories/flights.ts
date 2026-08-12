@@ -284,6 +284,8 @@ export async function fulfillScheduleRequest(input: {
         jsonb_build_object(
           'from', ${input.expectedRequestStatus},
           'to', request_updated.status,
+          'fromVersion', ${input.expectedRequestVersion},
+          'toVersion', ${input.expectedRequestVersion + 1},
           'batchCount', ${proposed.length},
           'existingFlightCount', request_updated.existing_flight_count,
           'cumulativeFlightCount', request_updated.cumulative_flight_count,
@@ -302,6 +304,9 @@ export async function fulfillScheduleRequest(input: {
         request_updated.id,
         jsonb_build_object(
           'count', ${proposed.length},
+          'requestFromVersion', ${input.expectedRequestVersion},
+          'requestToVersion', ${input.expectedRequestVersion + 1},
+          'createdFlightVersion', 1,
           'flightIds', to_jsonb(ARRAY(SELECT inserted.id FROM inserted))
         )
       FROM request_updated

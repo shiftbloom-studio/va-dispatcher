@@ -168,6 +168,7 @@ export const memberships = pgTable(
       t.tenantId,
       t.navigraphSubject,
     ),
+    uniqueIndex("memberships_tenant_id_uidx").on(t.tenantId, t.id),
     index("memberships_tenant_idx").on(t.tenantId),
   ],
 );
@@ -198,6 +199,12 @@ export const scheduleRequests = pgTable(
     ...timestamps,
   },
   (t) => [
+    uniqueIndex("schedule_requests_tenant_id_uidx").on(t.tenantId, t.id),
+    foreignKey({
+      columns: [t.tenantId, t.pilotMembershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: "schedule_requests_tenant_pilot_fkey",
+    }),
     index("schedule_requests_tenant_status_idx").on(t.tenantId, t.status),
     index("schedule_requests_tenant_pilot_idx").on(
       t.tenantId,
@@ -255,6 +262,16 @@ export const flights = pgTable(
       foreignColumns: [t.tenantId, t.id],
       name: "flights_tenant_replaces_fkey",
     }).onDelete("restrict"),
+    foreignKey({
+      columns: [t.tenantId, t.pilotMembershipId],
+      foreignColumns: [memberships.tenantId, memberships.id],
+      name: "flights_tenant_pilot_fkey",
+    }),
+    foreignKey({
+      columns: [t.tenantId, t.scheduleRequestId],
+      foreignColumns: [scheduleRequests.tenantId, scheduleRequests.id],
+      name: "flights_tenant_schedule_request_fkey",
+    }),
     index("flights_tenant_status_idx").on(t.tenantId, t.status),
     index("flights_tenant_etd_idx").on(t.tenantId, t.etd),
     index("flights_tenant_pilot_idx").on(t.tenantId, t.pilotMembershipId),

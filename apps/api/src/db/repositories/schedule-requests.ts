@@ -235,6 +235,8 @@ export async function cancelScheduleRequest(input: {
   const requestAuditMeta = JSON.stringify({
     from: input.expectedStatus,
     to: "cancelled",
+    fromVersion: input.expectedVersion,
+    toVersion: input.expectedVersion + 1,
     reason: input.reason?.trim() || undefined,
     linkedFlightAction: input.linkedFlightAction,
     linkedFlightPolicy:
@@ -261,7 +263,8 @@ export async function cancelScheduleRequest(input: {
     ), eligible_flights AS (
       SELECT
         ${flights.id} AS id,
-        ${flights.status} AS from_status
+        ${flights.status} AS from_status,
+        ${flights.version} AS from_version
       FROM ${flights}
       INNER JOIN request_updated ON TRUE
       WHERE
@@ -281,7 +284,11 @@ export async function cancelScheduleRequest(input: {
       WHERE
         ${flights.tenantId} = ${input.tenantId}
         AND ${flights.id} = eligible_flights.id
-      RETURNING ${flights.id}, eligible_flights.from_status
+      RETURNING
+        ${flights.id},
+        eligible_flights.from_status,
+        eligible_flights.from_version,
+        ${flights.version} AS to_version
     ), request_audited AS (
       INSERT INTO ${auditEvents} (
         tenant_id,
@@ -318,6 +325,8 @@ export async function cancelScheduleRequest(input: {
         jsonb_build_object(
           'from', cancelled_flights.from_status,
           'to', 'cancelled',
+          'fromVersion', cancelled_flights.from_version,
+          'toVersion', cancelled_flights.to_version,
           'reason', ${input.reason?.trim() || null},
           'source', 'schedule_request_cancellation',
           'scheduleRequestId', ${input.id}
