@@ -6,6 +6,10 @@
 
 Multi-tenant Virtual Airline Live Dispatch & ACARS tool.
 
+For the full product guide, architecture, API reference, operating runbooks,
+and current limitations, see the
+[project Wiki](https://github.com/shiftbloom-studio/va-dispatcher/wiki).
+
 - **One tenant = one Virtual Airline** (first: **vSAS**)
 - **API**: Hono + TypeScript on Vercel Services (`apps/api`)
 - **Web**: Next.js pilot portal + dispatcher suite (`apps/web`)
