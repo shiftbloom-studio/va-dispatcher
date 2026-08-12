@@ -1162,13 +1162,6 @@ function pilotOptionLabel(pilot: Member): string {
   return `${callsign} — ${pilot.displayName ?? callsign}`;
 }
 
-function statusLaneName(status: string): string {
-  if (status === "accepted") return "To schedule";
-  if (status === "briefed") return "Scheduled";
-  if (status === "active") return "Active";
-  return status;
-}
-
 function weatherText(value: unknown): string {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return String(value ?? "No report");
