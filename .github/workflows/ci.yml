@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
@@ -19,12 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: Install pnpm
-        run: npm install --global pnpm@11.21.0
+          cache: pnpm
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
