@@ -50,6 +50,11 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
           endAt: utcInputToIso(interval.endAt),
         }))
         .sort((left, right) => left.startAt.localeCompare(right.startAt));
+      const firstInterval = availability[0];
+      const lastInterval = availability.at(-1);
+      if (!firstInterval || !lastInterval) {
+        throw new Error("At least one availability interval is required");
+      }
       return api("/schedule-requests", {
         method: "POST",
         schema: scheduleRequestResponseSchema,
@@ -57,8 +62,8 @@ export function ScheduleRequestForm({ slug }: { slug: string }) {
           title: values.title || null,
           notes: values.notes || null,
           desiredFlightCount: values.desiredFlightCount,
-          windowStart: availability[0].startAt,
-          windowEnd: availability.at(-1)!.endAt,
+          windowStart: firstInterval.startAt,
+          windowEnd: lastInterval.endAt,
           preferences: { availability },
         }),
       });

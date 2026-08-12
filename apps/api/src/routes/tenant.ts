@@ -218,8 +218,8 @@ function acarsConfigResponse(tenant: Tenant) {
 function hoppieLastTestedAt(settings: Record<string, unknown>): string | null {
   const acars = settings.acars;
   if (!acars || typeof acars !== "object" || Array.isArray(acars)) return null;
-  const value = (acars as Record<string, unknown>).hoppieLastTestedAt;
-  return typeof value === "string" ? value : null;
+  const lastTestedAt = (acars as Record<string, unknown>).hoppieLastTestedAt;
+  return typeof lastTestedAt === "string" ? lastTestedAt : null;
 }
 
 function withHoppieLastTestedAt(

@@ -30,18 +30,18 @@ acarsRoutes.get(
       ...query,
     });
     return c.json({
-      items: page.items.map((m) => ({
-        id: m.id,
-        direction: m.direction,
-        msgType: m.msgType,
-        fromStation: m.fromStation,
-        toStation: m.toStation,
-        body: m.body,
-        flightId: m.flightId,
-        provider: m.provider,
-        createdAt: m.createdAt.toISOString(),
-        receivedAt: m.receivedAt?.toISOString() ?? null,
-        sentAt: m.sentAt?.toISOString() ?? null,
+      items: page.items.map((message) => ({
+        id: message.id,
+        direction: message.direction,
+        msgType: message.msgType,
+        fromStation: message.fromStation,
+        toStation: message.toStation,
+        body: message.body,
+        flightId: message.flightId,
+        provider: message.provider,
+        createdAt: message.createdAt.toISOString(),
+        receivedAt: message.receivedAt?.toISOString() ?? null,
+        sentAt: message.sentAt?.toISOString() ?? null,
       })),
       nextCursor: page.nextCursor,
     });
@@ -50,19 +50,22 @@ acarsRoutes.get(
 
 acarsRoutes.get("/acars/messages/:id", requireRole("dispatcher"), async (c) => {
   const auth = c.get("auth");
-  const m = await acarsService.getMessage(auth.tenantId, c.req.param("id"));
+  const message = await acarsService.getMessage(
+    auth.tenantId,
+    c.req.param("id"),
+  );
   return c.json({
     message: {
-      id: m.id,
-      direction: m.direction,
-      msgType: m.msgType,
-      fromStation: m.fromStation,
-      toStation: m.toStation,
-      body: m.body,
-      hoppieRaw: m.hoppieRaw,
-      flightId: m.flightId,
-      provider: m.provider,
-      createdAt: m.createdAt.toISOString(),
+      id: message.id,
+      direction: message.direction,
+      msgType: message.msgType,
+      fromStation: message.fromStation,
+      toStation: message.toStation,
+      body: message.body,
+      hoppieRaw: message.hoppieRaw,
+      flightId: message.flightId,
+      provider: message.provider,
+      createdAt: message.createdAt.toISOString(),
     },
   });
 });
@@ -122,10 +125,10 @@ acarsRoutes.post(
   async (c) => {
     const auth = c.get("auth");
     const body = c.req.valid("json");
-    const result = await acarsService.simulateInbound({
+    const simulationResult = await acarsService.simulateInbound({
       tenantId: auth.tenantId,
       ...body,
     });
-    return c.json(result, 201);
+    return c.json(simulationResult, 201);
   },
 );

@@ -14,7 +14,7 @@ flightRoutes.use("*", requireAuth);
 const icao = z
   .string()
   .length(4)
-  .transform((s) => s.toUpperCase());
+  .transform((value) => value.toUpperCase());
 
 const flightBodySchema = z.object({
   scheduleRequestId: z.string().uuid().optional().nullable(),
@@ -94,8 +94,8 @@ flightRoutes.get(
       status: z
         .string()
         .optional()
-        .transform((v) =>
-          v ? (v.split(",") as Flight["status"][]) : undefined,
+        .transform((value) =>
+          value ? (value.split(",") as Flight["status"][]) : undefined,
         ),
       fromEtd: z.coerce.date().optional(),
       toEtd: z.coerce.date().optional(),
@@ -274,26 +274,26 @@ flightRoutes.post(
   },
 );
 
-function serializeFlight(f: Flight) {
+function serializeFlight(flight: Flight) {
   return {
-    id: f.id,
-    scheduleRequestId: f.scheduleRequestId,
-    pilotMembershipId: f.pilotMembershipId,
-    flightNumber: f.flightNumber,
-    depIcao: f.depIcao,
-    arrIcao: f.arrIcao,
-    etd: f.etd.toISOString(),
-    eta: f.eta.toISOString(),
-    aircraftType: f.aircraftType,
-    status: f.status,
-    cancelReason: f.cancelReason,
-    declinedReason: f.declinedReason,
-    dispatcherNotes: f.dispatcherNotes,
-    outAt: f.outAt?.toISOString() ?? null,
-    offAt: f.offAt?.toISOString() ?? null,
-    onAt: f.onAt?.toISOString() ?? null,
-    inAt: f.inAt?.toISOString() ?? null,
-    createdAt: f.createdAt.toISOString(),
-    updatedAt: f.updatedAt.toISOString(),
+    id: flight.id,
+    scheduleRequestId: flight.scheduleRequestId,
+    pilotMembershipId: flight.pilotMembershipId,
+    flightNumber: flight.flightNumber,
+    depIcao: flight.depIcao,
+    arrIcao: flight.arrIcao,
+    etd: flight.etd.toISOString(),
+    eta: flight.eta.toISOString(),
+    aircraftType: flight.aircraftType,
+    status: flight.status,
+    cancelReason: flight.cancelReason,
+    declinedReason: flight.declinedReason,
+    dispatcherNotes: flight.dispatcherNotes,
+    outAt: flight.outAt?.toISOString() ?? null,
+    offAt: flight.offAt?.toISOString() ?? null,
+    onAt: flight.onAt?.toISOString() ?? null,
+    inAt: flight.inAt?.toISOString() ?? null,
+    createdAt: flight.createdAt.toISOString(),
+    updatedAt: flight.updatedAt.toISOString(),
   };
 }

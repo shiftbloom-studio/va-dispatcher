@@ -10,7 +10,7 @@ import {
   findTenantByClerkOrgId,
   upsertTenantBySlug,
 } from "../db/repositories/tenants.js";
-import { mapClerkOrgRole } from "../domain/members/roles.js";
+import { mapClerkOrgRole, roleAtLeast } from "../domain/members/roles.js";
 import type { MemberRole } from "../db/schema.js";
 import { hasDatabase } from "../db/client.js";
 
@@ -26,9 +26,9 @@ export type AppVariables = {
   auth: AuthContext;
 };
 
-function bearerToken(header: string | undefined): string | null {
-  if (!header) return null;
-  const [scheme, token] = header.split(" ");
+function bearerToken(authorizationHeader: string | undefined): string | null {
+  if (!authorizationHeader) return null;
+  const [scheme, token] = authorizationHeader.split(" ");
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
   return token;
 }
@@ -41,7 +41,7 @@ function bearerToken(header: string | undefined): string | null {
  *   X-Dev-User-Id, X-Dev-Org-Id, X-Dev-Role (optional)
  */
 export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
-  async (c, next) => {
+  async (context, next) => {
     if (!hasDatabase()) {
       throw new AppError(
         "INTERNAL",
@@ -50,13 +50,15 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       );
     }
 
-    const e = env();
+    const config = env();
 
-    if (e.AUTH_DEV_BYPASS && e.NODE_ENV !== "production") {
-      const clerkUserId = c.req.header("X-Dev-User-Id") ?? "user_dev";
+    if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
+      const clerkUserId = context.req.header("X-Dev-User-Id") ?? "user_dev";
       const clerkOrgId =
-        c.req.header("X-Dev-Org-Id") ?? e.VSAS_CLERK_ORG_ID ?? "org_vsas_dev";
-      const role = mapClerkOrgRole(c.req.header("X-Dev-Role") ?? "admin");
+        context.req.header("X-Dev-Org-Id") ??
+        config.VSAS_CLERK_ORG_ID ??
+        "org_vsas_dev";
+      const role = mapClerkOrgRole(context.req.header("X-Dev-Role") ?? "admin");
 
       const tenant = await findTenantByClerkOrgId(clerkOrgId);
       if (!tenant) {
@@ -74,7 +76,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
         displayName: "Dev User",
       });
 
-      c.set("auth", {
+      context.set("auth", {
         clerkUserId,
         tenantId: tenant.id,
         membershipId: membership.id,
@@ -85,35 +87,33 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       return;
     }
 
-    if (!e.CLERK_SECRET_KEY) {
-      throw new AppError(
-        "INTERNAL",
-        "CLERK_SECRET_KEY is not configured",
-        { status: 503 },
-      );
+    if (!config.CLERK_SECRET_KEY) {
+      throw new AppError("INTERNAL", "CLERK_SECRET_KEY is not configured", {
+        status: 503,
+      });
     }
 
-    const token = bearerToken(c.req.header("Authorization"));
+    const token = bearerToken(context.req.header("Authorization"));
     if (!token) {
       throw new AppError("UNAUTHORIZED", "Missing bearer token");
     }
 
-    let payload: {
+    let jwtPayload: {
       sub?: string;
       org_id?: string;
       o?: { id?: string; rol?: string };
       org_role?: string;
     };
     try {
-      payload = (await verifyToken(token, {
-        secretKey: e.CLERK_SECRET_KEY,
-      })) as typeof payload;
-    } catch (err) {
-      throw new AppError("UNAUTHORIZED", "Invalid token", { cause: err });
+      jwtPayload = (await verifyToken(token, {
+        secretKey: config.CLERK_SECRET_KEY,
+      })) as typeof jwtPayload;
+    } catch (error) {
+      throw new AppError("UNAUTHORIZED", "Invalid token", { cause: error });
     }
 
-    const clerkUserId = payload.sub;
-    const clerkOrgId = payload.org_id ?? payload.o?.id;
+    const clerkUserId = jwtPayload.sub;
+    const clerkOrgId = jwtPayload.org_id ?? jwtPayload.o?.id;
     if (!clerkUserId) {
       throw new AppError("UNAUTHORIZED", "Token missing subject");
     }
@@ -125,7 +125,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     }
 
     let tenant = await findTenantByClerkOrgId(clerkOrgId);
-    if (!tenant && clerkOrgId === e.VSAS_CLERK_ORG_ID) {
+    if (!tenant && clerkOrgId === config.VSAS_CLERK_ORG_ID) {
       // The configured Clerk organization is the source of truth for the
       // initial vSAS tenant. This also repairs a stale org ID after Neon or
       // Clerk has been reprovisioned without requiring a secret seed call.
@@ -148,7 +148,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       membership = await upsertMembership({
         tenantId: tenant.id,
         clerkUserId,
-        role: mapClerkOrgRole(payload.org_role ?? payload.o?.rol),
+        role: mapClerkOrgRole(jwtPayload.org_role ?? jwtPayload.o?.rol),
       });
     }
 
@@ -156,7 +156,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       throw new AppError("FORBIDDEN", "Membership is not active");
     }
 
-    c.set("auth", {
+    context.set("auth", {
       clerkUserId,
       tenantId: tenant.id,
       membershipId: membership.id,
@@ -168,23 +168,24 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
   },
 );
 
-export function requireRole(minRole: MemberRole) {
-  return createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
-    const auth = c.get("auth");
-    const rank = { pilot: 1, dispatcher: 2, admin: 3 } as const;
-    if (rank[auth.role] < rank[minRole]) {
-      throw new AppError("FORBIDDEN", `Requires ${minRole} or higher`);
-    }
-    await next();
-  });
+export function requireRole(requiredRole: MemberRole) {
+  return createMiddleware<{ Variables: AppVariables }>(
+    async (context, next) => {
+      const auth = context.get("auth");
+      if (!roleAtLeast(auth.role, requiredRole)) {
+        throw new AppError("FORBIDDEN", `Requires ${requiredRole} or higher`);
+      }
+      await next();
+    },
+  );
 }
 
 export function getClerkClient() {
-  const key = env().CLERK_SECRET_KEY;
-  if (!key) {
+  const secretKey = env().CLERK_SECRET_KEY;
+  if (!secretKey) {
     throw new AppError("INTERNAL", "CLERK_SECRET_KEY is not configured", {
       status: 503,
     });
   }
-  return createClerkClient({ secretKey: key });
+  return createClerkClient({ secretKey });
 }

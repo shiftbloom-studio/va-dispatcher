@@ -62,6 +62,6 @@ const availabilitySchema = z.object({
 export function availabilityFromPreferences(
   value: unknown,
 ): AvailabilityInterval[] {
-  const result = availabilitySchema.safeParse(value);
-  return result.success ? result.data.availability : [];
+  const parsedPreferences = availabilitySchema.safeParse(value);
+  return parsedPreferences.success ? parsedPreferences.data.availability : [];
 }

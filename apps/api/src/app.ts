@@ -53,7 +53,7 @@ export function createApp() {
     cors({
       origin: env()
         .CORS_ORIGIN.split(",")
-        .map((s) => s.trim()),
+        .map((origin) => origin.trim()),
       allowHeaders: [
         "Authorization",
         "Content-Type",

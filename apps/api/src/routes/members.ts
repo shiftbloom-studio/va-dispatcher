@@ -24,16 +24,16 @@ membersRoutes.use("*", requireAuth);
 
 membersRoutes.get("/members", requireRole("dispatcher"), async (c) => {
   const auth = c.get("auth");
-  const rows = await listMemberships(auth.tenantId);
+  const memberships = await listMemberships(auth.tenantId);
   return c.json({
-    items: rows.map((m) => ({
-      id: m.id,
-      clerkUserId: m.clerkUserId,
-      role: m.role,
-      displayName: m.displayName,
-      pilotCallsign: m.pilotCallsign,
-      status: m.status,
-      createdAt: m.createdAt,
+    items: memberships.map((membership) => ({
+      id: membership.id,
+      clerkUserId: membership.clerkUserId,
+      role: membership.role,
+      displayName: membership.displayName,
+      pilotCallsign: membership.pilotCallsign,
+      status: membership.status,
+      createdAt: membership.createdAt,
     })),
   });
 });
@@ -79,32 +79,35 @@ membersRoutes.patch(
 
 membersRoutes.post("/members/sync", requireRole("dispatcher"), async (c) => {
   const auth = c.get("auth");
-  const e = env();
+  const config = env();
 
-  if (e.AUTH_DEV_BYPASS && e.NODE_ENV !== "production") {
+  if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
     return c.json({
       synced: 0,
       note: "Dev bypass — no Clerk org sync",
     });
   }
 
-  const clerk = getClerkClient();
-  const membershipList =
-    await clerk.organizations.getOrganizationMembershipList({
+  const clerkClient = getClerkClient();
+  const organizationMemberships =
+    await clerkClient.organizations.getOrganizationMembershipList({
       organizationId: auth.clerkOrgId,
       limit: 100,
     });
 
-  let synced = 0;
-  for (const m of membershipList.data) {
-    const userId = m.publicUserData?.userId;
+  let syncedCount = 0;
+  for (const organizationMembership of organizationMemberships.data) {
+    const userId = organizationMembership.publicUserData?.userId;
     if (!userId) continue;
-    const role = mapClerkOrgRole(m.role);
+    const role = mapClerkOrgRole(organizationMembership.role);
     const displayName =
-      [m.publicUserData?.firstName, m.publicUserData?.lastName]
+      [
+        organizationMembership.publicUserData?.firstName,
+        organizationMembership.publicUserData?.lastName,
+      ]
         .filter(Boolean)
         .join(" ") ||
-      m.publicUserData?.identifier ||
+      organizationMembership.publicUserData?.identifier ||
       null;
     await upsertMembership({
       tenantId: auth.tenantId,
@@ -112,8 +115,8 @@ membersRoutes.post("/members/sync", requireRole("dispatcher"), async (c) => {
       role,
       displayName,
     });
-    synced += 1;
+    syncedCount += 1;
   }
 
-  return c.json({ synced });
+  return c.json({ synced: syncedCount });
 });

@@ -18,13 +18,13 @@ import { AcarsProviderError } from "./types.js";
  * Production uses this provider exclusively. Each tenant supplies its own
  * encrypted Hoppie ground-station logon.
  */
-const DEFAULT_BASE = "https://www.hoppie.nl/acars/system/connect.html";
+const DEFAULT_BASE_URL = "https://www.hoppie.nl/acars/system/connect.html";
 
 export class HoppieAcarsProvider implements AcarsProvider {
   readonly name = "hoppie" as const;
 
   constructor(
-    private readonly opts: {
+    private readonly options: {
       baseUrl?: string;
       /** Default logon if not passed per call */
       logon: string;
@@ -33,33 +33,33 @@ export class HoppieAcarsProvider implements AcarsProvider {
   ) {}
 
   private url(): string {
-    return this.opts.baseUrl ?? DEFAULT_BASE;
+    return this.options.baseUrl ?? DEFAULT_BASE_URL;
   }
 
   private async connect(params: Record<string, string>): Promise<string> {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
-      this.opts.timeoutMs ?? 15_000,
+      this.options.timeoutMs ?? 15_000,
     );
     try {
       const body = new URLSearchParams(params);
-      const res = await fetch(this.url(), {
+      const response = await fetch(this.url(), {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
         signal: controller.signal,
       });
-      const text = await res.text();
-      if (!res.ok) {
+      const responseText = await response.text();
+      if (!response.ok) {
         throw new AcarsProviderError(
-          res.status === 429 ? "rate_limited" : "unavailable",
-          res.status === 429
+          response.status === 429 ? "rate_limited" : "unavailable",
+          response.status === 429
             ? "Hoppie is rate-limiting this station. Wait before retrying."
             : "Hoppie is temporarily unavailable.",
         );
       }
-      return assertHoppieSuccess(text);
+      return assertHoppieSuccess(responseText);
     } catch (error) {
       if (error instanceof AcarsProviderError) throw error;
       if (error instanceof Error && error.name === "AbortError") {
@@ -85,8 +85,8 @@ export class HoppieAcarsProvider implements AcarsProvider {
     to: string;
     body: string;
   }): Promise<SendResult> {
-    const logon = input.logon ?? this.opts.logon;
-    const text = await this.connect({
+    const logon = input.logon ?? this.options.logon;
+    const responseText = await this.connect({
       logon,
       from: input.from,
       to: input.to,
@@ -95,7 +95,7 @@ export class HoppieAcarsProvider implements AcarsProvider {
     });
     return {
       ok: true,
-      raw: text,
+      raw: responseText,
     };
   }
 
@@ -103,19 +103,19 @@ export class HoppieAcarsProvider implements AcarsProvider {
     logon?: string;
     station: string;
   }): Promise<InboundMessage[]> {
-    const logon = input.logon ?? this.opts.logon;
-    const text = await this.connect({
+    const logon = input.logon ?? this.options.logon;
+    const responseText = await this.connect({
       logon,
       from: input.station,
       to: "SERVER",
       type: "poll",
       packet: "",
     });
-    return parseHoppiePollResponse(text, input.station);
+    return parseHoppiePollResponse(responseText, input.station);
   }
 
   async ping(input?: { logon?: string; station?: string }): Promise<boolean> {
-    const logon = input?.logon ?? this.opts.logon;
+    const logon = input?.logon ?? this.options.logon;
     await this.connect({
       logon,
       from: input?.station ?? "SERVER",
@@ -188,18 +188,19 @@ export function parseHoppiePollResponse(
 
   const messages: InboundMessage[] = [];
   // Match blocks: {FROM type {body}}  — nested braces for body
-  const blockRe = /\{([A-Z0-9-]+)\s+([a-z]+)\s+\{([\s\S]*?)\}\s*\}/gi;
+  const messageBlockPattern =
+    /\{([A-Z0-9-]+)\s+([a-z]+)\s+\{([\s\S]*?)\}\s*\}/gi;
   let match: RegExpExecArray | null;
-  let i = 0;
-  while ((match = blockRe.exec(payload)) !== null) {
-    const from = match[1] ?? "UNKNOWN";
-    const typeRaw = (match[2] ?? "other").toLowerCase();
+  let messageIndex = 0;
+  while ((match = messageBlockPattern.exec(payload)) !== null) {
+    const fromStation = match[1] ?? "UNKNOWN";
+    const rawMessageType = (match[2] ?? "other").toLowerCase();
     const body = match[3] ?? "";
     messages.push({
-      providerMessageId: `hoppie-poll-${Date.now()}-${i++}`,
-      from,
+      providerMessageId: `hoppie-poll-${Date.now()}-${messageIndex++}`,
+      from: fromStation,
       to: defaultTo,
-      type: mapHoppieType(typeRaw),
+      type: mapHoppieType(rawMessageType),
       body,
       raw: match[0],
       receivedAt: new Date(),
