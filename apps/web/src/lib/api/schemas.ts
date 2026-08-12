@@ -539,6 +539,10 @@ export const acarsMessageSchema = z.object({
   toStation: z.string(),
   body: z.string(),
   provider: z.string(),
+  deliveryStatus: z
+    .enum(["pending", "accepted", "rejected", "ambiguous"])
+    .nullish()
+    .optional(),
   flightId: z.string().nullish(),
   createdAt: z.string(),
   receivedAt: z.string().nullish().optional(),

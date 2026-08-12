@@ -9,6 +9,13 @@ import { paginationQuerySchema } from "../lib/pagination.js";
 
 export const acarsRoutes = new Hono<{ Variables: AppVariables }>();
 
+acarsRoutes.use("/acars/*", async (c, next) => {
+  try {
+    await next();
+  } finally {
+    c.header("Cache-Control", "private, no-store");
+  }
+});
 acarsRoutes.use("/acars/*", requireAuth);
 
 acarsRoutes.get(
@@ -39,6 +46,13 @@ acarsRoutes.get(
         body: message.body,
         flightId: message.flightId,
         provider: message.provider,
+        deliveryStatus:
+          message.deliveryStatus ??
+          (message.direction === "outbound"
+            ? message.sentAt
+              ? "accepted"
+              : "ambiguous"
+            : null),
         createdAt: message.createdAt.toISOString(),
         receivedAt: message.receivedAt?.toISOString() ?? null,
         sentAt: message.sentAt?.toISOString() ?? null,
@@ -65,6 +79,13 @@ acarsRoutes.get("/acars/messages/:id", requireRole("dispatcher"), async (c) => {
       hoppieRaw: message.hoppieRaw,
       flightId: message.flightId,
       provider: message.provider,
+      deliveryStatus:
+        message.deliveryStatus ??
+        (message.direction === "outbound"
+          ? message.sentAt
+            ? "accepted"
+            : "ambiguous"
+          : null),
       createdAt: message.createdAt.toISOString(),
     },
   });
@@ -100,6 +121,7 @@ acarsRoutes.post(
           toStation: message.toStation,
           body: message.body,
           provider: message.provider,
+          deliveryStatus: message.deliveryStatus,
           sentAt: message.sentAt?.toISOString() ?? null,
         },
       },

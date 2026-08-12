@@ -51,6 +51,7 @@ dispatchRoutes.get("/dispatch/board", async (c) => {
 });
 
 dispatchRoutes.get("/dispatch/inbox", async (c) => {
+  c.header("Cache-Control", "private, no-store");
   const auth = c.get("auth");
   const page = await listAcarsMessages({
     tenantId: auth.tenantId,
@@ -66,6 +67,13 @@ dispatchRoutes.get("/dispatch/inbox", async (c) => {
       body: message.body,
       flightId: message.flightId,
       provider: message.provider,
+      deliveryStatus:
+        message.deliveryStatus ??
+        (message.direction === "outbound"
+          ? message.sentAt
+            ? "accepted"
+            : "ambiguous"
+          : null),
       createdAt: message.createdAt.toISOString(),
       receivedAt: message.receivedAt?.toISOString() ?? null,
       sentAt: message.sentAt?.toISOString() ?? null,

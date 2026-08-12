@@ -63,6 +63,13 @@ export const acarsMsgTypeEnum = pgEnum("acars_msg_type", [
 
 export const acarsProviderEnum = pgEnum("acars_provider", ["mock", "hoppie"]);
 
+export const acarsDeliveryStatusEnum = pgEnum("acars_delivery_status", [
+  "pending",
+  "accepted",
+  "rejected",
+  "ambiguous",
+]);
+
 export const simbriefDispatchStatusEnum = pgEnum("simbrief_dispatch_status", [
   "prepared",
   "pending",
@@ -930,6 +937,7 @@ export const acarsMessages = pgTable(
     hoppieRaw: jsonb("hoppie_raw").$type<unknown>(),
     provider: acarsProviderEnum("provider").notNull().default("mock"),
     providerMessageId: text("provider_message_id"),
+    deliveryStatus: acarsDeliveryStatusEnum("delivery_status"),
     flightId: uuid("flight_id").references(() => flights.id, {
       onDelete: "set null",
     }),
