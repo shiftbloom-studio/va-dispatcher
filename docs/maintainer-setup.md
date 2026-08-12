@@ -73,6 +73,12 @@ history. Maintain at least two active application administrators. The verified
 Clerk-admin recovery seam is only for a tenant with no active application
 administrator and is not a routine role-management path.
 
+Before enabling an active retention policy or handling a verified subject
+request, follow the [privacy lifecycle runbook](privacy-operations.md). Confirm
+the hourly privacy cron is installed, preserve two-person approval, and close
+provider/backup tasks rather than treating local database completion as a full
+controller response.
+
 ## Vulnerability intake
 
 After private vulnerability reporting is enabled, confirm that the **Report a

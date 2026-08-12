@@ -24,6 +24,9 @@ Goal: **near-zero cost when nobody is using the tool**, while staying ready for 
 - Fluid Compute / Active CPU: billed when handling requests, not for sitting idle.
 - Hobby/Pro free allowances cover light VA traffic.
 - The production Hoppie cron runs **every minute** and polls only tenants with a saved logon. Vercel Pro is required for that frequency.
+- The privacy lifecycle cron runs hourly and processes at most ten resumable
+  checkpoints per invocation. It creates no destructive work until a policy is
+  dual-approved and the dry-run/confirmation rules are satisfied.
 
 ### ACARS
 

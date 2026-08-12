@@ -25,6 +25,7 @@ import {
 } from "../../simbrief/adapter.js";
 import { SimbriefLegacySigner } from "../../simbrief/legacy-signer.js";
 import { roleAtLeast } from "../members/roles.js";
+import { assertOptionalProcessingAllowed } from "../privacy/service.js";
 import type { PrepareSimbriefDispatchInput } from "./validation.js";
 
 const CALLBACK_MAX_AGE_MS = 2 * 60 * 60 * 1000;
@@ -44,6 +45,11 @@ export async function connectAccount(
   actor: SimbriefActor,
   simbriefUserId: string,
 ): Promise<Membership> {
+  await assertOptionalProcessingAllowed({
+    tenantId: actor.tenantId,
+    membershipId: actor.membershipId,
+    purpose: "simbrief_navigraph",
+  });
   const current = await requireMembership(actor.tenantId, actor.membershipId);
   let updated: Membership | null;
   try {
@@ -112,6 +118,20 @@ export async function prepareDispatch(
   const [flight, release] = await Promise.all([
     requireAccessibleFlight(actor, flightId),
     findLatestDispatchRelease(actor.tenantId, flightId),
+  ]);
+  await Promise.all([
+    assertOptionalProcessingAllowed({
+      tenantId: actor.tenantId,
+      membershipId: actor.membershipId,
+      purpose: "simbrief_navigraph",
+    }),
+    flight.pilotMembershipId && flight.pilotMembershipId !== actor.membershipId
+      ? assertOptionalProcessingAllowed({
+          tenantId: actor.tenantId,
+          membershipId: flight.pilotMembershipId,
+          purpose: "simbrief_navigraph",
+        })
+      : Promise.resolve(),
   ]);
   assertDispatchableFlight(flight);
   if (!flight.pilotMembershipId) {

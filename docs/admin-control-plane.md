@@ -80,9 +80,9 @@ audit metadata. It also bounds depth, array size, object keys, and string
 length. Audit events are append-only application history, not a
 cryptographically tamper-evident ledger.
 
-The application retention class for `audit_events` is 365 days. Until the
-automated privacy lifecycle job is installed, operators must apply that period
-through the documented privacy request and database maintenance procedure and
-must not claim automatic expiry. The privacy lifecycle workflow records
-retention runs as audit events and preserves the minimum evidence required for
-legal or security obligations.
+The application policy template for `audit_events` is 365 days. The automated
+privacy lifecycle is opt-in through a dual-approved active policy and a
+completed dry run; operators must not claim expiry unless completed run
+evidence confirms it. See [Privacy lifecycle operations](privacy-operations.md).
+The workflow records retention runs as audit events and preserves the minimum
+evidence required for legal or security obligations.

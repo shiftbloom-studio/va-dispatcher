@@ -17,7 +17,8 @@ const OPAQUE_TOKEN_SALT = Buffer.from("va-dispatch:opaque-token:v1", "utf8");
 
 export type TokenMacPurpose =
   "simbrief-dispatch-callback" | "simulator-device-token";
-export type OpaqueTokenPurpose = "navigraph-oauth-state";
+export type OpaqueTokenPurpose =
+  "navigraph-oauth-state" | "privacy-export-cursor";
 
 function decodeEncryptionKey(encodedKey: string | undefined): Buffer {
   if (!encodedKey) {

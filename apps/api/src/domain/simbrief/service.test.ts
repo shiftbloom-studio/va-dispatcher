@@ -22,6 +22,11 @@ const mocks = vi.hoisted(() => ({
   writeAudit: vi.fn(),
   buildDispatchUrl: vi.fn(),
   fetchFlightPlan: vi.fn(),
+  assertOptionalProcessingAllowed: vi.fn(),
+}));
+
+vi.mock("../privacy/service.js", () => ({
+  assertOptionalProcessingAllowed: mocks.assertOptionalProcessingAllowed,
 }));
 
 vi.mock("../../db/repositories/flights.js", () => ({
@@ -207,6 +212,7 @@ describe("SimBrief dispatch service", () => {
     });
     mocks.findFlight.mockResolvedValue(flight);
     mocks.findLatestDispatchRelease.mockResolvedValue(release);
+    mocks.assertOptionalProcessingAllowed.mockResolvedValue(undefined);
     mocks.findMembershipById.mockResolvedValue(membership);
     mocks.buildDispatchUrl.mockReturnValue(
       "https://www.simbrief.com/ofp/ofp.loader.api.php?signed=1",

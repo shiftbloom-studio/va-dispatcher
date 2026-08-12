@@ -21,6 +21,7 @@ import {
   NavigraphOauthAdapterError,
 } from "../../navigraph/oauth-adapter.js";
 import type { SimbriefActor } from "./service.js";
+import { assertOptionalProcessingAllowed } from "../privacy/service.js";
 
 const OAUTH_TRANSACTION_TTL_MS = 10 * 60 * 1_000;
 const OAUTH_STATE_VERSION = "v2";
@@ -51,6 +52,11 @@ export function isNavigraphOauthConfigured(): boolean {
 export async function startNavigraphOauth(
   actor: SimbriefActor,
 ): Promise<NavigraphOauthStart> {
+  await assertOptionalProcessingAllowed({
+    tenantId: actor.tenantId,
+    membershipId: actor.membershipId,
+    purpose: "simbrief_navigraph",
+  });
   await requireMembership(actor.tenantId, actor.membershipId);
   const config = requireNavigraphOauthConfig();
   const { state, stateId } = issueOauthState(config.secretsKey);
@@ -103,6 +109,12 @@ export async function completeNavigraphOauth(
   if (!transaction) {
     throw invalidOauthState();
   }
+
+  await assertOptionalProcessingAllowed({
+    tenantId: transaction.tenantId,
+    membershipId: transaction.membershipId,
+    purpose: "simbrief_navigraph",
+  });
 
   if (callback.error) {
     await writeAudit({

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  type AnyPgColumn,
   check,
   doublePrecision,
   foreignKey,
@@ -114,6 +115,70 @@ export const oooiEventTypeEnum = pgEnum("oooi_event_type", [
 ]);
 
 export const oooiSourceEnum = pgEnum("oooi_source", ["telemetry", "manual"]);
+
+export const privacyPolicyStatusEnum = pgEnum("privacy_policy_status", [
+  "draft",
+  "active",
+  "retired",
+]);
+
+export const privacyRunModeEnum = pgEnum("privacy_run_mode", [
+  "dry_run",
+  "execute",
+]);
+
+export const privacyRunStatusEnum = pgEnum("privacy_run_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+]);
+
+export const privacyRequestScopeEnum = pgEnum("privacy_request_scope", [
+  "member",
+  "tenant",
+]);
+
+export const privacyRequestKindEnum = pgEnum("privacy_request_kind", [
+  "export",
+  "correction",
+  "restriction",
+  "objection",
+  "anonymization",
+  "erasure",
+]);
+
+export const privacyRequestStatusEnum = pgEnum("privacy_request_status", [
+  "pending_verification",
+  "pending_approval",
+  "approved",
+  "processing",
+  "awaiting_external",
+  "completed",
+  "blocked",
+  "failed",
+  "cancelled",
+]);
+
+export const privacyHoldStatusEnum = pgEnum("privacy_hold_status", [
+  "pending",
+  "active",
+  "released",
+]);
+
+export const privacyExternalProviderEnum = pgEnum("privacy_external_provider", [
+  "clerk",
+  "vercel",
+  "neon",
+  "hoppie",
+  "backup",
+  "navigraph",
+]);
+
+export const privacyExternalTaskStatusEnum = pgEnum(
+  "privacy_external_task_status",
+  ["pending", "completed", "not_applicable", "failed"],
+);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -955,6 +1020,303 @@ export const auditEvents = pgTable(
   ],
 );
 
+/**
+ * Immutable, tenant-approved retention policy versions. Only one version may
+ * be active; material lifecycle execution requires a policy approved by a
+ * second administrator.
+ */
+export const privacyPolicies = pgTable(
+  "privacy_policies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    status: privacyPolicyStatusEnum("status").notNull().default("draft"),
+    config: jsonb("config")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdByMembershipId: uuid("created_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    approvedByMembershipId: uuid("approved_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("privacy_policies_tenant_version_uidx").on(
+      t.tenantId,
+      t.version,
+    ),
+    uniqueIndex("privacy_policies_one_active_uidx")
+      .on(t.tenantId)
+      .where(sql`${t.status} = 'active'`),
+    index("privacy_policies_tenant_status_idx").on(t.tenantId, t.status),
+    check("privacy_policies_version_check", sql`${t.version} > 0`),
+    check(
+      "privacy_policies_distinct_approval_check",
+      sql`${t.approvedByMembershipId} is null or ${t.createdByMembershipId} is null or ${t.approvedByMembershipId} <> ${t.createdByMembershipId}`,
+    ),
+  ],
+);
+
+/** Checkpointed, bounded retention reports and executions. */
+export const privacyRetentionRuns = pgTable(
+  "privacy_retention_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    policyId: uuid("policy_id")
+      .notNull()
+      .references(() => privacyPolicies.id, { onDelete: "restrict" }),
+    mode: privacyRunModeEnum("mode").notNull(),
+    status: privacyRunStatusEnum("status").notNull().default("queued"),
+    asOf: timestamp("as_of", { withTimezone: true }).notNull(),
+    dryRunId: uuid("dry_run_id").references(
+      (): AnyPgColumn => privacyRetentionRuns.id,
+      { onDelete: "restrict" },
+    ),
+    idempotencyKey: text("idempotency_key").notNull(),
+    cursor: jsonb("cursor")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    report: jsonb("report")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    requestedByMembershipId: uuid("requested_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("privacy_retention_runs_tenant_idempotency_uidx").on(
+      t.tenantId,
+      t.idempotencyKey,
+    ),
+    index("privacy_retention_runs_status_created_idx").on(
+      t.status,
+      t.createdAt,
+    ),
+    index("privacy_retention_runs_tenant_created_idx").on(
+      t.tenantId,
+      t.createdAt,
+    ),
+    check(
+      "privacy_retention_runs_attempt_count_check",
+      sql`${t.attemptCount} >= 0`,
+    ),
+    check(
+      "privacy_retention_runs_dry_run_check",
+      sql`(${t.mode} = 'dry_run' and ${t.dryRunId} is null) or (${t.mode} = 'execute' and ${t.dryRunId} is not null)`,
+    ),
+  ],
+);
+
+/** Verified data-subject or tenant-level privacy workflow. */
+export const privacySubjectRequests = pgTable(
+  "privacy_subject_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    scope: privacyRequestScopeEnum("scope").notNull(),
+    subjectMembershipId: uuid("subject_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    subjectReference: text("subject_reference").notNull(),
+    kind: privacyRequestKindEnum("kind").notNull(),
+    status: privacyRequestStatusEnum("status")
+      .notNull()
+      .default("pending_verification"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    result: jsonb("result")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdByMembershipId: uuid("created_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    verifiedByMembershipId: uuid("verified_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    approvedByMembershipId: uuid("approved_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    ...timestamps,
+  },
+  (t) => [
+    index("privacy_subject_requests_tenant_status_idx").on(
+      t.tenantId,
+      t.status,
+      t.createdAt,
+    ),
+    index("privacy_subject_requests_tenant_member_idx").on(
+      t.tenantId,
+      t.subjectMembershipId,
+      t.createdAt,
+    ),
+    check(
+      "privacy_subject_requests_scope_check",
+      sql`${t.scope} = 'tenant' or ${t.subjectMembershipId} is not null or ${t.status} not in ('pending_verification', 'pending_approval')`,
+    ),
+    check(
+      "privacy_subject_requests_distinct_approval_check",
+      sql`${t.approvedByMembershipId} is null or ${t.createdByMembershipId} is null or ${t.approvedByMembershipId} <> ${t.createdByMembershipId}`,
+    ),
+  ],
+);
+
+/** Active restriction and objection flags enforced for optional processors. */
+export const privacySubjectControls = pgTable(
+  "privacy_subject_controls",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    restrictedAt: timestamp("restricted_at", { withTimezone: true }),
+    restrictionReason: text("restriction_reason"),
+    objectedAt: timestamp("objected_at", { withTimezone: true }),
+    objectionScopes: jsonb("objection_scopes")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    updatedByMembershipId: uuid("updated_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("privacy_subject_controls_tenant_member_uidx").on(
+      t.tenantId,
+      t.membershipId,
+    ),
+  ],
+);
+
+/** Two-person approved legal or claims preservation exception. */
+export const privacyLegalHolds = pgTable(
+  "privacy_legal_holds",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    subjectMembershipId: uuid("subject_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    status: privacyHoldStatusEnum("status").notNull().default("pending"),
+    scope: text("scope").notNull(),
+    reason: text("reason").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdByMembershipId: uuid("created_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    approvedByMembershipId: uuid("approved_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    releasedByMembershipId: uuid("released_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("privacy_legal_holds_tenant_status_idx").on(t.tenantId, t.status),
+    index("privacy_legal_holds_tenant_member_idx").on(
+      t.tenantId,
+      t.subjectMembershipId,
+    ),
+    check(
+      "privacy_legal_holds_distinct_approval_check",
+      sql`${t.approvedByMembershipId} is null or ${t.createdByMembershipId} is null or ${t.approvedByMembershipId} <> ${t.createdByMembershipId}`,
+    ),
+  ],
+);
+
+/** Provider/operator follow-up that cannot safely be performed in-process. */
+export const privacyExternalTasks = pgTable(
+  "privacy_external_tasks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    requestId: uuid("request_id").references(() => privacySubjectRequests.id, {
+      onDelete: "cascade",
+    }),
+    runId: uuid("run_id").references(() => privacyRetentionRuns.id, {
+      onDelete: "cascade",
+    }),
+    provider: privacyExternalProviderEnum("provider").notNull(),
+    action: text("action").notNull(),
+    status: privacyExternalTaskStatusEnum("status")
+      .notNull()
+      .default("pending"),
+    operatorNote: text("operator_note"),
+    completedByMembershipId: uuid("completed_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("privacy_external_tasks_request_provider_action_uidx").on(
+      t.requestId,
+      t.provider,
+      t.action,
+    ),
+    uniqueIndex("privacy_external_tasks_run_provider_action_uidx").on(
+      t.runId,
+      t.provider,
+      t.action,
+    ),
+    index("privacy_external_tasks_tenant_status_idx").on(t.tenantId, t.status),
+    check(
+      "privacy_external_tasks_parent_check",
+      sql`(${t.requestId} is not null)::int + (${t.runId} is not null)::int = 1`,
+    ),
+  ],
+);
+
 /** Internal local/test queue used by the mock adapter. */
 export const mockAcarsQueue = pgTable(
   "mock_acars_queue",
@@ -1012,3 +1374,9 @@ export type FlightEventKind = (typeof flightEventKindEnum.enumValues)[number];
 export type FlightEventSource =
   (typeof flightEventSourceEnum.enumValues)[number];
 export type TelemetryPhase = (typeof telemetryPhaseEnum.enumValues)[number];
+export type PrivacyPolicy = typeof privacyPolicies.$inferSelect;
+export type PrivacyRetentionRun = typeof privacyRetentionRuns.$inferSelect;
+export type PrivacySubjectRequest = typeof privacySubjectRequests.$inferSelect;
+export type PrivacySubjectControl = typeof privacySubjectControls.$inferSelect;
+export type PrivacyLegalHold = typeof privacyLegalHolds.$inferSelect;
+export type PrivacyExternalTask = typeof privacyExternalTasks.$inferSelect;
