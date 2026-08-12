@@ -164,6 +164,10 @@ describe("flight repository concurrency boundary", () => {
     expect(query.sql).toMatch(/insert into "audit_events"/i);
     expect(query.sql).toContain("'schedule_request.fulfillment_progress'");
     expect(query.sql).toContain("'flight.bulk_create'");
+    expect(query.sql).toContain("'fromVersion'");
+    expect(query.sql).toContain("'toVersion'");
+    expect(query.sql).toContain("'requestFromVersion'");
+    expect(query.sql).toContain("'requestToVersion'");
     expect(query.sql).toMatch(/where audit_totals\.count = 2/i);
   });
 
