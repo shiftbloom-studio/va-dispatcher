@@ -1,9 +1,15 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "6cb6d2b0-55ab-4f0d-88cb-d5b27bfb5fc2",
+  "id": "9d6d16d2-ace4-4840-8348-9eef83e554ed",
   "prevIds": ["643b225a-0728-44b7-a55f-a75c98080c64"],
   "ddl": [
+    {
+      "values": ["pending", "accepted", "rejected", "ambiguous"],
+      "name": "acars_delivery_status",
+      "entityType": "enums",
+      "schema": "public"
+    },
     {
       "values": ["inbound", "outbound"],
       "name": "acars_direction",
@@ -79,6 +85,18 @@
     {
       "values": ["active", "invited", "disabled"],
       "name": "member_status",
+      "entityType": "enums",
+      "schema": "public"
+    },
+    {
+      "values": ["out", "off", "on", "in"],
+      "name": "oooi_event_type",
+      "entityType": "enums",
+      "schema": "public"
+    },
+    {
+      "values": ["telemetry", "manual"],
+      "name": "oooi_source",
       "entityType": "enums",
       "schema": "public"
     },
@@ -167,8 +185,20 @@
       "schema": "public"
     },
     {
-      "values": ["pending", "ready"],
+      "values": ["prepared", "pending", "ready"],
       "name": "simbrief_dispatch_status",
+      "entityType": "enums",
+      "schema": "public"
+    },
+    {
+      "values": ["active", "revoked"],
+      "name": "simulator_device_status",
+      "entityType": "enums",
+      "schema": "public"
+    },
+    {
+      "values": ["preflight", "taxi_out", "airborne", "taxi_in", "parked"],
+      "name": "telemetry_phase",
       "entityType": "enums",
       "schema": "public"
     },
@@ -192,7 +222,31 @@
     },
     {
       "isRlsEnabled": false,
+      "name": "flight_oooi_events",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
       "name": "flight_operational_events",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "flight_telemetry_current",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "flight_telemetry_leases",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "flight_telemetry_track",
       "entityType": "tables",
       "schema": "public"
     },
@@ -258,6 +312,12 @@
     },
     {
       "isRlsEnabled": false,
+      "name": "schedule_fulfillment_attempts",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
       "name": "schedule_requests",
       "entityType": "tables",
       "schema": "public"
@@ -265,6 +325,18 @@
     {
       "isRlsEnabled": false,
       "name": "simbrief_dispatches",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "simbrief_flight_heads",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "simulator_devices",
       "entityType": "tables",
       "schema": "public"
     },
@@ -400,6 +472,19 @@
       "generated": null,
       "identity": null,
       "name": "provider_message_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "acars_messages"
+    },
+    {
+      "type": "acars_delivery_status",
+      "typeSchema": "public",
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "delivery_status",
       "entityType": "columns",
       "schema": "public",
       "table": "acars_messages"
@@ -909,6 +994,136 @@
       "name": "id",
       "entityType": "columns",
       "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "tenant_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "flight_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "oooi_event_type",
+      "typeSchema": "public",
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "event_type",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "occurred_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "oooi_source",
+      "typeSchema": "public",
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "source",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "actor_membership_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "device_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "reason",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "gen_random_uuid()",
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
       "table": "flight_operational_events"
     },
     {
@@ -1033,6 +1248,487 @@
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "flight_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "tenant_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "membership_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "device_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "telemetry_phase",
+      "typeSchema": "public",
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "phase",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "double precision",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "latitude",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "double precision",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "longitude",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "altitude_feet",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ground_speed_knots",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "double precision",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "heading_degrees",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "simulator_time",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sample_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sequence",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "flight_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "tenant_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "membership_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "device_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "gen_random_uuid()",
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "tenant_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "flight_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "membership_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "device_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "telemetry_phase",
+      "typeSchema": "public",
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "phase",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "double precision",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "latitude",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "double precision",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "longitude",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "altitude_feet",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ground_speed_knots",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "double precision",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "heading_degrees",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "simulator_time",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sample_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sequence",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
       "default": "gen_random_uuid()",
       "generated": null,
       "identity": null,
@@ -1063,6 +1759,19 @@
       "generated": null,
       "identity": null,
       "name": "schedule_request_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "replaces_flight_id",
       "entityType": "columns",
       "schema": "public",
       "table": "flights"
@@ -1154,6 +1863,19 @@
       "generated": null,
       "identity": null,
       "name": "aircraft_type",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "version",
       "entityType": "columns",
       "schema": "public",
       "table": "flights"
@@ -1297,6 +2019,58 @@
       "generated": null,
       "identity": null,
       "name": "in_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "out_manual_override",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "off_manual_override",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "on_manual_override",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "in_manual_override",
       "entityType": "columns",
       "schema": "public",
       "table": "flights"
@@ -2794,6 +3568,149 @@
       "name": "id",
       "entityType": "columns",
       "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "tenant_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "schedule_request_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "idempotency_key",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "payload_hash",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 1,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "flight_ids",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "schedule_request_status",
+      "typeSchema": "public",
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "request_status",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "request_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "linked_flight_count",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "remaining_flight_count",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "gen_random_uuid()",
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
       "table": "schedule_requests"
     },
     {
@@ -2901,6 +3818,19 @@
       "table": "schedule_requests"
     },
     {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_requests"
+    },
+    {
       "type": "schedule_request_status",
       "typeSchema": "public",
       "notNull": true,
@@ -2922,6 +3852,19 @@
       "generated": null,
       "identity": null,
       "name": "reject_reason",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedule_requests"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cancel_reason",
       "entityType": "columns",
       "schema": "public",
       "table": "schedule_requests"
@@ -3005,9 +3948,22 @@
       "table": "simbrief_dispatches"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "generated_by_membership_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
       "type": "text",
       "typeSchema": null,
-      "notNull": true,
+      "notNull": false,
       "dimensions": 0,
       "default": null,
       "generated": null,
@@ -3044,6 +4000,19 @@
       "table": "simbrief_dispatches"
     },
     {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "callback_expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
       "type": "simbrief_dispatch_status",
       "typeSchema": "public",
       "notNull": true,
@@ -3052,6 +4021,32 @@
       "generated": null,
       "identity": null,
       "name": "status",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "flight_snapshot",
       "entityType": "columns",
       "schema": "public",
       "table": "simbrief_dispatches"
@@ -3159,6 +4154,227 @@
       "entityType": "columns",
       "schema": "public",
       "table": "simbrief_dispatches"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "flight_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "tenant_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "gen_random_uuid()",
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "tenant_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "membership_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "name",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "token_mac",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "simulator_device_status",
+      "typeSchema": "public",
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'active'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_sequence",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_ingest_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_seen_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revoked_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "simulator_devices"
     },
     {
       "type": "uuid",
@@ -3557,6 +4773,41 @@
           "opclass": null
         },
         {
+          "value": "created_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "flight_oooi_events_flight_created_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "flight_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
           "value": "occurred_at",
           "isExpression": false,
           "asc": true,
@@ -3601,6 +4852,202 @@
       "entityType": "indexes",
       "schema": "public",
       "table": "flight_operational_events"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "sample_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "flight_telemetry_current_tenant_sample_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "membership_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "flight_telemetry_current_member_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "device_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "flight_telemetry_leases_device_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "device_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "flight_telemetry_leases_tenant_device_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "flight_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "sample_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "flight_telemetry_track_flight_sample_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "flights_tenant_id_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "replaces_flight_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "flights_tenant_replaces_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "flights"
     },
     {
       "nameExplicit": true,
@@ -3731,6 +5178,34 @@
       "method": "btree",
       "concurrently": false,
       "name": "memberships_tenant_user_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "memberships"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "memberships_tenant_id_uidx",
       "entityType": "indexes",
       "schema": "public",
       "table": "memberships"
@@ -4369,6 +5844,97 @@
           "opclass": null
         },
         {
+          "value": "schedule_request_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "idempotency_key",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "schedule_fulfillment_attempts_request_key_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "schedule_request_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "schedule_fulfillment_attempts_request_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "schedule_requests_tenant_id_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "schedule_requests"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
           "value": "status",
           "isExpression": false,
           "asc": true,
@@ -4469,6 +6035,160 @@
       "entityType": "indexes",
       "schema": "public",
       "table": "simbrief_dispatches"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "flight_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "revision",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "simbrief_dispatches_tenant_flight_revision_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "flight_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "simbrief_flight_heads_tenant_flight_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "membership_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "simulator_devices_tenant_member_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "simulator_devices_tenant_id_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "membership_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "simulator_devices_tenant_member_id_uidx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "simulator_devices"
     },
     {
       "nameExplicit": true,
@@ -4592,19 +6312,6 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["flight_id"],
-      "schemaTo": "public",
-      "tableTo": "flights",
-      "columnsTo": ["id"],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "dispatch_releases_flight_id_flights_id_fkey",
-      "entityType": "fks",
-      "schema": "public",
-      "table": "dispatch_releases"
-    },
-    {
-      "nameExplicit": false,
       "columns": ["released_by_membership_id"],
       "schemaTo": "public",
       "tableTo": "memberships",
@@ -4615,6 +6322,110 @@
       "entityType": "fks",
       "schema": "public",
       "table": "dispatch_releases"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "dispatch_releases_tenant_flight_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "dispatch_releases"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["tenant_id"],
+      "schemaTo": "public",
+      "tableTo": "tenants",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_oooi_events_tenant_id_tenants_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_oooi_events_flight_id_flights_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["actor_membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "name": "flight_oooi_events_actor_membership_id_memberships_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["device_id"],
+      "schemaTo": "public",
+      "tableTo": "simulator_devices",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "name": "flight_oooi_events_device_id_simulator_devices_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_oooi_events_tenant_flight_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "actor_membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "name": "flight_oooi_events_tenant_actor_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_oooi_events"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "device_id"],
+      "schemaTo": "public",
+      "tableTo": "simulator_devices",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "name": "flight_oooi_events_tenant_device_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_oooi_events"
     },
     {
       "nameExplicit": false,
@@ -4670,6 +6481,279 @@
     },
     {
       "nameExplicit": false,
+      "columns": ["flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_current_flight_id_flights_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["tenant_id"],
+      "schemaTo": "public",
+      "tableTo": "tenants",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_current_tenant_id_tenants_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_current_membership_id_memberships_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["device_id"],
+      "schemaTo": "public",
+      "tableTo": "simulator_devices",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_current_device_id_simulator_devices_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_current_tenant_flight_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_current_tenant_member_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "membership_id", "device_id"],
+      "schemaTo": "public",
+      "tableTo": "simulator_devices",
+      "columnsTo": ["tenant_id", "membership_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_current_tenant_member_device_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_current"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_leases_flight_id_flights_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["tenant_id"],
+      "schemaTo": "public",
+      "tableTo": "tenants",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_leases_tenant_id_tenants_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_leases_membership_id_memberships_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["device_id"],
+      "schemaTo": "public",
+      "tableTo": "simulator_devices",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_leases_device_id_simulator_devices_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_leases_tenant_flight_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_leases_tenant_member_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "membership_id", "device_id"],
+      "schemaTo": "public",
+      "tableTo": "simulator_devices",
+      "columnsTo": ["tenant_id", "membership_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_leases_tenant_member_device_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_leases"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["tenant_id"],
+      "schemaTo": "public",
+      "tableTo": "tenants",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_track_tenant_id_tenants_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_track_flight_id_flights_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_track_membership_id_memberships_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["device_id"],
+      "schemaTo": "public",
+      "tableTo": "simulator_devices",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_track_device_id_simulator_devices_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_track_tenant_flight_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_track_tenant_member_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "membership_id", "device_id"],
+      "schemaTo": "public",
+      "tableTo": "simulator_devices",
+      "columnsTo": ["tenant_id", "membership_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "flight_telemetry_track_tenant_member_device_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flight_telemetry_track"
+    },
+    {
+      "nameExplicit": false,
       "columns": ["tenant_id"],
       "schemaTo": "public",
       "tableTo": "tenants",
@@ -4703,6 +6787,45 @@
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "name": "flights_pilot_membership_id_memberships_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "replaces_flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "name": "flights_tenant_replaces_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "pilot_membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "flights_tenant_pilot_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "flights"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "schedule_request_id"],
+      "schemaTo": "public",
+      "tableTo": "schedule_requests",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "flights_tenant_schedule_request_fkey",
       "entityType": "fks",
       "schema": "public",
       "table": "flights"
@@ -4949,7 +7072,7 @@
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
-      "name": "privacy_retention_runs_dry_run_id_privacy_retention_runs_id_fkey",
+      "name": "privacy_retention_runs_Drhdyn6RJFgL_fkey",
       "entityType": "fks",
       "schema": "public",
       "table": "privacy_retention_runs"
@@ -5079,6 +7202,32 @@
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
+      "name": "schedule_fulfillment_attempts_tenant_id_tenants_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "schedule_request_id"],
+      "schemaTo": "public",
+      "tableTo": "schedule_requests",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "schedule_fulfillment_attempts_tenant_request_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["tenant_id"],
+      "schemaTo": "public",
+      "tableTo": "tenants",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
       "name": "schedule_requests_tenant_id_tenants_id_fkey",
       "entityType": "fks",
       "schema": "public",
@@ -5093,6 +7242,19 @@
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "name": "schedule_requests_pilot_membership_id_memberships_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "schedule_requests"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "pilot_membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "schedule_requests_tenant_pilot_fkey",
       "entityType": "fks",
       "schema": "public",
       "table": "schedule_requests"
@@ -5137,6 +7299,110 @@
       "table": "simbrief_dispatches"
     },
     {
+      "nameExplicit": false,
+      "columns": ["generated_by_membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "name": "simbrief_dispatches_LkWK9hP35CGL_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "simbrief_dispatches_tenant_flight_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "simbrief_flight_heads_flight_id_flights_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["tenant_id"],
+      "schemaTo": "public",
+      "tableTo": "tenants",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "simbrief_flight_heads_tenant_id_tenants_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "flight_id"],
+      "schemaTo": "public",
+      "tableTo": "flights",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "simbrief_flight_heads_tenant_flight_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["tenant_id"],
+      "schemaTo": "public",
+      "tableTo": "tenants",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "simulator_devices_tenant_id_tenants_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "simulator_devices_membership_id_memberships_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
+      "nameExplicit": true,
+      "columns": ["tenant_id", "membership_id"],
+      "schemaTo": "public",
+      "tableTo": "memberships",
+      "columnsTo": ["tenant_id", "id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "simulator_devices_tenant_member_fk",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "simulator_devices"
+    },
+    {
       "columns": ["id"],
       "nameExplicit": false,
       "name": "acars_messages_pkey",
@@ -5163,9 +7429,41 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "flight_oooi_events_pkey",
+      "schema": "public",
+      "table": "flight_oooi_events",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "flight_operational_events_pkey",
       "schema": "public",
       "table": "flight_operational_events",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["flight_id"],
+      "nameExplicit": false,
+      "name": "flight_telemetry_current_pkey",
+      "schema": "public",
+      "table": "flight_telemetry_current",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["flight_id"],
+      "nameExplicit": false,
+      "name": "flight_telemetry_leases_pkey",
+      "schema": "public",
+      "table": "flight_telemetry_leases",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "flight_telemetry_track_pkey",
+      "schema": "public",
+      "table": "flight_telemetry_track",
       "entityType": "pks"
     },
     {
@@ -5251,6 +7549,14 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "schedule_fulfillment_attempts_pkey",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "schedule_requests_pkey",
       "schema": "public",
       "table": "schedule_requests",
@@ -5262,6 +7568,22 @@
       "name": "simbrief_dispatches_pkey",
       "schema": "public",
       "table": "simbrief_dispatches",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["flight_id"],
+      "nameExplicit": false,
+      "name": "simbrief_flight_heads_pkey",
+      "schema": "public",
+      "table": "simbrief_flight_heads",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "simulator_devices_pkey",
+      "schema": "public",
+      "table": "simulator_devices",
       "entityType": "pks"
     },
     {
@@ -5383,6 +7705,69 @@
       "entityType": "checks",
       "schema": "public",
       "table": "privacy_subject_requests"
+    },
+    {
+      "value": "char_length(\"idempotency_key\") between 1 and 200",
+      "name": "schedule_fulfillment_attempts_key_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "value": "char_length(\"payload_hash\") = 64",
+      "name": "schedule_fulfillment_attempts_payload_hash_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "value": "cardinality(\"flight_ids\") > 0",
+      "name": "schedule_fulfillment_attempts_flights_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "value": "\"request_status\" in ('partially_fulfilled', 'fulfilled')",
+      "name": "schedule_fulfillment_attempts_status_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "value": "\"request_version\" > 1 and \"linked_flight_count\" > 0 and \"remaining_flight_count\" >= 0",
+      "name": "schedule_fulfillment_attempts_counts_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "schedule_fulfillment_attempts"
+    },
+    {
+      "value": "jsonb_typeof(\"flight_snapshot\") = 'object'",
+      "name": "simbrief_dispatches_flight_snapshot_object_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
+      "value": "\"revision\" > 0",
+      "name": "simbrief_dispatches_positive_revision_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
+      "value": "\"callback_token_mac\" IS NULL OR (\"status\" = 'pending' AND \"callback_expires_at\" IS NOT NULL)",
+      "name": "simbrief_dispatches_callback_lifecycle_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "simbrief_dispatches"
+    },
+    {
+      "value": "\"revision\" > 0",
+      "name": "simbrief_flight_heads_positive_revision_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "simbrief_flight_heads"
     },
     {
       "value": "\"brand_seed_color\" ~ '^#[0-9a-f]{6}$'",
