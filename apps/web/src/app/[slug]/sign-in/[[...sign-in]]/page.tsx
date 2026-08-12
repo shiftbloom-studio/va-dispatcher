@@ -1,0 +1,74 @@
+import { SignIn } from "@clerk/nextjs";
+import { Plane } from "lucide-react";
+import { notFound } from "next/navigation";
+
+import { getTenantConfig } from "@/lib/tenant";
+
+export default async function SignInPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const tenant = getTenantConfig(slug);
+  if (!tenant) notFound();
+
+  return (
+    <main
+      id="main-content"
+      style={{ "--accent": tenant.accent } as React.CSSProperties}
+      className="grid min-h-screen bg-slate-950 lg:grid-cols-[1.1fr_0.9fr]"
+    >
+      <section className="relative hidden overflow-hidden p-12 text-white lg:flex lg:flex-col lg:justify-between">
+        <div className="absolute -right-24 top-28 size-80 rounded-full bg-red-600/30 blur-3xl" />
+        <div className="relative flex items-center gap-3">
+          <span className="grid size-11 place-items-center rounded-xl bg-[var(--accent)] font-display font-black">
+            VS
+          </span>
+          <span className="font-display text-xl font-bold">
+            {tenant.shortName} Live Operations
+          </span>
+        </div>
+        <div className="relative max-w-xl">
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-red-400">
+            Dispatch · Schedule · ACARS
+          </p>
+          <h1 className="mt-4 font-display text-6xl font-semibold leading-[1.05]">
+            The operation stays connected.
+          </h1>
+          <p className="mt-6 max-w-lg text-lg leading-8 text-slate-300">
+            A single operational picture for {tenant.name} pilots and
+            dispatchers, built around clear decisions and Zulu time.
+          </p>
+        </div>
+        <p className="relative text-sm text-slate-400">
+          All operational times are shown in UTC / Zulu.
+        </p>
+      </section>
+      <section className="flex min-h-screen items-center justify-center bg-slate-50 p-5 sm:p-10">
+        <div className="w-full max-w-md">
+          <div className="mb-8 text-center lg:hidden">
+            <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[var(--accent)] text-white">
+              <Plane aria-hidden className="size-6" />
+            </span>
+            <h1 className="mt-4 font-display text-3xl font-semibold text-slate-950">
+              {tenant.shortName} Live Operations
+            </h1>
+          </div>
+          <SignIn
+            path={`/${slug}/sign-in`}
+            routing="path"
+            fallbackRedirectUrl={`/${slug}`}
+            appearance={{
+              elements: {
+                rootBox: "w-full",
+                cardBox: "w-full",
+                card: "shadow-xl border border-slate-200",
+              },
+            }}
+          />
+        </div>
+      </section>
+    </main>
+  );
+}

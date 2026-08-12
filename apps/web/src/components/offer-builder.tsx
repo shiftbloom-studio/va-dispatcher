@@ -1,0 +1,224 @@
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Send } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardHeader } from "@/components/ui/card";
+import { FieldError, Input, Label } from "@/components/ui/fields";
+import { ApiError, apiErrorMessage } from "@/lib/api/http";
+import { bulkFlightResponseSchema } from "@/lib/api/schemas";
+import { jsonBody, useApi } from "@/lib/api/use-api";
+import {
+  offerBuilderSchema,
+  type OfferBuilderValues,
+} from "@/lib/offer-builder-schema";
+import { utcInputToIso } from "@/lib/utc";
+
+export function OfferBuilder({
+  slug,
+  requestId,
+  desiredFlightCount,
+  onOffered,
+}: {
+  slug: string;
+  requestId: string;
+  desiredFlightCount: number;
+  onOffered: () => Promise<void>;
+}) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const [conflict, setConflict] = useState<string | null>(null);
+  const schema = useMemo(
+    () => offerBuilderSchema(desiredFlightCount),
+    [desiredFlightCount],
+  );
+  const form = useForm<OfferBuilderValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      flights: Array.from({ length: desiredFlightCount }, () => ({
+        flightNumber: "",
+        depIcao: "",
+        arrIcao: "",
+        etd: "",
+        eta: "",
+        aircraftType: "",
+      })),
+    },
+  });
+  const rows = useFieldArray({ control: form.control, name: "flights" });
+  const mutation = useMutation({
+    mutationFn: (values: OfferBuilderValues) =>
+      api("/flights/bulk", {
+        method: "POST",
+        schema: bulkFlightResponseSchema,
+        ...jsonBody({
+          scheduleRequestId: requestId,
+          flights: values.flights.map((flight) => ({
+            flightNumber: flight.flightNumber.trim().toUpperCase(),
+            depIcao: flight.depIcao.trim().toUpperCase(),
+            arrIcao: flight.arrIcao.trim().toUpperCase(),
+            etd: utcInputToIso(flight.etd),
+            eta: utcInputToIso(flight.eta),
+            aircraftType: flight.aircraftType?.trim() || null,
+          })),
+        }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        onOffered(),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "dispatch", "board"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [slug, "dispatch", "requests"],
+        }),
+      ]);
+    },
+  });
+
+  async function submit(values: OfferBuilderValues) {
+    setConflict(null);
+    try {
+      await mutation.mutateAsync(values);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setConflict(
+          "The request changed while you were building this offer. Current data was reloaded; review it before retrying.",
+        );
+        await onOffered();
+      }
+    }
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader
+        title={`Offer ${desiredFlightCount} flight${desiredFlightCount === 1 ? "" : "s"}`}
+        description="Every row is required. The complete proposal is submitted once and immediately offered to the pilot."
+      />
+      <form
+        onSubmit={form.handleSubmit(submit)}
+        noValidate
+        className="p-4 sm:p-5"
+      >
+        <div className="space-y-4">
+          {rows.fields.map((row, index) => {
+            const errors = form.formState.errors.flights?.[index];
+            return (
+              <fieldset
+                key={row.id}
+                className="rounded-xl border border-slate-200 p-4"
+              >
+                <legend className="px-1 text-sm font-bold text-slate-700">
+                  Flight {index + 1} of {desiredFlightCount}
+                </legend>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                  <div>
+                    <Label htmlFor={`offer-${index}-flight-number`}>
+                      Flight number
+                    </Label>
+                    <Input
+                      id={`offer-${index}-flight-number`}
+                      placeholder="SK1234"
+                      maxLength={12}
+                      className="uppercase"
+                      {...form.register(`flights.${index}.flightNumber`)}
+                    />
+                    <FieldError>{errors?.flightNumber?.message}</FieldError>
+                  </div>
+                  <div>
+                    <Label htmlFor={`offer-${index}-departure`}>
+                      Departure ICAO
+                    </Label>
+                    <Input
+                      id={`offer-${index}-departure`}
+                      placeholder="EKCH"
+                      maxLength={4}
+                      className="uppercase"
+                      {...form.register(`flights.${index}.depIcao`)}
+                    />
+                    <FieldError>{errors?.depIcao?.message}</FieldError>
+                  </div>
+                  <div>
+                    <Label htmlFor={`offer-${index}-arrival`}>
+                      Arrival ICAO
+                    </Label>
+                    <Input
+                      id={`offer-${index}-arrival`}
+                      placeholder="ENGM"
+                      maxLength={4}
+                      className="uppercase"
+                      {...form.register(`flights.${index}.arrIcao`)}
+                    />
+                    <FieldError>{errors?.arrIcao?.message}</FieldError>
+                  </div>
+                  <div>
+                    <Label htmlFor={`offer-${index}-etd`}>ETD (UTC)</Label>
+                    <Input
+                      id={`offer-${index}-etd`}
+                      type="datetime-local"
+                      {...form.register(`flights.${index}.etd`)}
+                    />
+                    <FieldError>{errors?.etd?.message}</FieldError>
+                  </div>
+                  <div>
+                    <Label htmlFor={`offer-${index}-eta`}>ETA (UTC)</Label>
+                    <Input
+                      id={`offer-${index}-eta`}
+                      type="datetime-local"
+                      {...form.register(`flights.${index}.eta`)}
+                    />
+                    <FieldError>{errors?.eta?.message}</FieldError>
+                  </div>
+                  <div>
+                    <Label htmlFor={`offer-${index}-aircraft`}>
+                      Aircraft (optional)
+                    </Label>
+                    <Input
+                      id={`offer-${index}-aircraft`}
+                      placeholder="A320"
+                      maxLength={20}
+                      className="uppercase"
+                      {...form.register(`flights.${index}.aircraftType`)}
+                    />
+                    <FieldError>{errors?.aircraftType?.message}</FieldError>
+                  </div>
+                </div>
+              </fieldset>
+            );
+          })}
+        </div>
+        {conflict ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            {conflict}
+          </p>
+        ) : null}
+        {mutation.isError && !conflict ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+          >
+            {apiErrorMessage(mutation.error)}
+          </p>
+        ) : null}
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-600">
+            Submitting creates exactly {desiredFlightCount} offered flight
+            {desiredFlightCount === 1 ? "" : "s"}.
+          </p>
+          <Button type="submit" disabled={mutation.isPending}>
+            <Send aria-hidden className="size-4" />{" "}
+            {mutation.isPending ? "Offering…" : "Offer complete schedule"}
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
