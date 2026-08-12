@@ -115,7 +115,9 @@ describe("account settings", () => {
       hoppieStation: "SAS",
       hoppieLogon: "private-logon",
     });
-    await waitFor(() => expect(screen.getByText("hoppie")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Connected")).toBeInTheDocument(),
+    );
   });
 
   it("does not expose ground credential controls to a pilot", async () => {

@@ -48,7 +48,7 @@ for it. Train dispatchers and members not to enter sensitive or unrelated data.
   supplementary measures where required.
 - Subscribe to provider subprocessor-change notices and review changes.
 - Treat Hoppie's ACARS as an optional external network, not a confidential
-  processor. Approve it before setting `ACARS_PROVIDER=hoppie`. Hoppie states
+  processor. Approve it before configuring a tenant ground station. Hoppie states
   that messages can be visible to others and remain in its queue for 24 hours.
   Never transmit personal, confidential, authentication, or special-category
   data through ACARS.

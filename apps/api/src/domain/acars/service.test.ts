@@ -12,15 +12,19 @@ const mocks = vi.hoisted(() => ({
   writeAudit: vi.fn(),
   findTenantById: vi.fn(),
   listHoppieTenants: vi.fn(),
+  providerFactoryError: null as Error | null,
 }));
 
 vi.mock("../../acars/factory.js", () => ({
-  createAcarsProvider: () => ({
-    name: "hoppie",
-    sendTelex: mocks.sendTelex,
-    poll: mocks.poll,
-  }),
-  tenantAcarsProviderName: () => "hoppie",
+  createAcarsProvider: () => {
+    if (mocks.providerFactoryError) throw mocks.providerFactoryError;
+    return {
+      name: "hoppie",
+      sendTelex: mocks.sendTelex,
+      poll: mocks.poll,
+    };
+  },
+  isMockAcarsEnabled: () => false,
 }));
 vi.mock("../../db/repositories/acars.js", () => ({
   insertAcarsMessage: mocks.insertAcarsMessage,
@@ -36,7 +40,7 @@ vi.mock("../../db/repositories/tenants.js", () => ({
   listHoppieTenants: mocks.listHoppieTenants,
 }));
 
-import { sendTelex } from "./service.js";
+import { sendTelex, simulateInbound } from "./service.js";
 
 const tenant: Tenant = {
   id: "tenant_test",
@@ -53,7 +57,44 @@ const tenant: Tenant = {
 describe("ACARS service outbound delivery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.providerFactoryError = null;
     mocks.findTenantById.mockResolvedValue(tenant);
+  });
+
+  it("fails safely before sending when Hoppie is not configured", async () => {
+    mocks.providerFactoryError = new AcarsProviderError(
+      "not_configured",
+      "Hoppie ACARS is not configured for this Virtual Airline.",
+    );
+
+    await expect(
+      sendTelex({
+        tenantId: tenant.id,
+        membershipId: "membership_test",
+        to: "SAS123",
+        body: "GATE 12",
+      }),
+    ).rejects.toMatchObject({
+      code: "UNPROCESSABLE",
+      status: 422,
+      details: { provider: "hoppie", reason: "not_configured" },
+    });
+    expect(mocks.sendTelex).not.toHaveBeenCalled();
+    expect(mocks.insertAcarsMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not expose the inbound simulator outside mock development", async () => {
+    await expect(
+      simulateInbound({
+        tenantId: tenant.id,
+        from: "SAS123",
+        body: "TEST",
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+    });
+    expect(mocks.enqueueMockAcars).not.toHaveBeenCalled();
   });
 
   it("does not store an outbound record when Hoppie rejects it", async () => {

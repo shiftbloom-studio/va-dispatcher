@@ -4,13 +4,14 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
+  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
   PORT: z.coerce.number().int().positive().default(3001),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   DATABASE_URL: z.string().min(1).optional(),
   CLERK_SECRET_KEY: z.string().min(1).optional(),
   CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
-  // Deployment-level background-poll switch. Outbound/runtime providers are
-  // selected per tenant from their encrypted Hoppie configuration.
+  // Internal local/test transport selector. Production always resolves to
+  // Hoppie and fails closed until the tenant credential is configured.
   ACARS_PROVIDER: z.enum(["mock", "hoppie"]).default("mock"),
   TENANT_SECRETS_KEY: z.string().optional(),
   CRON_SECRET: z.string().min(1).default("dev-cron-secret-change-me"),

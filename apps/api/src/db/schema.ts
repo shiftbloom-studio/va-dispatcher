@@ -242,7 +242,7 @@ export const auditEvents = pgTable(
   ],
 );
 
-/** Inbound mock queue so poll can drain simulated messages. */
+/** Internal local/test queue used by the mock adapter. */
 export const mockAcarsQueue = pgTable(
   "mock_acars_queue",
   {

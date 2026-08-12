@@ -6,11 +6,9 @@ import { AcarsWorkspace } from "@/components/acars-workspace";
 import { TestQueryProvider } from "@/test/test-query-provider";
 
 const apiMock = vi.fn();
-const getHealthMock = vi.fn();
 
 vi.mock("@/lib/api/use-api", () => ({
   useApi: () => apiMock,
-  getHealth: (...args: unknown[]) => getHealthMock(...args),
   jsonBody: (value: unknown) => ({
     body: JSON.stringify(value),
     headers: { "Content-Type": "application/json" },
@@ -25,12 +23,6 @@ describe("ACARS compose", () => {
   beforeEach(() => {
     let attempts = 0;
     apiMock.mockReset();
-    getHealthMock.mockReset().mockResolvedValue({
-      ok: true,
-      service: "api",
-      database: true,
-      acarsProvider: "hoppie",
-    });
     apiMock.mockImplementation((path: string, options: { method?: string }) => {
       if (path === "/dispatch/inbox")
         return Promise.resolve({ items: [], nextCursor: null });
@@ -60,7 +52,7 @@ describe("ACARS compose", () => {
                 fromStation: "VSAS",
                 toStation: "SAS101",
                 body: "HELLO",
-                provider: "mock",
+                provider: "hoppie",
               },
             });
       }
@@ -98,6 +90,42 @@ describe("ACARS compose", () => {
     expect(
       apiMock.mock.calls.filter(([path]) => path === "/acars/messages"),
     ).toHaveLength(2);
+  });
+
+  it("keeps ACARS read-only until Hoppie is configured", async () => {
+    apiMock.mockImplementation((path: string) => {
+      if (path === "/dispatch/inbox")
+        return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/flights?limit=100")
+        return Promise.resolve({ items: [], nextCursor: null });
+      if (path === "/members") return Promise.resolve({ items: [] });
+      if (path === "/tenant")
+        return Promise.resolve({
+          id: "tenant-vsas",
+          slug: "vsas",
+          name: "Virtual SAS",
+          hoppieStation: "SAS",
+          hasHoppieLogon: false,
+          acarsProvider: "hoppie",
+          hoppiePollingEnabled: false,
+          hoppieLastTestedAt: null,
+          settings: {},
+        });
+      throw new Error(`Unexpected API call: ${path}`);
+    });
+
+    render(
+      <TestQueryProvider>
+        <AcarsWorkspace slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText("Hoppie setup required"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Recipient station"),
+    ).not.toBeInTheDocument();
   });
 
   it("uses the linked pilot's saved callsign as the recipient", async () => {

@@ -8,7 +8,7 @@ import { AppError } from "../lib/errors.js";
 import { decryptSecret, encryptSecret } from "../lib/crypto.js";
 import { env } from "../env.js";
 import { writeAudit } from "../db/repositories/audit.js";
-import { tenantAcarsProviderName } from "../acars/factory.js";
+import { activeAcarsProviderName } from "../acars/factory.js";
 import { HoppieAcarsProvider } from "../acars/hoppie-provider.js";
 import {
   acarsStationSchema,
@@ -31,8 +31,9 @@ tenantRoutes.get("/tenant", async (c) => {
     name: tenant.name,
     hoppieStation: tenant.hoppieStation,
     hasHoppieLogon: Boolean(tenant.hoppieLogonEnc),
-    acarsProvider: tenantAcarsProviderName(tenant),
-    hoppiePollingEnabled: env().ACARS_PROVIDER === "hoppie",
+    acarsProvider: activeAcarsProviderName(),
+    hoppiePollingEnabled:
+      activeAcarsProviderName() === "hoppie" && Boolean(tenant.hoppieLogonEnc),
     hoppieLastTestedAt: hoppieLastTestedAt(tenant.settings),
     settings: tenant.settings,
   });
@@ -207,8 +208,9 @@ function acarsConfigResponse(tenant: Tenant) {
   return {
     hoppieStation: tenant.hoppieStation,
     hasHoppieLogon: Boolean(tenant.hoppieLogonEnc),
-    acarsProvider: tenantAcarsProviderName(tenant),
-    hoppiePollingEnabled: env().ACARS_PROVIDER === "hoppie",
+    acarsProvider: activeAcarsProviderName(),
+    hoppiePollingEnabled:
+      activeAcarsProviderName() === "hoppie" && Boolean(tenant.hoppieLogonEnc),
     hoppieLastTestedAt: hoppieLastTestedAt(tenant.settings),
   };
 }
