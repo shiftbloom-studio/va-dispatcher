@@ -200,6 +200,27 @@ const schemas = {
     type: "string",
     enum: ["pending", "ready"],
   },
+  BrandPresence: {
+    type: "string",
+    enum: ["restrained", "balanced", "high"],
+  },
+  DispatchUnit: {
+    type: "string",
+    enum: ["kg", "lb"],
+  },
+  TenantBrand: {
+    type: "object",
+    required: ["seedColor", "presence", "logoUrl"],
+    properties: {
+      seedColor: {
+        type: "string",
+        pattern: "^#[0-9a-f]{6}$",
+        example: "#e64646",
+      },
+      presence: schemaRef("BrandPresence"),
+      logoUrl: { type: "string", format: "uri", nullable: true },
+    },
+  },
   ErrorCode: {
     type: "string",
     enum: [
@@ -354,6 +375,7 @@ const schemas = {
       "acarsProvider",
       "hoppiePollingEnabled",
       "hoppieLastTestedAt",
+      "brand",
       "settings",
     ],
     properties: {
@@ -369,6 +391,7 @@ const schemas = {
       acarsProvider: schemaRef("AcarsProvider"),
       hoppiePollingEnabled: { type: "boolean" },
       hoppieLastTestedAt: schemaRef("NullableDateTime"),
+      brand: schemaRef("TenantBrand"),
       settings: schemaRef("ArbitraryObject"),
     },
   },
@@ -380,6 +403,20 @@ const schemas = {
       slug: { type: "string" },
       name: { type: "string" },
       settings: schemaRef("ArbitraryObject"),
+    },
+  },
+  TenantBrandResponse: {
+    type: "object",
+    required: ["brand"],
+    properties: { brand: schemaRef("TenantBrand") },
+  },
+  PublicTenantResponse: {
+    type: "object",
+    required: ["slug", "name", "brand"],
+    properties: {
+      slug: { type: "string" },
+      name: { type: "string" },
+      brand: schemaRef("TenantBrand"),
     },
   },
   ScheduleRequest: {
@@ -429,6 +466,10 @@ const schemas = {
       "cancelReason",
       "declinedReason",
       "dispatcherNotes",
+      "assignmentRevision",
+      "assignmentConfirmedRevision",
+      "assignmentConfirmedAt",
+      "assignmentConfirmationRequired",
       "outAt",
       "offAt",
       "onAt",
@@ -460,6 +501,14 @@ const schemas = {
       cancelReason: schemaRef("NullableString"),
       declinedReason: schemaRef("NullableString"),
       dispatcherNotes: schemaRef("NullableString"),
+      assignmentRevision: { type: "integer", minimum: 1 },
+      assignmentConfirmedRevision: {
+        type: "integer",
+        minimum: 1,
+        nullable: true,
+      },
+      assignmentConfirmedAt: schemaRef("NullableDateTime"),
+      assignmentConfirmationRequired: { type: "boolean" },
       outAt: schemaRef("NullableDateTime"),
       offAt: schemaRef("NullableDateTime"),
       onAt: schemaRef("NullableDateTime"),
@@ -480,6 +529,8 @@ const schemas = {
       "status",
       "pilotMembershipId",
       "aircraftType",
+      "assignmentConfirmationRequired",
+      "latestReleaseRevision",
     ],
     properties: {
       id: schemaRef("Uuid"),
@@ -491,6 +542,110 @@ const schemas = {
       status: schemaRef("FlightStatus"),
       pilotMembershipId: schemaRef("NullableUuid"),
       aircraftType: schemaRef("NullableString"),
+      dispatcherNotes: schemaRef("NullableString"),
+      assignmentRevision: { type: "integer", minimum: 1 },
+      assignmentConfirmedRevision: {
+        type: "integer",
+        nullable: true,
+      },
+      assignmentConfirmedAt: schemaRef("NullableDateTime"),
+      assignmentConfirmationRequired: { type: "boolean" },
+      latestReleaseRevision: { type: "integer", minimum: 1, nullable: true },
+      outAt: schemaRef("NullableDateTime"),
+      inAt: schemaRef("NullableDateTime"),
+    },
+  },
+  DispatchRelease: {
+    type: "object",
+    required: [
+      "id",
+      "flightId",
+      "revision",
+      "operationalRoute",
+      "sid",
+      "star",
+      "cruiseLevel",
+      "alternateIcao",
+      "fuelUnit",
+      "payloadUnit",
+      "taxiFuel",
+      "tripFuel",
+      "contingencyFuel",
+      "alternateFuel",
+      "finalReserveFuel",
+      "additionalFuel",
+      "blockFuel",
+      "plannedPayload",
+      "weatherSnapshot",
+      "releaseNotes",
+      "dispatcherRemarks",
+      "releasedByMembershipId",
+      "releasedAt",
+    ],
+    properties: {
+      id: schemaRef("Uuid"),
+      flightId: schemaRef("Uuid"),
+      revision: { type: "integer", minimum: 1 },
+      operationalRoute: { type: "string" },
+      sid: schemaRef("NullableString"),
+      star: schemaRef("NullableString"),
+      cruiseLevel: { type: "integer", minimum: 10, maximum: 600 },
+      alternateIcao: { type: "string", minLength: 4, maxLength: 4 },
+      fuelUnit: schemaRef("DispatchUnit"),
+      payloadUnit: schemaRef("DispatchUnit"),
+      taxiFuel: { type: "integer", minimum: 0 },
+      tripFuel: { type: "integer", minimum: 1 },
+      contingencyFuel: { type: "integer", minimum: 0 },
+      alternateFuel: { type: "integer", minimum: 0 },
+      finalReserveFuel: { type: "integer", minimum: 0 },
+      additionalFuel: { type: "integer", minimum: 0 },
+      blockFuel: {
+        type: "integer",
+        minimum: 1,
+        description: "Exact sum of every fuel breakdown field.",
+      },
+      plannedPayload: { type: "integer", minimum: 0 },
+      weatherSnapshot: schemaRef("ArbitraryObject"),
+      releaseNotes: schemaRef("NullableString"),
+      dispatcherRemarks: schemaRef("NullableString"),
+      releasedByMembershipId: schemaRef("NullableUuid"),
+      releasedAt: schemaRef("DateTime"),
+    },
+  },
+  FlightOperationalEvent: {
+    type: "object",
+    required: [
+      "id",
+      "kind",
+      "source",
+      "occurredAt",
+      "actorMembershipId",
+      "acarsMessageId",
+      "meta",
+    ],
+    properties: {
+      id: schemaRef("Uuid"),
+      kind: {
+        type: "string",
+        enum: [
+          "flt_init",
+          "out",
+          "off",
+          "on",
+          "in",
+          "manual_start",
+          "manual_finish",
+          "assignment_confirmed",
+        ],
+      },
+      source: {
+        type: "string",
+        enum: ["hoppie", "pilot_web", "dispatcher"],
+      },
+      occurredAt: schemaRef("DateTime"),
+      actorMembershipId: schemaRef("NullableUuid"),
+      acarsMessageId: schemaRef("NullableUuid"),
+      meta: schemaRef("ArbitraryObject"),
     },
   },
   AcarsMessage: {
@@ -650,6 +805,14 @@ const schemas = {
       settings: schemaRef("ArbitraryObject"),
     },
   },
+  UpdateTenantBrandInput: {
+    type: "object",
+    required: ["seedColor", "presence"],
+    properties: {
+      seedColor: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+      presence: schemaRef("BrandPresence"),
+    },
+  },
   AcarsConfigInput: {
     type: "object",
     required: ["hoppieStation"],
@@ -756,8 +919,12 @@ const schemas = {
       arrIcao: { type: "string", minLength: 4, maxLength: 4 },
       etd: schemaRef("DateTime"),
       eta: schemaRef("DateTime"),
-      aircraftType: { type: "string", maxLength: 20, nullable: true },
       pilotMembershipId: schemaRef("NullableUuid"),
+      expectedUpdatedAt: {
+        ...schemaRef("DateTime"),
+        description:
+          "Last observed flight update time used to prevent lost dispatcher edits.",
+      },
       dispatcherNotes: {
         type: "string",
         maxLength: 2000,
@@ -771,9 +938,53 @@ const schemas = {
     properties: {
       status: {
         type: "string",
-        enum: ["briefed", "active", "completed", "cancelled"],
+        enum: ["active", "completed", "cancelled"],
       },
       reason: { type: "string", maxLength: 500 },
+    },
+  },
+  DispatchReleaseInput: {
+    type: "object",
+    required: [
+      "operationalRoute",
+      "cruiseLevel",
+      "alternateIcao",
+      "fuelUnit",
+      "payloadUnit",
+      "taxiFuel",
+      "tripFuel",
+      "contingencyFuel",
+      "alternateFuel",
+      "finalReserveFuel",
+      "blockFuel",
+      "plannedPayload",
+    ],
+    properties: {
+      operationalRoute: { type: "string", minLength: 1, maxLength: 1000 },
+      sid: { type: "string", maxLength: 40, nullable: true },
+      star: { type: "string", maxLength: 40, nullable: true },
+      cruiseLevel: { type: "integer", minimum: 10, maximum: 600 },
+      alternateIcao: { type: "string", minLength: 4, maxLength: 4 },
+      fuelUnit: schemaRef("DispatchUnit"),
+      payloadUnit: schemaRef("DispatchUnit"),
+      taxiFuel: { type: "integer", minimum: 0 },
+      tripFuel: { type: "integer", minimum: 1 },
+      contingencyFuel: { type: "integer", minimum: 0 },
+      alternateFuel: { type: "integer", minimum: 0 },
+      finalReserveFuel: { type: "integer", minimum: 0 },
+      additionalFuel: { type: "integer", minimum: 0, default: 0 },
+      blockFuel: {
+        type: "integer",
+        minimum: 1,
+        description: "Must equal the sum of every fuel breakdown field.",
+      },
+      plannedPayload: { type: "integer", minimum: 0 },
+      releaseNotes: { type: "string", maxLength: 4000, nullable: true },
+      dispatcherRemarks: {
+        type: "string",
+        maxLength: 4000,
+        nullable: true,
+      },
     },
   },
   SendAcarsMessageInput: {
@@ -935,6 +1146,30 @@ const schemas = {
     required: ["flight"],
     properties: { flight: schemaRef("Flight") },
   },
+  FlightDetailResponse: {
+    type: "object",
+    required: ["flight", "release", "releaseRevisions", "events"],
+    properties: {
+      flight: schemaRef("Flight"),
+      release: { allOf: [schemaRef("DispatchRelease")], nullable: true },
+      releaseRevisions: {
+        type: "array",
+        items: schemaRef("DispatchRelease"),
+      },
+      events: {
+        type: "array",
+        items: schemaRef("FlightOperationalEvent"),
+      },
+    },
+  },
+  DispatchReleaseResponse: {
+    type: "object",
+    required: ["flight", "release"],
+    properties: {
+      flight: schemaRef("Flight"),
+      release: schemaRef("DispatchRelease"),
+    },
+  },
   FlightListResponse: {
     type: "object",
     required: ["items", "nextCursor"],
@@ -999,9 +1234,68 @@ const schemas = {
   },
   DispatchBoardResponse: {
     type: "object",
-    required: ["flights", "scheduleRequestCounts"],
+    required: ["flights", "metrics", "scheduleRequestCounts"],
     properties: {
       flights: { type: "array", items: schemaRef("DispatchFlight") },
+      metrics: {
+        type: "object",
+        required: [
+          "window",
+          "activeFlights",
+          "onTimePerformance",
+          "scheduledVsFinished",
+        ],
+        properties: {
+          window: {
+            type: "object",
+            required: ["from", "toExclusive", "label"],
+            properties: {
+              from: schemaRef("DateTime"),
+              toExclusive: schemaRef("DateTime"),
+              label: { type: "string" },
+            },
+          },
+          activeFlights: {
+            type: "object",
+            required: ["value", "definition"],
+            properties: {
+              value: { type: "integer", minimum: 0 },
+              definition: { type: "string" },
+            },
+          },
+          onTimePerformance: {
+            type: "object",
+            required: ["value", "onTime", "tracked", "eligible", "definition"],
+            properties: {
+              value: {
+                type: "number",
+                minimum: 0,
+                maximum: 1,
+                nullable: true,
+              },
+              onTime: { type: "integer", minimum: 0 },
+              tracked: { type: "integer", minimum: 0 },
+              eligible: { type: "integer", minimum: 0 },
+              definition: { type: "string" },
+            },
+          },
+          scheduledVsFinished: {
+            type: "object",
+            required: ["scheduled", "finished", "value", "definition"],
+            properties: {
+              scheduled: { type: "integer", minimum: 0 },
+              finished: { type: "integer", minimum: 0 },
+              value: {
+                type: "number",
+                minimum: 0,
+                maximum: 1,
+                nullable: true,
+              },
+              definition: { type: "string" },
+            },
+          },
+        },
+      },
       scheduleRequestCounts: {
         type: "object",
         additionalProperties: { type: "integer", minimum: 0 },
@@ -1222,6 +1516,33 @@ export const openApiDocument = {
         },
       },
     },
+    "/public/tenants/{slug}": {
+      get: {
+        tags: ["Tenant"],
+        operationId: "getPublicTenantBrand",
+        summary: "Get public tenant identity",
+        description:
+          "Returns only the name and visual identity needed before sign-in.",
+        security: [],
+        parameters: [
+          {
+            name: "slug",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Public tenant identity.",
+            schemaRef("PublicTenantResponse"),
+          ),
+          "404": responseRef("NotFound"),
+          "500": responseRef("InternalError"),
+          "503": responseRef("ServiceUnavailable"),
+        },
+      },
+    },
     "/tenant": {
       get: {
         tags: ["Tenant"],
@@ -1280,6 +1601,72 @@ export const openApiDocument = {
           "200": jsonResponse(
             "Cleared ACARS configuration state.",
             schemaRef("AcarsConfig"),
+          ),
+          ...resourceErrors,
+        },
+      },
+    },
+    "/tenant/brand": {
+      patch: {
+        tags: ["Tenant"],
+        operationId: "updateTenantBrand",
+        summary: "Update the derived tenant theme",
+        description:
+          "Requires admin. The server stores one seed color and one presence level; clients derive all supporting tones.",
+        "x-required-role": "admin",
+        requestBody: jsonRequest(schemaRef("UpdateTenantBrandInput")),
+        responses: {
+          "200": jsonResponse(
+            "Updated tenant identity.",
+            schemaRef("TenantBrandResponse"),
+          ),
+          ...resourceErrors,
+          "422": responseRef("UnprocessableEntity"),
+        },
+      },
+    },
+    "/tenant/brand/logo": {
+      post: {
+        tags: ["Tenant"],
+        operationId: "uploadTenantLogo",
+        summary: "Upload the tenant square logo",
+        description:
+          "Requires admin. Accepts one PNG, JPEG, or WebP logo up to 1 MB and replaces the previous Vercel Blob asset.",
+        "x-required-role": "admin",
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["logo"],
+                properties: {
+                  logo: { type: "string", format: "binary" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": jsonResponse(
+            "Updated tenant identity.",
+            schemaRef("TenantBrandResponse"),
+          ),
+          ...acarsMutationErrors,
+          "502": responseRef("UpstreamError"),
+        },
+      },
+      delete: {
+        tags: ["Tenant"],
+        operationId: "clearTenantLogo",
+        summary: "Remove the uploaded tenant logo",
+        description:
+          "Requires admin. The generated initials fallback becomes active.",
+        "x-required-role": "admin",
+        responses: {
+          "200": jsonResponse(
+            "Updated tenant identity.",
+            schemaRef("TenantBrandResponse"),
           ),
           ...resourceErrors,
         },
@@ -1465,7 +1852,8 @@ export const openApiDocument = {
         tags: ["Flights"],
         operationId: "createFlight",
         summary: "Create a flight",
-        description: "Requires the dispatcher role or higher.",
+        description:
+          "Requires the dispatcher role or higher. ETA must be later than ETD; the selected pilot must be active in this tenant.",
         "x-required-role": "dispatcher",
         requestBody: jsonRequest(schemaRef("CreateFlightInput")),
         responses: {
@@ -1534,7 +1922,10 @@ export const openApiDocument = {
         summary: "Get a flight",
         parameters: [pathParameter("id", "Flight ID.")],
         responses: {
-          "200": jsonResponse("Flight detail.", schemaRef("FlightResponse")),
+          "200": jsonResponse(
+            "Flight, current release, immutable release revisions, and progress events.",
+            schemaRef("FlightDetailResponse"),
+          ),
           ...resourceErrors,
         },
       },
@@ -1542,7 +1933,8 @@ export const openApiDocument = {
         tags: ["Flights"],
         operationId: "updateFlight",
         summary: "Update a flight",
-        description: "Requires the dispatcher role or higher.",
+        description:
+          "Requires dispatcher. Aircraft type is immutable. Pilot or time changes create a new assignment revision; expectedUpdatedAt prevents lost concurrent edits.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
         requestBody: jsonRequest(schemaRef("UpdateFlightInput")),
@@ -1619,7 +2011,8 @@ export const openApiDocument = {
         tags: ["Flights"],
         operationId: "updateFlightStatus",
         summary: "Advance the operational flight status",
-        description: "Requires the dispatcher role or higher.",
+        description:
+          "Requires dispatcher. Active and completed are audited fallback transitions; a flight becomes Scheduled only by publishing a complete release.",
         "x-required-role": "dispatcher",
         parameters: [pathParameter("id", "Flight ID.")],
         requestBody: jsonRequest(schemaRef("UpdateFlightStatusInput")),
@@ -1855,6 +2248,70 @@ export const openApiDocument = {
           "429": responseRef("TooManyRequests"),
           "502": responseRef("UpstreamError"),
           "504": responseRef("GatewayTimeout"),
+        },
+      },
+    },
+    "/flights/{id}/confirm-assignment": {
+      post: {
+        tags: ["Flights"],
+        operationId: "confirmFlightAssignment",
+        summary: "Confirm the current assignment revision",
+        description:
+          "Only the assigned pilot can confirm the current revision.",
+        parameters: [pathParameter("id", "Flight ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Confirmed assignment.",
+            schemaRef("FlightResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/flights/{id}/release": {
+      post: {
+        tags: ["Flights"],
+        operationId: "publishDispatchRelease",
+        summary: "Publish an immutable dispatch release revision",
+        description:
+          "Requires dispatcher. Fetches and stores a live AviationWeather.gov snapshot. The initial release moves Accepted to Scheduled (stored internally as briefed).",
+        "x-required-role": "dispatcher",
+        parameters: [pathParameter("id", "Flight ID.")],
+        requestBody: jsonRequest(schemaRef("DispatchReleaseInput")),
+        responses: {
+          "200": jsonResponse(
+            "Published release and current flight.",
+            schemaRef("DispatchReleaseResponse"),
+          ),
+          ...acarsMutationErrors,
+        },
+      },
+    },
+    "/flights/{id}/start": {
+      post: {
+        tags: ["Flights"],
+        operationId: "startFlight",
+        summary: "Record a web flight start",
+        description:
+          "The assigned pilot may start a scheduled flight; dispatchers retain an audited fallback. Pilot start confirms the current assignment revision.",
+        parameters: [pathParameter("id", "Flight ID.")],
+        responses: {
+          "200": jsonResponse("Active flight.", schemaRef("FlightResponse")),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/flights/{id}/finish": {
+      post: {
+        tags: ["Flights"],
+        operationId: "finishFlight",
+        summary: "Record a web flight finish",
+        description:
+          "The assigned pilot may finish an active flight; dispatchers retain an audited fallback.",
+        parameters: [pathParameter("id", "Flight ID.")],
+        responses: {
+          "200": jsonResponse("Finished flight.", schemaRef("FlightResponse")),
+          ...mutationErrors,
         },
       },
     },

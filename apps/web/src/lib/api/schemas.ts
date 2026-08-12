@@ -25,6 +25,16 @@ export const flightStatusSchema = z.enum([
 ]);
 export type FlightStatus = z.infer<typeof flightStatusSchema>;
 
+export const brandPresenceSchema = z.enum(["restrained", "balanced", "high"]);
+export type BrandPresence = z.infer<typeof brandPresenceSchema>;
+
+export const tenantBrandSchema = z.object({
+  seedColor: z.string(),
+  presence: brandPresenceSchema,
+  logoUrl: z.string().url().nullable(),
+});
+export type TenantBrand = z.infer<typeof tenantBrandSchema>;
+
 export const tenantSchema = z.object({
   id: z.string(),
   slug: z.string(),
@@ -38,6 +48,7 @@ export const tenantDetailSchema = tenantSchema.extend({
   acarsProvider: z.enum(["mock", "hoppie"]),
   hoppiePollingEnabled: z.boolean(),
   hoppieLastTestedAt: z.string().nullable(),
+  brand: tenantBrandSchema,
   settings: z.record(z.string(), z.unknown()),
 });
 export type TenantDetail = z.infer<typeof tenantDetailSchema>;
@@ -48,6 +59,16 @@ export const acarsConfigSchema = tenantDetailSchema.pick({
   acarsProvider: true,
   hoppiePollingEnabled: true,
   hoppieLastTestedAt: true,
+});
+
+export const tenantBrandResponseSchema = z.object({
+  brand: tenantBrandSchema,
+});
+
+export const publicTenantSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  brand: tenantBrandSchema,
 });
 
 export const meSchema = z.object({
@@ -118,6 +139,10 @@ export const flightSchema = z.object({
   cancelReason: z.string().nullish(),
   declinedReason: z.string().nullish(),
   dispatcherNotes: z.string().nullish(),
+  assignmentRevision: z.number().int(),
+  assignmentConfirmedRevision: z.number().int().nullable(),
+  assignmentConfirmedAt: z.string().nullable(),
+  assignmentConfirmationRequired: z.boolean(),
   outAt: z.string().nullish(),
   offAt: z.string().nullish(),
   onAt: z.string().nullish(),
@@ -127,7 +152,64 @@ export const flightSchema = z.object({
 });
 export type Flight = z.infer<typeof flightSchema>;
 
+export const dispatchReleaseSchema = z.object({
+  id: z.string(),
+  flightId: z.string(),
+  revision: z.number().int(),
+  operationalRoute: z.string(),
+  sid: z.string().nullable(),
+  star: z.string().nullable(),
+  cruiseLevel: z.number().int(),
+  alternateIcao: z.string(),
+  fuelUnit: z.enum(["kg", "lb"]),
+  payloadUnit: z.enum(["kg", "lb"]),
+  taxiFuel: z.number(),
+  tripFuel: z.number(),
+  contingencyFuel: z.number(),
+  alternateFuel: z.number(),
+  finalReserveFuel: z.number(),
+  additionalFuel: z.number(),
+  blockFuel: z.number(),
+  plannedPayload: z.number(),
+  weatherSnapshot: z.record(z.string(), z.unknown()),
+  releaseNotes: z.string().nullable(),
+  dispatcherRemarks: z.string().nullable(),
+  releasedByMembershipId: z.string().nullable(),
+  releasedAt: z.string(),
+});
+export type DispatchRelease = z.infer<typeof dispatchReleaseSchema>;
+
+export const flightEventSchema = z.object({
+  id: z.string(),
+  kind: z.enum([
+    "flt_init",
+    "out",
+    "off",
+    "on",
+    "in",
+    "manual_start",
+    "manual_finish",
+    "assignment_confirmed",
+  ]),
+  source: z.enum(["hoppie", "pilot_web", "dispatcher"]),
+  occurredAt: z.string(),
+  actorMembershipId: z.string().nullable(),
+  acarsMessageId: z.string().nullable(),
+  meta: z.record(z.string(), z.unknown()),
+});
+export type FlightEvent = z.infer<typeof flightEventSchema>;
+
 export const flightResponseSchema = z.object({ flight: flightSchema });
+export const flightDetailResponseSchema = z.object({
+  flight: flightSchema,
+  release: dispatchReleaseSchema.nullable(),
+  releaseRevisions: z.array(dispatchReleaseSchema),
+  events: z.array(flightEventSchema),
+});
+export const dispatchReleaseResponseSchema = z.object({
+  flight: flightSchema,
+  release: dispatchReleaseSchema,
+});
 export const flightPageSchema = z.object({
   items: z.array(flightSchema),
   nextCursor: z.string().nullable(),
@@ -147,20 +229,54 @@ export const memberSchema = z.object({
 export type Member = z.infer<typeof memberSchema>;
 export const membersSchema = z.object({ items: z.array(memberSchema) });
 
-export const boardFlightSchema = flightSchema.pick({
-  id: true,
-  flightNumber: true,
-  depIcao: true,
-  arrIcao: true,
-  etd: true,
-  eta: true,
-  aircraftType: true,
-  status: true,
-  pilotMembershipId: true,
-});
+export const boardFlightSchema = flightSchema
+  .pick({
+    id: true,
+    flightNumber: true,
+    depIcao: true,
+    arrIcao: true,
+    etd: true,
+    eta: true,
+    aircraftType: true,
+    status: true,
+    pilotMembershipId: true,
+    dispatcherNotes: true,
+    assignmentRevision: true,
+    assignmentConfirmedRevision: true,
+    assignmentConfirmedAt: true,
+    assignmentConfirmationRequired: true,
+    outAt: true,
+    inAt: true,
+  })
+  .extend({ latestReleaseRevision: z.number().int().nullable() });
 export type BoardFlight = z.infer<typeof boardFlightSchema>;
+const metricRatio = z.number().min(0).max(1).nullable();
 export const dispatchBoardSchema = z.object({
   flights: z.array(boardFlightSchema),
+  metrics: z.object({
+    window: z.object({
+      from: z.string(),
+      toExclusive: z.string(),
+      label: z.string(),
+    }),
+    activeFlights: z.object({
+      value: z.number().int().nonnegative(),
+      definition: z.string(),
+    }),
+    onTimePerformance: z.object({
+      value: metricRatio,
+      onTime: z.number().int().nonnegative(),
+      tracked: z.number().int().nonnegative(),
+      eligible: z.number().int().nonnegative(),
+      definition: z.string(),
+    }),
+    scheduledVsFinished: z.object({
+      scheduled: z.number().int().nonnegative(),
+      finished: z.number().int().nonnegative(),
+      value: metricRatio,
+      definition: z.string(),
+    }),
+  }),
   scheduleRequestCounts: z.record(z.string(), z.number()).default({}),
 });
 

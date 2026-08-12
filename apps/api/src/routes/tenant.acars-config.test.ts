@@ -62,6 +62,10 @@ const baseTenant: Tenant = {
   clerkOrgId: "org_test",
   hoppieStation: "VSAS",
   hoppieLogonEnc: null,
+  brandSeedColor: "#e64646",
+  brandPresence: "balanced",
+  brandLogoUrl: null,
+  brandLogoPathname: null,
   settings: {},
   createdAt: new Date("2026-08-12T00:00:00.000Z"),
   updatedAt: new Date("2026-08-12T00:00:00.000Z"),
@@ -71,7 +75,7 @@ const app = new Hono();
 app.onError(errorHandler);
 app.route("/", tenantRoutes);
 
-describe("tenant Hoppie configuration", () => {
+describe("tenant organization configuration", () => {
   let tenant: Tenant;
 
   beforeEach(() => {
@@ -105,6 +109,50 @@ describe("tenant Hoppie configuration", () => {
     });
     expect(body).not.toHaveProperty("hoppieLogon");
     expect(body).not.toHaveProperty("hoppieLogonEnc");
+    expect(body).toMatchObject({
+      brand: {
+        seedColor: "#e64646",
+        presence: "balanced",
+        logoUrl: null,
+      },
+    });
+  });
+
+  it("forbids non-admin brand changes", async () => {
+    state.role = "dispatcher";
+    const response = await app.request("/tenant/brand", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seedColor: "#174EA6", presence: "high" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(state.updateTenant).not.toHaveBeenCalled();
+  });
+
+  it("normalizes and audits an admin brand change", async () => {
+    state.role = "admin";
+    const response = await app.request("/tenant/brand", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seedColor: "#174EA6", presence: "high" }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      brand: {
+        seedColor: "#174ea6",
+        presence: "high",
+        logoUrl: null,
+      },
+    });
+    expect(state.updateTenant).toHaveBeenCalledWith("tenant_test", {
+      brandSeedColor: "#174ea6",
+      brandPresence: "high",
+    });
+    expect(state.writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "tenant.brand_update" }),
+    );
   });
 
   it.each([

@@ -26,9 +26,9 @@ const statuses: Array<{ value: "all" | FlightStatus; label: string }> = [
   { value: "draft", label: "Draft" },
   { value: "offered", label: "Offered" },
   { value: "accepted", label: "Accepted" },
-  { value: "briefed", label: "Briefed" },
+  { value: "briefed", label: "Scheduled" },
   { value: "active", label: "Active" },
-  { value: "completed", label: "Completed" },
+  { value: "completed", label: "Finished" },
   { value: "declined", label: "Declined" },
   { value: "cancelled", label: "Cancelled" },
 ];
@@ -79,7 +79,7 @@ export function DispatcherFlightList({ slug }: { slug: string }) {
 
   return (
     <>
-      <details className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <details className="mb-6 overflow-hidden rounded-[2px] border border-slate-200 bg-white shadow-sm">
         <summary className="flex min-h-14 cursor-pointer list-none items-center gap-2 px-5 font-bold text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--accent)]">
           <Plus aria-hidden className="size-5 text-[var(--accent)]" /> Create
           ad-hoc flight
@@ -99,7 +99,7 @@ export function DispatcherFlightList({ slug }: { slug: string }) {
             role="tab"
             aria-selected={status === tab.value}
             onClick={() => changeStatus(tab.value)}
-            className={`min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${status === tab.value ? "bg-slate-950 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+            className={`min-h-11 shrink-0 rounded-[2px] px-4 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${status === tab.value ? "bg-slate-950 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
           >
             {tab.label}
           </button>
@@ -154,7 +154,7 @@ export function DispatcherFlightList({ slug }: { slug: string }) {
                       <Link
                         href={`/${slug}/dispatch/flights/${flight.id}`}
                         aria-label={`Open ${flight.flightNumber}`}
-                        className="inline-flex size-10 items-center justify-center rounded-lg hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                        className="inline-flex size-10 items-center justify-center rounded-[2px] hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
                       >
                         <ChevronRight aria-hidden className="size-5" />
                       </Link>

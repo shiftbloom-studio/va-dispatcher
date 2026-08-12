@@ -28,6 +28,11 @@ vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
 }));
 
+vi.mock("@/lib/public-tenant", async () => {
+  const { getTenantConfig } = await import("@/lib/tenant");
+  return { getPublicTenantConfig: (slug: string) => getTenantConfig(slug) };
+});
+
 import SignInPage from "./page";
 
 describe("tenant sign-in", () => {

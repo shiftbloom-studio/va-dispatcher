@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   jsonb,
@@ -62,6 +64,31 @@ export const simbriefDispatchStatusEnum = pgEnum("simbrief_dispatch_status", [
   "ready",
 ]);
 
+export const brandPresenceEnum = pgEnum("brand_presence", [
+  "restrained",
+  "balanced",
+  "high",
+]);
+
+export const dispatchUnitEnum = pgEnum("dispatch_unit", ["kg", "lb"]);
+
+export const flightEventKindEnum = pgEnum("flight_event_kind", [
+  "flt_init",
+  "out",
+  "off",
+  "on",
+  "in",
+  "manual_start",
+  "manual_finish",
+  "assignment_confirmed",
+]);
+
+export const flightEventSourceEnum = pgEnum("flight_event_source", [
+  "hoppie",
+  "pilot_web",
+  "dispatcher",
+]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -81,6 +108,12 @@ export const tenants = pgTable(
     clerkOrgId: text("clerk_org_id").notNull(),
     hoppieStation: text("hoppie_station"),
     hoppieLogonEnc: text("hoppie_logon_enc"),
+    brandSeedColor: text("brand_seed_color").notNull().default("#e64646"),
+    brandPresence: brandPresenceEnum("brand_presence")
+      .notNull()
+      .default("balanced"),
+    brandLogoUrl: text("brand_logo_url"),
+    brandLogoPathname: text("brand_logo_pathname"),
     settings: jsonb("settings")
       .$type<Record<string, unknown>>()
       .notNull()
@@ -90,6 +123,10 @@ export const tenants = pgTable(
   (t) => [
     uniqueIndex("tenants_slug_uidx").on(t.slug),
     uniqueIndex("tenants_clerk_org_uidx").on(t.clerkOrgId),
+    check(
+      "tenants_brand_seed_color_check",
+      sql`${t.brandSeedColor} ~ '^#[0-9a-f]{6}$'`,
+    ),
   ],
 );
 
@@ -191,6 +228,11 @@ export const flights = pgTable(
     cancelReason: text("cancel_reason"),
     declinedReason: text("declined_reason"),
     dispatcherNotes: text("dispatcher_notes"),
+    assignmentRevision: integer("assignment_revision").notNull().default(1),
+    assignmentConfirmedRevision: integer("assignment_confirmed_revision"),
+    assignmentConfirmedAt: timestamp("assignment_confirmed_at", {
+      withTimezone: true,
+    }),
     outAt: timestamp("out_at", { withTimezone: true }),
     offAt: timestamp("off_at", { withTimezone: true }),
     onAt: timestamp("on_at", { withTimezone: true }),
@@ -202,6 +244,83 @@ export const flights = pgTable(
     index("flights_tenant_etd_idx").on(t.tenantId, t.etd),
     index("flights_tenant_pilot_idx").on(t.tenantId, t.pilotMembershipId),
     index("flights_schedule_request_idx").on(t.scheduleRequestId),
+    check("flights_time_window_check", sql`${t.eta} > ${t.etd}`),
+    check(
+      "flights_assignment_revision_check",
+      sql`${t.assignmentRevision} > 0`,
+    ),
+    check(
+      "flights_assignment_confirmation_check",
+      sql`${t.assignmentConfirmedRevision} is null or (${t.assignmentConfirmedRevision} > 0 and ${t.assignmentConfirmedRevision} <= ${t.assignmentRevision})`,
+    ),
+  ],
+);
+
+/** Immutable revisions of a dispatch release. The latest revision is current. */
+export const dispatchReleases = pgTable(
+  "dispatch_releases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    flightId: uuid("flight_id")
+      .notNull()
+      .references(() => flights.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    operationalRoute: text("operational_route").notNull(),
+    sid: text("sid"),
+    star: text("star"),
+    cruiseLevel: integer("cruise_level").notNull(),
+    alternateIcao: text("alternate_icao").notNull(),
+    fuelUnit: dispatchUnitEnum("fuel_unit").notNull(),
+    payloadUnit: dispatchUnitEnum("payload_unit").notNull(),
+    taxiFuel: integer("taxi_fuel").notNull(),
+    tripFuel: integer("trip_fuel").notNull(),
+    contingencyFuel: integer("contingency_fuel").notNull(),
+    alternateFuel: integer("alternate_fuel").notNull(),
+    finalReserveFuel: integer("final_reserve_fuel").notNull(),
+    additionalFuel: integer("additional_fuel").notNull().default(0),
+    blockFuel: integer("block_fuel").notNull(),
+    plannedPayload: integer("planned_payload").notNull(),
+    weatherSnapshot: jsonb("weather_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    releaseNotes: text("release_notes"),
+    dispatcherRemarks: text("dispatcher_remarks"),
+    releasedByMembershipId: uuid("released_by_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    releasedAt: timestamp("released_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("dispatch_releases_flight_revision_uidx").on(
+      t.tenantId,
+      t.flightId,
+      t.revision,
+    ),
+    index("dispatch_releases_tenant_flight_idx").on(t.tenantId, t.flightId),
+    check("dispatch_releases_revision_check", sql`${t.revision} > 0`),
+    check(
+      "dispatch_releases_cruise_level_check",
+      sql`${t.cruiseLevel} between 10 and 600`,
+    ),
+    check(
+      "dispatch_releases_nonnegative_amounts_check",
+      sql`${t.taxiFuel} >= 0 and ${t.tripFuel} >= 0 and ${t.contingencyFuel} >= 0 and ${t.alternateFuel} >= 0 and ${t.finalReserveFuel} >= 0 and ${t.additionalFuel} >= 0 and ${t.blockFuel} >= 0 and ${t.plannedPayload} >= 0`,
+    ),
+    check(
+      "dispatch_releases_positive_trip_fuel_check",
+      sql`${t.tripFuel} > 0 and ${t.blockFuel} > 0`,
+    ),
+    check(
+      "dispatch_releases_block_fuel_check",
+      sql`${t.blockFuel} = ${t.taxiFuel} + ${t.tripFuel} + ${t.contingencyFuel} + ${t.alternateFuel} + ${t.finalReserveFuel} + ${t.additionalFuel}`,
+    ),
   ],
 );
 
@@ -325,6 +444,48 @@ export const acarsMessages = pgTable(
   ],
 );
 
+/** Auditable source-of-truth events behind tracked flight progress. */
+export const flightOperationalEvents = pgTable(
+  "flight_operational_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    flightId: uuid("flight_id")
+      .notNull()
+      .references(() => flights.id, { onDelete: "cascade" }),
+    kind: flightEventKindEnum("kind").notNull(),
+    source: flightEventSourceEnum("source").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    actorMembershipId: uuid("actor_membership_id").references(
+      () => memberships.id,
+      { onDelete: "set null" },
+    ),
+    acarsMessageId: uuid("acars_message_id").references(
+      () => acarsMessages.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("flight_operational_events_tenant_flight_idx").on(
+      t.tenantId,
+      t.flightId,
+      t.occurredAt,
+    ),
+    uniqueIndex("flight_operational_events_acars_kind_uidx").on(
+      t.acarsMessageId,
+      t.kind,
+    ),
+  ],
+);
+
 export const auditEvents = pgTable(
   "audit_events",
   {
@@ -383,6 +544,9 @@ export type Flight = typeof flights.$inferSelect;
 export type NavigraphOauthTransaction =
   typeof navigraphOauthTransactions.$inferSelect;
 export type SimbriefDispatch = typeof simbriefDispatches.$inferSelect;
+export type DispatchRelease = typeof dispatchReleases.$inferSelect;
+export type FlightOperationalEvent =
+  typeof flightOperationalEvents.$inferSelect;
 export type AcarsMessage = typeof acarsMessages.$inferSelect;
 export type MemberRole = (typeof memberRoleEnum.enumValues)[number];
 export type FlightStatus = (typeof flightStatusEnum.enumValues)[number];
@@ -390,3 +554,8 @@ export type ScheduleRequestStatus =
   (typeof scheduleRequestStatusEnum.enumValues)[number];
 export type SimbriefDispatchStatus =
   (typeof simbriefDispatchStatusEnum.enumValues)[number];
+export type BrandPresence = (typeof brandPresenceEnum.enumValues)[number];
+export type DispatchUnit = (typeof dispatchUnitEnum.enumValues)[number];
+export type FlightEventKind = (typeof flightEventKindEnum.enumValues)[number];
+export type FlightEventSource =
+  (typeof flightEventSourceEnum.enumValues)[number];

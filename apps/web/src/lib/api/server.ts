@@ -19,3 +19,10 @@ export function serverApi<TSchema extends z.ZodType>(
 ): Promise<z.output<TSchema>> {
   return requestJson(`${apiOrigin()}/api/v1${path}`, { schema, token });
 }
+
+export function serverPublicApi<TSchema extends z.ZodType>(
+  path: string,
+  schema: TSchema,
+): Promise<z.output<TSchema>> {
+  return requestJson(`${apiOrigin()}/api/v1${path}`, { schema });
+}

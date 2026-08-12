@@ -101,7 +101,7 @@ export function RequestQueue({ slug }: { slug: string }) {
             role="tab"
             aria-selected={status === tab.value}
             onClick={() => changeStatus(tab.value)}
-            className={`min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${status === tab.value ? "bg-slate-950 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+            className={`min-h-11 shrink-0 rounded-[2px] px-4 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${status === tab.value ? "bg-slate-950 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
           >
             {tab.label}
           </button>
@@ -121,7 +121,7 @@ export function RequestQueue({ slug }: { slug: string }) {
                       {request.title ||
                         `${request.desiredFlightCount}-flight request`}
                     </h2>
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
+                    <span className="rounded-[2px] bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
                       {request.desiredFlightCount} flights
                     </span>
                   </div>
@@ -165,7 +165,7 @@ export function RequestQueue({ slug }: { slug: string }) {
       {review.isError ? (
         <p
           role="alert"
-          className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+          className="mt-3 rounded-[2px] bg-red-50 p-3 text-sm text-red-800"
         >
           {apiErrorMessage(review.error)}
         </p>

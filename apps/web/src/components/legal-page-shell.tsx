@@ -21,9 +21,9 @@ export function LegalPageShell({
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <Link
             href="/vsas"
-            className="flex items-center gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+            className="flex items-center gap-3 rounded-[2px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
           >
-            <span className="grid size-9 place-items-center rounded-xl bg-[var(--accent)] text-sm font-black text-white">
+            <span className="grid size-9 place-items-center rounded-[2px] bg-[var(--accent)] text-sm font-black text-white">
               VS
             </span>
             <span className="font-display font-bold text-slate-950">
@@ -53,7 +53,7 @@ export function LegalPageShell({
         {!config.configured ? (
           <div
             role="alert"
-            className="mt-8 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950"
+            className="mt-8 rounded-[2px] border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950"
           >
             <strong>Development configuration:</strong> real legal operator
             details are required before production. Missing:{" "}
@@ -100,7 +100,7 @@ export function LegalTable({
   rows: ReactNode[][];
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-[2px] border border-slate-200 bg-white">
       <table className="w-full min-w-[42rem] border-collapse text-left text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead className="bg-slate-100 text-slate-950">

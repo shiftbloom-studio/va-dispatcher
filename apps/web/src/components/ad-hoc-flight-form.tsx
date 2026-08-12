@@ -184,7 +184,7 @@ export function AdHocFlightForm({
       {mutation.isError ? (
         <p
           role="alert"
-          className="rounded-lg bg-red-50 p-3 text-sm text-red-800 md:col-span-2 xl:col-span-4"
+          className="rounded-[2px] bg-red-50 p-3 text-sm text-red-800 md:col-span-2 xl:col-span-4"
         >
           {apiErrorMessage(mutation.error)}
         </p>
