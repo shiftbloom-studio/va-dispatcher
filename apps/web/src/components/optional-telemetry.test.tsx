@@ -1,22 +1,21 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  filterOptionalTelemetryEvent,
-  OptionalTelemetry,
-} from "@/components/optional-telemetry";
+import { OptionalTelemetry } from "@/components/optional-telemetry";
+import { filterOptionalTelemetryEvent } from "@/lib/optional-telemetry";
 import {
   PRIVACY_PREFERENCES_CHANGED_EVENT,
   PRIVACY_PREFERENCES_STORAGE_KEY,
   savePrivacyPreferences,
 } from "@/lib/privacy-storage";
 
-vi.mock("@vercel/analytics/next", () => ({
-  Analytics: () => <div data-testid="analytics" />,
-}));
-
-vi.mock("@vercel/speed-insights/next", () => ({
-  SpeedInsights: () => <div data-testid="speed-insights" />,
+vi.mock("@/components/optional-telemetry-sinks", () => ({
+  OptionalTelemetrySinks: () => (
+    <>
+      <div data-testid="analytics" />
+      <div data-testid="speed-insights" />
+    </>
+  ),
 }));
 
 describe("OptionalTelemetry", () => {

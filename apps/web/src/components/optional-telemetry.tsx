@@ -1,7 +1,6 @@
 "use client";
 
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
 import {
@@ -9,12 +8,13 @@ import {
   readPrivacyPreferences,
 } from "@/lib/privacy-storage";
 
-export function filterOptionalTelemetryEvent<T>(event: T): T | null {
-  if (typeof window === "undefined") return null;
-  return readPrivacyPreferences(window.localStorage)?.analyticsAllowed === true
-    ? event
-    : null;
-}
+const OptionalTelemetrySinks = dynamic(
+  () =>
+    import("@/components/optional-telemetry-sinks").then(
+      (module) => module.OptionalTelemetrySinks,
+    ),
+  { ssr: false },
+);
 
 export function OptionalTelemetry() {
   const [loaded, setLoaded] = useState(false);
@@ -39,10 +39,5 @@ export function OptionalTelemetry() {
 
   if (!loaded) return null;
 
-  return (
-    <>
-      <Analytics beforeSend={filterOptionalTelemetryEvent} />
-      <SpeedInsights beforeSend={filterOptionalTelemetryEvent} />
-    </>
-  );
+  return <OptionalTelemetrySinks />;
 }

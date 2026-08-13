@@ -24,7 +24,6 @@ export function TenantLogo({
           fill
           sizes={sizes}
           src={tenant.logo.src}
-          unoptimized
         />
       ) : (
         <span className="font-display text-sm font-black tracking-tight text-[var(--brand-action)]">

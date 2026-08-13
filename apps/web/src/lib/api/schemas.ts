@@ -100,11 +100,9 @@ export const availabilityIntervalSchema = z.object({
   endAt: z.string().datetime({ offset: true }),
 });
 
-// Historical requests may predate detailed slots, so availability remains
-// optional when reading. New create/edit payloads always include it.
 export const schedulePreferencesSchema = z
   .object({
-    availability: z.array(availabilityIntervalSchema).optional(),
+    availability: z.array(availabilityIntervalSchema),
   })
   .catchall(z.unknown());
 
