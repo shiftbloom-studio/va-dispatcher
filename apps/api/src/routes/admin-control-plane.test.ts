@@ -215,8 +215,7 @@ describe("admin control-plane routes", () => {
     mocks.findMembershipById.mockResolvedValue({
       id: "26000000-0000-4000-8000-000000000021",
       clerkUserId: "user-applicant",
-      role: "pilot",
-      requestedRole: "dispatcher",
+      role: "dispatcher",
       status: "invited",
     });
 
@@ -258,8 +257,7 @@ describe("admin control-plane routes", () => {
     mocks.findMembershipById.mockResolvedValue({
       id: "26000000-0000-4000-8000-000000000021",
       clerkUserId: "user-applicant",
-      role: "pilot",
-      requestedRole: "dispatcher",
+      role: "dispatcher",
       displayName: "Applicant",
       pilotCallsign: null,
       status: "invited",
@@ -275,7 +273,6 @@ describe("admin control-plane routes", () => {
         id: "26000000-0000-4000-8000-000000000021",
         clerkUserId: "user-applicant",
         role: "dispatcher",
-        requestedRole: null,
         displayName: "Applicant",
         pilotCallsign: null,
         status: "active",
@@ -336,7 +333,6 @@ describe("admin control-plane routes", () => {
         id: "26000000-0000-4000-8000-000000000021",
         clerkUserId: "user-pilot",
         role: "pilot",
-        requestedRole: null,
         displayName: "Pilot",
         pilotCallsign: "SAS101",
         status: "disabled",

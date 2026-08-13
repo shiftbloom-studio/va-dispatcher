@@ -752,8 +752,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       membership: {
         tenantId: TENANT_ONE,
         clerkUserId,
-        role: "pilot",
-        requestedRole: "dispatcher",
+        role: "dispatcher",
         status: "invited",
       },
     });
@@ -766,7 +765,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     });
     expect(revised.membership).toMatchObject({
       id: submitted.membership.id,
-      requestedRole: "pilot",
+      role: "pilot",
       displayName: "Applicant Updated",
       status: "invited",
     });
@@ -784,7 +783,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       }),
     ).resolves.toMatchObject({
       id: submitted.membership.id,
-      requestedRole: "pilot",
+      role: "pilot",
       status: "disabled",
     });
 
@@ -814,7 +813,6 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       membership: {
         id: PILOT_ONE,
         role: "pilot",
-        requestedRole: null,
         status: "active",
       },
     });
@@ -847,7 +845,6 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       kind: "updated",
       membership: {
         role: "dispatcher",
-        requestedRole: null,
         status: "active",
       },
     });

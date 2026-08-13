@@ -82,19 +82,19 @@ Actions are pinned to full commit SHAs. Repository administrators must still ena
 
 ## Personal and linkable data inventory
 
-| System                    | Data                                                                                                     |
-| ------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Clerk                     | User/org IDs, login/invitation email, role/invitation state, name, sessions, IP/device/security events   |
-| Memberships               | Clerk ID, active/requested role, display name, callsign, SimBrief/Navigraph identity, application/status |
-| Schedule requests         | Availability, preferences, notes, status, reasons, timestamps                                            |
-| Flights                   | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields                                  |
-| Dispatch planning         | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP                                   |
-| Simulator telemetry       | Device identity, position/phase samples, recent track, OOOI provenance                                   |
-| ACARS                     | Station identifiers, message text, provider metadata, actor, timestamps                                  |
-| Audit events              | Actor, action, entity IDs, metadata, time                                                                |
-| Privacy operations        | Policy, request/hold/task state, approvals, reports, export cursor                                       |
-| Infrastructure            | Request IDs, IP and HTTP/security logs at providers                                                      |
-| Optional Vercel telemetry | Consent-gated aggregated page/referrer/device/coarse location and Web Vitals data                        |
+| System                    | Data                                                                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Clerk                     | User/org IDs, login/invitation email, role/invitation state, name, sessions, IP/device/security events                            |
+| Memberships               | Clerk ID, active or requested role (according to status), display name, callsign, SimBrief/Navigraph identity, application/status |
+| Schedule requests         | Availability, preferences, notes, status, reasons, timestamps                                                                     |
+| Flights                   | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields                                                           |
+| Dispatch planning         | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP                                                            |
+| Simulator telemetry       | Device identity, position/phase samples, recent track, OOOI provenance                                                            |
+| ACARS                     | Station identifiers, message text, provider metadata, actor, timestamps                                                           |
+| Audit events              | Actor, action, entity IDs, metadata, time                                                                                         |
+| Privacy operations        | Policy, request/hold/task state, approvals, reports, export cursor                                                                |
+| Infrastructure            | Request IDs, IP and HTTP/security logs at providers                                                                               |
+| Optional Vercel telemetry | Consent-gated aggregated page/referrer/device/coarse location and Web Vitals data                                                 |
 
 Treat every free-text field as potentially personal. Do not solicit sensitive or unrelated information.
 

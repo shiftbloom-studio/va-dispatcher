@@ -236,8 +236,9 @@ export const memberships = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     clerkUserId: text("clerk_user_id").notNull(),
+    // `invited` memberships are not authorized; their role is the requested
+    // pilot/dispatcher role until a tenant administrator decides the request.
     role: memberRoleEnum("role").notNull().default("pilot"),
-    requestedRole: memberRoleEnum("requested_role"),
     displayName: text("display_name"),
     pilotCallsign: text("pilot_callsign"),
     simbriefUserId: text("simbrief_user_id"),
