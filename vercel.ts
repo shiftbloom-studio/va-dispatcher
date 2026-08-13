@@ -22,11 +22,13 @@ export const config = {
     api: {
       root: "apps/api",
       framework: "hono",
-      entrypoint: "src/index.ts",
-      // The emitted handler is native ESM. Vercel's function trace must retain
-      // the root package boundary so Node interprets app.js as an ES module.
+      entrypoint: "dist/vercel.js",
+      buildCommand: "pnpm run build:vercel",
+      // Vercel Services currently emits the Hono entrypoint without tracing
+      // pnpm workspace dependencies. Bundle them before packaging and retain
+      // the ESM package boundary for Vercel's generated app.js wrapper.
       functions: {
-        "src/index.ts": {
+        "dist/vercel.js": {
           includeFiles: "package.json",
         },
       },
