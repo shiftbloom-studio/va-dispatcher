@@ -552,6 +552,16 @@ const schemas = {
       acarsProvider: schemaRef("AcarsProvider"),
     },
   },
+  ReadinessResponse: {
+    type: "object",
+    required: ["ok", "service", "database", "schema"],
+    properties: {
+      ok: { type: "boolean" },
+      service: { type: "string", example: "va-dispatch-api" },
+      database: { type: "boolean" },
+      schema: { type: "boolean" },
+    },
+  },
   MembershipProfile: {
     type: "object",
     required: ["id", "role", "displayName", "pilotCallsign", "status"],
@@ -2449,6 +2459,30 @@ export const openApiDocument = {
           "200": jsonResponse(
             "Current service health.",
             schemaRef("HealthResponse"),
+          ),
+        },
+      },
+    },
+    "/ready": {
+      servers: [
+        { url: "/", description: "Direct service path" },
+        { url: "/api", description: "Public rewrite-compatible path" },
+      ],
+      get: {
+        tags: ["Health"],
+        operationId: "getReadiness",
+        summary: "Verify workspace readiness",
+        description:
+          "Performs zero-row tenant and membership projections so PostgreSQL validates the schema required for authenticated workspace loading without reading tenant records.",
+        security: [],
+        responses: {
+          "200": jsonResponse(
+            "The database is configured and workspace schema is compatible.",
+            schemaRef("ReadinessResponse"),
+          ),
+          "503": jsonResponse(
+            "The database is unavailable or its workspace schema is incompatible.",
+            schemaRef("ReadinessResponse"),
           ),
         },
       },
