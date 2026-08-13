@@ -51,21 +51,20 @@ Deleting a tenant cascades to all tenant-owned operational tables. No applicatio
 
 Tenant-local user profile and authorization record.
 
-| Important field                            | Purpose                                                        |
-| ------------------------------------------ | -------------------------------------------------------------- |
-| `clerk_user_id`                            | Clerk identity inside tenant                                   |
-| `role`                                     | `pilot`, `dispatcher`, or `admin`                              |
-| `requested_role`                           | Pending pilot/dispatcher application role; cleared on decision |
-| `display_name`                             | Optional tenant display name                                   |
-| `pilot_callsign`                           | Optional personal aircraft ACARS callsign                      |
-| `simbrief_user_id`, `simbrief_verified_at` | Pilot-owned SimBrief link                                      |
-| `navigraph_subject`, `navigraph_username`  | Navigraph OAuth identity                                       |
-| `status`                                   | `active`, `invited`, or `disabled`                             |
+| Important field                            | Purpose                                                                           |
+| ------------------------------------------ | --------------------------------------------------------------------------------- |
+| `clerk_user_id`                            | Clerk identity inside tenant                                                      |
+| `role`                                     | `pilot`, `dispatcher`, or `admin`; for an invited application, the requested role |
+| `display_name`                             | Optional tenant display name                                                      |
+| `pilot_callsign`                           | Optional personal aircraft ACARS callsign                                         |
+| `simbrief_user_id`, `simbrief_verified_at` | Pilot-owned SimBrief link                                                         |
+| `navigraph_subject`, `navigraph_username`  | Navigraph OAuth identity                                                          |
+| `status`                                   | `active`, `invited`, or `disabled`                                                |
 
 `(tenant_id, clerk_user_id)` and `(tenant_id, pilot_callsign)` are unique. PostgreSQL permits multiple null callsigns. Schedule requests restrict membership deletion; flight and audit actor links use set-null behavior.
 
 The application reuses the membership lifecycle instead of creating a second
-applicant identity store: `invited` plus `requested_role` is pending,
+applicant identity store: `invited` plus the membership `role` is pending,
 `active` is approved, and `disabled` is rejected, cancelled, or removed. The
 verified Clerk user ID remains the unique identity inside a tenant. Application
 submission, cancellation, approval, rejection, and safe removal each write the
@@ -177,8 +176,8 @@ pilot | dispatcher | admin
 active | invited | disabled
 ```
 
-`requested_role` is nullable and uses the same enum, but the public application
-contract accepts only `pilot | dispatcher`.
+The public application contract accepts only `pilot | dispatcher`; an
+application cannot request the tenant-admin role.
 
 ### Schedule request status
 

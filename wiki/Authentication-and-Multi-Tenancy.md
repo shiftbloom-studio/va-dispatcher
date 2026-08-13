@@ -104,9 +104,9 @@ Membership statuses are:
 - `invited`: rejected by the API until activated; and
 - `disabled`: rejected by the API.
 
-For self-service signup, `invited` means a pending application and
-`requested_role` records the requested pilot/dispatcher role. Approval or
-rejection clears that request atomically. A returning disabled member may apply
+For self-service signup, `invited` means a pending application and `role`
+records the requested pilot/dispatcher role. Approval activates that role;
+rejection closes the request atomically. A returning disabled member may apply
 again, but still needs another explicit decision.
 
 ## Signup and approval sequence
