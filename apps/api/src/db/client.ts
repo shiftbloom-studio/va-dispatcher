@@ -28,6 +28,19 @@ export function hasDatabase(): boolean {
   return Boolean(env().DATABASE_URL);
 }
 
+/**
+ * Verify the schema needed to resolve every authenticated workspace. Selecting
+ * zero rows still makes PostgreSQL validate the complete Drizzle projection,
+ * catching code/schema skew without exposing or scanning tenant data.
+ */
+export async function verifyWorkspaceDatabaseSchema(): Promise<void> {
+  const db = getDb();
+  await Promise.all([
+    db.select().from(schema.tenants).limit(0),
+    db.select().from(schema.memberships).limit(0),
+  ]);
+}
+
 /** Test helper */
 export function setDbForTests(db: Db | null): void {
   dbInstance = db;

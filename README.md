@@ -116,6 +116,15 @@ Services private beta is unavailable, deploy `apps/web` and `apps/api` as two
 projects and set `API_ORIGIN` on the web project to the API project's public
 origin; the Next.js rewrite keeps browser calls on same-origin `/api/*`.
 
+Normal releases are automatic: CI validates an internal pull request before a
+separate credentialed workflow deploys its preview; a successful `main` CI run
+deploys Production. The Vercel API build applies `schema.ts` and `/api/ready`
+must confirm the live tenant/membership schema. See
+[`docs/maintainer-setup.md`](docs/maintainer-setup.md) for the one-time GitHub
+configuration and token-rotation date.
+
+Initial local provisioning remains manual:
+
 ```bash
 vercel login
 vercel link
@@ -125,29 +134,30 @@ vercel integration add clerk
 vercel env pull apps/api/.env.local --yes
 # copy DATABASE_URL + CLERK_* into apps/api/.env for local
 DATABASE_URL='postgresql://...' pnpm db:push
-vercel deploy
 ```
 
 ## Scripts
 
-| Script                                    | Description                                    |
-| ----------------------------------------- | ---------------------------------------------- |
-| `pnpm dev:api`                            | Run API locally                                |
-| `pnpm dev:web`                            | Run the Next.js app locally                    |
-| `pnpm dev`                                | Run API and web together                       |
-| `pnpm test:api`                           | API unit and isolation tests                   |
-| `pnpm test:web`                           | Frontend unit and component tests              |
-| `pnpm test:coverage`                      | Full-source tests and coverage                 |
-| `pnpm security:audit`                     | High-severity dependency audit                 |
-| `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests              |
-| `pnpm test:e2e:integrated`                | Real web/API/PostgreSQL journeys               |
-| `pnpm db:push`                            | Apply the canonical schema to a fresh database |
-| `pnpm typecheck`                          | TypeScript check                               |
+| Script                                    | Description                        |
+| ----------------------------------------- | ---------------------------------- |
+| `pnpm dev:api`                            | Run API locally                    |
+| `pnpm dev:web`                            | Run the Next.js app locally        |
+| `pnpm dev`                                | Run API and web together           |
+| `pnpm test:api`                           | API unit and isolation tests       |
+| `pnpm test:web`                           | Frontend unit and component tests  |
+| `pnpm test:coverage`                      | Full-source tests and coverage     |
+| `pnpm security:audit`                     | High-severity dependency audit     |
+| `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests  |
+| `pnpm test:e2e:integrated`                | Real web/API/PostgreSQL journeys   |
+| `pnpm db:push`                            | Apply the canonical schema locally |
+| `pnpm typecheck`                          | TypeScript check                   |
 
 This Shiftbloom project is pre-production and uses `schema.ts` as its canonical
-database definition. Recreate an empty database and run `db:push`; never point
-that command at a database containing user data. If the product later becomes
-long-lived production software, define a new data-evolution policy first.
+database definition. GitHub-coordinated Vercel deployments apply it before
+readiness in machine-readable mode without Drizzle's data-loss `--force`, so
+destructive changes fail closed. Use disposable databases for local schema
+work. Adopt reviewed migrations before incompatible changes must preserve
+durable data.
 
 The integrated browser suite requires a separately confirmed disposable
 PostgreSQL database. See

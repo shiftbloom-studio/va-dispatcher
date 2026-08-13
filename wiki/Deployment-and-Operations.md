@@ -62,18 +62,26 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 ### Vercel
 
 - Configure both services and all server/public environment values.
+- Let GitHub Actions coordinate deployments; checked-in configuration disables
+  Vercel's independent Git deployment so CI and schema readiness finish first.
 - Enable Secure Backend Access with OIDC Federation for BotID server verification.
 - Use an eligible plan for Deep Analysis and the one-minute cron.
 - Configure spend notifications for Deep Analysis and other metered features.
 
 ## Deployment sequence
 
-1. Review and merge a green commit on `main`.
-2. Provision or select Neon, Clerk, and Vercel environments.
-3. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference).
-4. Create an empty Neon database or branch and run `pnpm db:push` from the exact
-   green release commit. Never target a database containing data to preserve.
-5. Deploy web and API services.
+1. Provision or select Neon, Clerk, and Vercel environments.
+2. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference).
+3. Configure the one-time GitHub `VERCEL_TOKEN` secret, Vercel project/team
+   and repository variables, and the `Preview` and `Production` environments
+   described in `docs/maintainer-setup.md`.
+4. Open or update an internal pull request. GitHub runs the database contracts,
+   quality checks, and integrated E2E suite. A separate default-branch workflow
+   then deploys that exact successful commit without executing pull-request code
+   with deployment credentials. Vercel applies `schema.ts`, builds the
+   application, and exposes a preview only if `/api/ready` succeeds.
+5. Review and merge the green pull request. The deployment workflow repeats for
+   the exact successful `main` commit and verifies Production readiness.
 6. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
    that exact organization create or repair the trusted vSAS mapping.
 7. Sign up through `/vsas`, submit a pilot or dispatcher application, approve
@@ -94,9 +102,13 @@ vercel integration add clerk
 vercel env pull apps/api/.env.local --yes
 ```
 
-Do not apply schema, seed, or deployment changes to a shared environment
-without explicit operator approval and a rollback plan. This project replaces
-its pre-production database rather than evolving an existing catalog.
+The automated schema step uses Drizzle's machine-readable output mode and never
+passes its data-loss `--force` option. A destructive or ambiguous proposal
+returns missing hints and fails deployment instead of silently changing a
+shared catalog. Keep schema changes additive and compatible while an old
+deployment may still be serving. Before retaining durable production data
+through incompatible schema changes, adopt reviewed migrations and a rollback
+policy rather than weakening this guard.
 
 ## Tenant bootstrap
 
@@ -126,6 +138,12 @@ environments, using either the development auth bypass or cron bearer.
 ```
 
 This is a liveness/configuration endpoint. `database: true` means `DATABASE_URL` is configured; it does not execute a database query. Use a synthetic authenticated read when verifying database readiness.
+
+`GET /ready` performs zero-row projections across the tenant and membership
+tables. It verifies database connectivity and the columns required for tenant
+bootstrap and authorization without reading or returning user records. GitHub
+Actions requires `database: true` and `schema: true` from this endpoint before
+it marks a preview or Production deployment ready.
 
 ## ACARS cron operations
 

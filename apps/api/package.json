@@ -16,6 +16,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "db:push": "drizzle-kit push",
+    "db:push:deploy": "drizzle-kit push --output=json",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
