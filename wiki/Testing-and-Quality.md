@@ -20,6 +20,7 @@ API tests use Vitest in a Node environment and cover:
 - ACARS route authorization;
 - flight and schedule state transitions;
 - Clerk compact claims and trusted tenant repair;
+- signed-in applicant authentication without an organization claim;
 - unknown-organization rejection;
 - tenant isolation across Clerk organizations;
 - member self-service callsign uniqueness;
@@ -33,6 +34,8 @@ API tests use Vitest in a Node environment and cover:
 - SimBrief revision/callback atomicity and trusted attribution;
 - simulator-device ownership, telemetry/OOOI provenance, pruning, and visibility;
 - admin reassignment, last-admin recovery, audit redaction/export; and
+- tenant-scoped application submission/cancellation, approval races, Clerk role
+  synchronization, safe local-first removal, invitations, and access policy;
 - privacy dry-run/execute, holds, subject workflows, and external-task recovery.
 
 ## Web tests
@@ -42,6 +45,8 @@ Web tests use Vitest, jsdom, Testing Library, and a `server-only` test shim. The
 - typed API response/error handling;
 - API serializer contract fixtures;
 - tenant auth routes and session tasks;
+- signup-to-application routing, role selection, tenant approval, invitations,
+  and organization membership settings;
 - unknown-tenant and role routing;
 - tenant-branded sign-in/sign-up;
 - schedule availability and UTC normalization;
@@ -147,17 +152,17 @@ Do not perform broad dependency updates incidentally. Read release notes, check 
 
 ## What to test for common changes
 
-| Change               | Minimum focused evidence                                                         |
-| -------------------- | -------------------------------------------------------------------------------- |
-| New API resource     | validation, role denial, tenant isolation, happy path, serializer/OpenAPI        |
-| State transition     | allowed path, illegal jumps, actor ownership, UI action matrix                   |
-| Schema field         | repository, serializer, web schema, null/backfill behavior, rollout              |
-| Clerk/tenant logic   | signed out, wrong org, unknown tenant, role map, disabled membership             |
-| Hoppie behavior      | provider error class, no-secret error, explicit ambiguous outcome, no auto retry |
-| BotID policy         | matching client/server level and excluded routes                                 |
-| Optional third party | pre-consent absence, accept, reject, withdrawal, version expiry, cross-tab       |
-| UI workflow          | loading, empty, error, mutation success/failure, accessibility, browser journey  |
-| Legal copy/config    | strict production failure and rendered public pages                              |
+| Change               | Minimum focused evidence                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| New API resource     | validation, role denial, tenant isolation, happy path, serializer/OpenAPI                                         |
+| State transition     | allowed path, illegal jumps, actor ownership, UI action matrix                                                    |
+| Schema field         | repository, serializer, web schema, null/backfill behavior, rollout                                               |
+| Clerk/tenant logic   | signed out, no org, wrong org, unknown tenant, role map/sync, pending/disabled membership, approval/removal races |
+| Hoppie behavior      | provider error class, no-secret error, explicit ambiguous outcome, no auto retry                                  |
+| BotID policy         | matching client/server level and excluded routes                                                                  |
+| Optional third party | pre-consent absence, accept, reject, withdrawal, version expiry, cross-tab                                        |
+| UI workflow          | loading, empty, error, mutation success/failure, accessibility, browser journey                                   |
+| Legal copy/config    | strict production failure and rendered public pages                                                               |
 
 ## Evidence language
 

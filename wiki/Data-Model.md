@@ -36,14 +36,14 @@ All operational tables include `tenant_id`. Tenant selection comes from authenti
 
 One row per Virtual Airline.
 
-| Important field    | Purpose                                                         |
-| ------------------ | --------------------------------------------------------------- |
-| `slug`             | Unique URL/application tenant key                               |
-| `name`             | Operational display name                                        |
-| `clerk_org_id`     | Unique Clerk organization mapping                               |
-| `hoppie_station`   | Shared ground-station callsign                                  |
-| `hoppie_logon_enc` | AES-256-GCM encrypted Hoppie logon                              |
-| `settings`         | Flexible JSON settings, currently including ACARS test metadata |
+| Important field    | Purpose                                                                         |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `slug`             | Unique URL/application tenant key                                               |
+| `name`             | Operational display name                                                        |
+| `clerk_org_id`     | Unique Clerk organization mapping                                               |
+| `hoppie_station`   | Shared ground-station callsign                                                  |
+| `hoppie_logon_enc` | AES-256-GCM encrypted Hoppie logon                                              |
+| `settings`         | Flexible JSON settings, including ACARS test metadata and `memberAccess` policy |
 
 Deleting a tenant cascades to all tenant-owned operational tables. No application endpoint currently deletes tenants.
 
@@ -51,17 +51,25 @@ Deleting a tenant cascades to all tenant-owned operational tables. No applicatio
 
 Tenant-local user profile and authorization record.
 
-| Important field                            | Purpose                                   |
-| ------------------------------------------ | ----------------------------------------- |
-| `clerk_user_id`                            | Clerk identity inside tenant              |
-| `role`                                     | `pilot`, `dispatcher`, or `admin`         |
-| `display_name`                             | Optional tenant display name              |
-| `pilot_callsign`                           | Optional personal aircraft ACARS callsign |
-| `simbrief_user_id`, `simbrief_verified_at` | Pilot-owned SimBrief link                 |
-| `navigraph_subject`, `navigraph_username`  | Navigraph OAuth identity                  |
-| `status`                                   | `active`, `invited`, or `disabled`        |
+| Important field                            | Purpose                                                        |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `clerk_user_id`                            | Clerk identity inside tenant                                   |
+| `role`                                     | `pilot`, `dispatcher`, or `admin`                              |
+| `requested_role`                           | Pending pilot/dispatcher application role; cleared on decision |
+| `display_name`                             | Optional tenant display name                                   |
+| `pilot_callsign`                           | Optional personal aircraft ACARS callsign                      |
+| `simbrief_user_id`, `simbrief_verified_at` | Pilot-owned SimBrief link                                      |
+| `navigraph_subject`, `navigraph_username`  | Navigraph OAuth identity                                       |
+| `status`                                   | `active`, `invited`, or `disabled`                             |
 
 `(tenant_id, clerk_user_id)` and `(tenant_id, pilot_callsign)` are unique. PostgreSQL permits multiple null callsigns. Schedule requests restrict membership deletion; flight and audit actor links use set-null behavior.
+
+The application reuses the membership lifecycle instead of creating a second
+applicant identity store: `invited` plus `requested_role` is pending,
+`active` is approved, and `disabled` is rejected, cancelled, or removed. The
+verified Clerk user ID remains the unique identity inside a tenant. Application
+submission, cancellation, approval, rejection, and safe removal each write the
+membership change and its local security audit atomically.
 
 ### `schedule_requests`
 
@@ -168,6 +176,9 @@ pilot | dispatcher | admin
 ```text
 active | invited | disabled
 ```
+
+`requested_role` is nullable and uses the same enum, but the public application
+contract accepts only `pilot | dispatcher`.
 
 ### Schedule request status
 

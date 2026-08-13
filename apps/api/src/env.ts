@@ -9,7 +9,7 @@ const envSchema = z.object({
   VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
   PORT: z.coerce.number().int().positive().default(3001),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
-  /** Public web origin used for provider callback completion redirects. */
+  /** Public web origin used for provider callbacks and Clerk invitations. */
   APP_ORIGIN: z.string().url().optional(),
   DATABASE_URL: z.string().min(1).optional(),
   CLERK_SECRET_KEY: z.string().min(1).optional(),

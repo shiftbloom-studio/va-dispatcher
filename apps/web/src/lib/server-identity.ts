@@ -23,6 +23,7 @@ import {
 
 type IdentityResult =
   | { kind: "signed-out" }
+  | { kind: "join-required" }
   | { kind: "mismatch"; reason: string }
   | { kind: "ready"; me: Me; role: Role; tenant: TenantDetail };
 
@@ -107,16 +108,20 @@ export const getServerIdentity = cache(
             logoUrl: null,
           },
           settings: {},
+          memberAccess: {
+            applicationsEnabled: true,
+            pilotApplicationsEnabled: true,
+            dispatcherApplicationsEnabled: true,
+            invitationExpiryDays: 30,
+          },
         },
       };
     }
 
     const session = await auth();
     if (!session.userId) return { kind: "signed-out" };
-    if (
-      !session.orgSlug ||
-      session.orgSlug.toLowerCase() !== slug.toLowerCase()
-    ) {
+    if (!session.orgSlug) return { kind: "join-required" };
+    if (session.orgSlug.toLowerCase() !== slug.toLowerCase()) {
       return {
         kind: "mismatch",
         reason: "Select the organization matching this Virtual Airline URL.",

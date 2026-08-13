@@ -222,4 +222,32 @@ describe("member administration service", () => {
       details: { reason: "active_flight" },
     });
   });
+
+  it("serializes application decisions against the pending status", async () => {
+    mocks.administrativelyUpdateMembership.mockResolvedValue({
+      kind: "not_found",
+    });
+
+    await expect(
+      updateMemberAsAdministrator({
+        tenantId: "tenant-1",
+        actorMembershipId: "admin-1",
+        membershipId: "applicant-1",
+        patch: { role: "dispatcher", status: "active" },
+        auditAction: "membership.application_approved",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "This membership application is no longer pending",
+    });
+    expect(mocks.administrativelyUpdateMembership).toHaveBeenCalledWith({
+      tenantId: "tenant-1",
+      actorMembershipId: "admin-1",
+      membershipId: "applicant-1",
+      patch: { role: "dispatcher", status: "active" },
+      reassignToMembershipId: undefined,
+      auditAction: "membership.application_approved",
+      expectedStatus: "invited",
+    });
+  });
 });

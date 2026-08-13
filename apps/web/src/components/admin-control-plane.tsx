@@ -1,7 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, ScrollText, UsersRound } from "lucide-react";
+import {
+  MailPlus,
+  RefreshCw,
+  ScrollText,
+  Trash2,
+  UserCheck,
+  UserX,
+  UsersRound,
+} from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -13,8 +21,11 @@ import { ErrorState, LoadingState } from "@/components/ui/states";
 import { ApiError, apiErrorMessage } from "@/lib/api/http";
 import {
   memberSyncResponseSchema,
+  memberKickResponseSchema,
   memberUpdateResponseSchema,
   membersSchema,
+  organizationInvitationMutationSchema,
+  organizationInvitationsSchema,
   type Member,
 } from "@/lib/api/schemas";
 import { jsonBody, useApi } from "@/lib/api/use-api";
@@ -77,6 +88,9 @@ export function AdminControlPlane({ slug }: { slug: string }) {
           </Link>
         }
       />
+
+      <InvitationManager slug={slug} />
+      <ApplicationQueue slug={slug} />
 
       <Card className="mb-6 overflow-hidden">
         <CardHeader
@@ -204,19 +218,33 @@ export function AdminControlPlane({ slug }: { slug: string }) {
         </Card>
       ) : (
         <div className="space-y-4">
-          {members.data.items.map((member) => (
-            <MemberEditor
-              key={member.id}
-              slug={slug}
-              member={member}
-              replacementOptions={members.data.items.filter(
-                (candidate) =>
-                  candidate.id !== member.id &&
-                  candidate.role === "pilot" &&
-                  candidate.status === "active",
-              )}
-            />
-          ))}
+          {members.data.items.map((member) =>
+            member.status === "invited" ? (
+              <Card key={member.id} className="overflow-hidden">
+                <CardHeader
+                  title={member.displayName ?? "Unnamed applicant"}
+                  description="Pending application — use the review queue above to approve or reject this request."
+                  action={
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-900">
+                      {member.requestedRole ?? "pilot"}
+                    </span>
+                  }
+                />
+              </Card>
+            ) : (
+              <MemberEditor
+                key={member.id}
+                slug={slug}
+                member={member}
+                replacementOptions={members.data.items.filter(
+                  (candidate) =>
+                    candidate.id !== member.id &&
+                    candidate.role === "pilot" &&
+                    candidate.status === "active",
+                )}
+              />
+            ),
+          )}
           <div className="flex justify-between gap-3">
             <Button
               variant="secondary"
@@ -248,6 +276,391 @@ export function AdminControlPlane({ slug }: { slug: string }) {
   );
 }
 
+function InvitationManager({ slug }: { slug: string }) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const [emailAddress, setEmailAddress] = useState("");
+  const [role, setRole] = useState<"pilot" | "dispatcher">("pilot");
+  const [offset, setOffset] = useState(0);
+  const invitationPageSize = 50;
+  const invitations = useQuery({
+    queryKey: [slug, "organization-invitations", offset],
+    queryFn: () =>
+      api(
+        `/members/invitations?limit=${invitationPageSize}${offset ? `&offset=${offset}` : ""}`,
+        { schema: organizationInvitationsSchema },
+      ),
+  });
+  const create = useMutation({
+    mutationFn: () =>
+      api("/members/invitations", {
+        method: "POST",
+        schema: organizationInvitationMutationSchema,
+        ...jsonBody({ emailAddress: emailAddress.trim(), role }),
+      }),
+    onSuccess: () => {
+      setEmailAddress("");
+      setOffset(0);
+      void queryClient.invalidateQueries({
+        queryKey: [slug, "organization-invitations"],
+      });
+    },
+  });
+  const revoke = useMutation({
+    mutationFn: (invitationId: string) =>
+      api(`/members/invitations/${invitationId}`, {
+        method: "DELETE",
+        schema: organizationInvitationMutationSchema,
+      }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: [slug, "organization-invitations"],
+      }),
+  });
+  const error = create.error ?? revoke.error ?? invitations.error;
+
+  return (
+    <Card className="mb-6 overflow-hidden">
+      <CardHeader
+        title="Invite pilots and dispatchers"
+        description="Clerk sends the secure invitation email, while the assigned tenant role and audit trail are controlled here."
+        action={<MailPlus aria-hidden className="size-5 text-slate-700" />}
+      />
+      <form
+        className="grid gap-4 border-b border-slate-200 p-5 md:grid-cols-[minmax(14rem,1fr)_12rem_auto] md:items-end"
+        onSubmit={(event) => {
+          event.preventDefault();
+          create.mutate();
+        }}
+      >
+        <div>
+          <Label htmlFor="invitation-email">Email address</Label>
+          <Input
+            id="invitation-email"
+            type="email"
+            required
+            autoComplete="email"
+            maxLength={320}
+            value={emailAddress}
+            onChange={(event) => setEmailAddress(event.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="invitation-role">Tenant role</Label>
+          <Select
+            id="invitation-role"
+            value={role}
+            onChange={(event) =>
+              setRole(event.target.value as "pilot" | "dispatcher")
+            }
+          >
+            <option value="pilot">Pilot</option>
+            <option value="dispatcher">Dispatcher</option>
+          </Select>
+        </div>
+        <Button type="submit" disabled={create.isPending}>
+          {create.isPending ? "Sending…" : "Send invitation"}
+        </Button>
+      </form>
+      <div className="p-5">
+        <h3 className="text-sm font-bold text-slate-950">
+          Pending invitations
+        </h3>
+        {invitations.isPending ? (
+          <p className="mt-3 text-sm text-slate-600">Loading invitations…</p>
+        ) : invitations.data?.items.length ? (
+          <ul className="mt-3 divide-y divide-slate-200 border-y border-slate-200">
+            {invitations.data.items.map((invitation) => (
+              <li
+                key={invitation.id}
+                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-semibold text-slate-950">
+                    {invitation.emailAddress}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    {invitation.role.replace(/^org:/, "")} · expires{" "}
+                    {new Date(invitation.expiresAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={revoke.isPending}
+                  onClick={() => revoke.mutate(invitation.id)}
+                >
+                  <Trash2 aria-hidden className="size-4" /> Revoke
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-slate-600">
+            No invitations are waiting for acceptance.
+          </p>
+        )}
+        {invitations.data && invitations.data.totalCount > 0 ? (
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <p className="text-sm text-slate-600">
+              Showing {offset + 1}–
+              {Math.min(
+                offset + invitations.data.items.length,
+                invitations.data.totalCount,
+              )}{" "}
+              of {invitations.data.totalCount}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={offset === 0}
+                onClick={() =>
+                  setOffset((current) =>
+                    Math.max(0, current - invitationPageSize),
+                  )
+                }
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={
+                  offset + invitations.data.items.length >=
+                  invitations.data.totalCount
+                }
+                onClick={() =>
+                  setOffset((current) => current + invitationPageSize)
+                }
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        {error ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+          >
+            {apiErrorMessage(error)}
+          </p>
+        ) : null}
+        {create.data || revoke.data ? (
+          <p
+            role={
+              (create.data ?? revoke.data)?.auditRecorded ? "status" : "alert"
+            }
+            className={`mt-3 rounded-lg p-3 text-sm ${
+              (create.data ?? revoke.data)?.auditRecorded
+                ? "bg-emerald-50 text-emerald-900"
+                : "bg-amber-50 text-amber-950"
+            }`}
+          >
+            Invitation updated.
+            {!(create.data ?? revoke.data)?.auditRecorded
+              ? " Clerk applied the change, but its application audit could not be recorded. Review the directory before retrying."
+              : ""}
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function ApplicationQueue({ slug }: { slug: string }) {
+  const api = useApi();
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([
+    null,
+  ]);
+  const cursor = cursorHistory.at(-1) ?? null;
+  const applications = useQuery({
+    queryKey: [slug, "membership-applications", cursor],
+    queryFn: () =>
+      api(
+        `/members?status=invited&limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+        { schema: membersSchema },
+      ),
+  });
+
+  return (
+    <Card className="mb-6 overflow-hidden">
+      <CardHeader
+        title="Membership applications"
+        description="Applicants remain outside the tenant until an administrator approves a pilot or dispatcher role."
+        action={<UserCheck aria-hidden className="size-5 text-slate-700" />}
+      />
+      <div className="space-y-4 p-5">
+        {applications.isPending ? (
+          <p className="text-sm text-slate-600">Loading applications…</p>
+        ) : applications.isError ? (
+          <p
+            role="alert"
+            className="rounded-lg bg-red-50 p-3 text-sm text-red-800"
+          >
+            {apiErrorMessage(applications.error)}
+          </p>
+        ) : applications.data.items.length ? (
+          applications.data.items.map((member) => (
+            <ApplicationDecision key={member.id} slug={slug} member={member} />
+          ))
+        ) : (
+          <p className="text-sm text-slate-600">
+            No applications are waiting for review.
+          </p>
+        )}
+        {applications.data ? (
+          <div className="flex justify-between gap-3 border-t border-slate-200 pt-4">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={cursorHistory.length === 1}
+              onClick={() =>
+                setCursorHistory((history) => history.slice(0, -1))
+              }
+            >
+              Previous applications
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!applications.data.nextCursor}
+              onClick={() => {
+                if (applications.data.nextCursor) {
+                  setCursorHistory((history) => [
+                    ...history,
+                    applications.data.nextCursor,
+                  ]);
+                }
+              }}
+            >
+              Next applications
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function ApplicationDecision({
+  slug,
+  member,
+}: {
+  slug: string;
+  member: Member;
+}) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const [role, setRole] = useState<"pilot" | "dispatcher">(
+    member.requestedRole === "dispatcher" ? "dispatcher" : "pilot",
+  );
+  const [replacementId, setReplacementId] = useState("");
+  const outstanding =
+    (member.openFlightCount ?? 0) + (member.openScheduleRequestCount ?? 0);
+  const replacementRequired = role !== "pilot" && outstanding > 0;
+  const refresh = () => {
+    void queryClient.invalidateQueries({
+      queryKey: [slug, "membership-applications"],
+    });
+    void queryClient.invalidateQueries({ queryKey: [slug, "admin-members"] });
+  };
+  const approve = useMutation({
+    mutationFn: () =>
+      api(`/members/${member.id}/application/approve`, {
+        method: "POST",
+        schema: memberUpdateResponseSchema,
+        ...jsonBody({
+          role,
+          ...(replacementId ? { reassignToMembershipId: replacementId } : {}),
+        }),
+      }),
+    onSuccess: refresh,
+  });
+  const reject = useMutation({
+    mutationFn: () =>
+      api(`/members/${member.id}/application/reject`, {
+        method: "POST",
+        schema: memberUpdateResponseSchema,
+      }),
+    onSuccess: refresh,
+  });
+  const error = approve.error ?? reject.error;
+
+  return (
+    <div className="border border-slate-200 p-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-slate-950">
+            {member.displayName ?? "Unnamed applicant"}
+          </p>
+          <p className="break-all text-sm text-slate-600">
+            Clerk user {member.clerkUserId}
+          </p>
+        </div>
+        <div className="w-full lg:w-48">
+          <Label htmlFor={`application-role-${member.id}`}>Approved role</Label>
+          <Select
+            id={`application-role-${member.id}`}
+            value={role}
+            onChange={(event) =>
+              setRole(event.target.value as "pilot" | "dispatcher")
+            }
+          >
+            <option value="pilot">Pilot</option>
+            <option value="dispatcher">Dispatcher</option>
+          </Select>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            disabled={
+              approve.isPending ||
+              reject.isPending ||
+              (replacementRequired && !replacementId)
+            }
+            onClick={() => approve.mutate()}
+          >
+            <UserCheck aria-hidden className="size-4" /> Approve
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={approve.isPending || reject.isPending}
+            onClick={() => reject.mutate()}
+          >
+            <UserX aria-hidden className="size-4" /> Reject
+          </Button>
+        </div>
+      </div>
+      {replacementRequired ? (
+        <div className="mt-4">
+          <Label htmlFor={`application-replacement-${member.id}`}>
+            Replacement active pilot membership UUID
+          </Label>
+          <Input
+            id={`application-replacement-${member.id}`}
+            value={replacementId}
+            onChange={(event) => setReplacementId(event.target.value)}
+            required
+          />
+          <p className="mt-1 text-sm text-slate-600">
+            This returning member still owns {outstanding} open item(s), which
+            must be reassigned before approving a dispatcher role.
+          </p>
+        </div>
+      ) : null}
+      {error ? (
+        <p
+          role="alert"
+          className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+        >
+          {apiErrorMessage(error)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function MemberEditor({
   slug,
   member,
@@ -270,6 +683,10 @@ function MemberEditor({
     status !== "active" || (member.role === "pilot" && role !== "pilot");
   const outstanding =
     (member.openFlightCount ?? 0) + (member.openScheduleRequestCount ?? 0);
+  const kickNeedsReplacement =
+    member.status !== "disabled" && member.role === "pilot" && outstanding > 0;
+  const showReplacement =
+    outstanding > 0 && (makesIneligible || kickNeedsReplacement);
   const mutation = useMutation({
     mutationFn: () =>
       api(`/members/${member.id}`, {
@@ -283,6 +700,20 @@ function MemberEditor({
           ...(makesIneligible && replacementId
             ? { reassignToMembershipId: replacementId }
             : {}),
+        }),
+      }),
+    onSuccess: () => {
+      setReplacementId("");
+      void queryClient.invalidateQueries({ queryKey: [slug, "admin-members"] });
+    },
+  });
+  const kick = useMutation({
+    mutationFn: () =>
+      api(`/members/${member.id}`, {
+        method: "DELETE",
+        schema: memberKickResponseSchema,
+        ...jsonBody({
+          ...(replacementId ? { reassignToMembershipId: replacementId } : {}),
         }),
       }),
     onSuccess: () => {
@@ -379,7 +810,7 @@ function MemberEditor({
             ? ` ${member.terminalRequestLinkedFlightCount} open flight(s) are linked to terminal request history and block reassignment.`
             : ""}
         </div>
-        {makesIneligible && outstanding > 0 ? (
+        {showReplacement ? (
           <div className="md:col-span-2 xl:col-span-3">
             <Label htmlFor={`member-replacement-${member.id}`}>
               Replacement active pilot
@@ -388,7 +819,7 @@ function MemberEditor({
               id={`member-replacement-${member.id}`}
               list={`member-replacements-${member.id}`}
               value={replacementId}
-              required
+              required={makesIneligible}
               onChange={(event) => setReplacementId(event.target.value)}
               placeholder="Active pilot membership UUID"
             />
@@ -417,6 +848,9 @@ function MemberEditor({
             Member saved. {mutation.data.reassignedFlightCount} flight(s) and{" "}
             {mutation.data.reassignedScheduleRequestCount} request(s)
             reassigned.
+            {!mutation.data.clerkSynchronized
+              ? " Clerk synchronization is still required."
+              : ""}
           </p>
         ) : null}
         {mutation.error ? (
@@ -430,6 +864,50 @@ function MemberEditor({
               : ""}
           </p>
         ) : null}
+        <div className="border-t border-slate-200 pt-4 md:col-span-2 xl:col-span-5">
+          <Button
+            variant="danger"
+            disabled={
+              mutation.isPending ||
+              kick.isPending ||
+              (kickNeedsReplacement && !replacementId)
+            }
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Remove this person from the Clerk organization and disable their VA Dispatch membership?",
+                )
+              ) {
+                kick.mutate();
+              }
+            }}
+          >
+            <UserX aria-hidden className="size-4" />
+            {kick.isPending ? "Removing…" : "Remove from organization"}
+          </Button>
+          {kick.data ? (
+            <p
+              role={kick.data.clerkSynchronized ? "status" : "alert"}
+              className={`mt-3 rounded-lg p-3 text-sm ${
+                kick.data.clerkSynchronized
+                  ? "bg-emerald-50 text-emerald-900"
+                  : "bg-amber-50 text-amber-950"
+              }`}
+            >
+              {kick.data.clerkSynchronized
+                ? "Member removed from the organization and disabled locally."
+                : "VA Dispatch access is disabled, but Clerk removal failed. Retry this action to finish synchronization."}
+            </p>
+          ) : null}
+          {kick.error ? (
+            <p
+              role="alert"
+              className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+            >
+              {apiErrorMessage(kick.error)}
+            </p>
+          ) : null}
+        </div>
       </form>
     </Card>
   );

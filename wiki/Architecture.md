@@ -60,8 +60,12 @@ flowchart TB
 The Next.js App Router uses a tenant segment at `/:slug`.
 
 - The root layout owns public privacy controls and optional telemetry.
-- The tenant layout configures Clerk's sign-in, sign-up, fallback, and task routes inside the current slug.
-- The protected layout rejects unknown slugs, resolves identity, checks tenant agreement, and renders the shared application shell.
+- The tenant layout configures Clerk's sign-in, sign-up, join fallback, and task routes inside the current slug.
+- The join route verifies a Clerk user without requiring organization context,
+  then exposes only that user's tenant application state.
+- The protected layout rejects unknown slugs, routes users without an
+  organization to join/approval, checks tenant agreement, and renders the
+  shared application shell.
 - Portal and dispatch layouts enforce the role-specific user experience.
 
 `getServerIdentity()` performs the important three-way agreement:
@@ -71,6 +75,11 @@ The Next.js App Router uses a tenant segment at `/:slug`.
 3. tenant returned by authenticated API calls.
 
 No business data is requested until those values agree.
+
+Membership application is intentionally outside this three-way business-data
+path. It resolves the known static tenant slug on the server, stores only the
+verified user/tenant membership application, and does not render the
+application shell until Clerk organization and active local membership agree.
 
 ### Client data layer
 
@@ -104,7 +113,9 @@ At the application level:
 4. Public docs and health routes are mounted.
 5. Secret-authenticated internal routes are mounted before business middleware.
 6. BotID protects browser mutations under the versioned business API.
-7. Each route group authenticates with Clerk and applies role requirements.
+7. The narrow application route verifies a Clerk user; every business route
+   group additionally resolves active organization, tenant, membership, and
+   role requirements.
 
 ### Route layer
 

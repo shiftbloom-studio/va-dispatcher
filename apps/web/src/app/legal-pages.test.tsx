@@ -25,6 +25,8 @@ describe("public legal pages", () => {
 
     expect(copy).toContain("Both remain off until you select");
     expect(copy).toContain("Neon, LLC");
+    expect(copy).toContain("review a tenant membership application");
+    expect(copy).toContain("tenant invitations");
     expect(copy).toContain("__session, __client_uat");
     expect(copy).not.toContain("KP_*");
     expect(copy).not.toMatch(/Simulated ACARS/i);

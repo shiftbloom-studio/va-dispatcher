@@ -63,6 +63,7 @@ const membership: Membership = {
   tenantId: actor.tenantId,
   clerkUserId: "user_test",
   role: "pilot",
+  requestedRole: null,
   displayName: "Test Pilot",
   pilotCallsign: "SAS123",
   simbriefUserId: "123456",

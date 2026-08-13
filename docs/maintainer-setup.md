@@ -68,10 +68,18 @@ both a Basic route and a Deep Analysis route before promoting the release.
 ## Tenant administration
 
 Review the [administrator control-plane runbook](admin-control-plane.md) before
-reconciling Clerk, disabling a member with assigned work, or exporting audit
-history. Maintain at least two active application administrators. The verified
-Clerk-admin recovery seam is only for a tenant with no active application
-administrator and is not a routine role-management path.
+reconciling Clerk, deciding applications, removing a member with assigned work,
+or exporting audit history. Maintain at least two active application
+administrators. The verified Clerk-admin recovery seam is only for a tenant
+with no active application administrator and is not a routine role-management
+path.
+
+The global Clerk administrator must keep Organizations in membership-optional
+mode, disable end-user organization creation and Verified Domain enrollment,
+and maintain `org:pilot` plus `org:dispatcher` in the tenant Role Set. Do not
+grant tenant administrators Clerk Dashboard workspace access. Verify
+`APP_ORIGIN` and invitation redirect allowlists in every environment before
+testing direct invitations.
 
 Before enabling an active retention policy or handling a verified subject
 request, follow the [privacy lifecycle runbook](privacy-operations.md). Confirm

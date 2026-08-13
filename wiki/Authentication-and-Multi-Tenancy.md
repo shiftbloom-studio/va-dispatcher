@@ -45,16 +45,23 @@ The API verifies the token with `CLERK_SECRET_KEY` and requires:
 - a database tenant mapped to that organization; and
 - an active local membership.
 
+The narrow `GET|POST|DELETE /membership-application` flow is the exception to
+the organization requirement. It still verifies the Clerk session subject, but
+resolves the requested tenant from the server-known URL slug and never accepts
+a tenant ID or user ID from the browser. It exposes no operational data and
+marks every response `private, no-store`.
+
 The configured `VSAS_CLERK_ORG_ID` is a narrow bootstrap exception: if that exact organization is missing from the database, the API can create or repair the tenant with slug `vsas`. Arbitrary organizations are never auto-created as tenants.
 
 ## Membership provisioning and roles
 
 On first access to a registered tenant, the API atomically creates an active
-pilot membership and a self-provision audit event. Clerk claims do not grant
-dispatcher/admin privilege during authentication. Privileged roles come from
-the audited admin control plane or full Clerk directory synchronization. The
-only recovery exception promotes a verified member when the tenant has no
-active administrator.
+pilot or dispatcher membership, using the role assigned through the native
+tenant administration flow, plus a self-provision audit event. A Clerk admin
+claim does not grant routine application-admin privilege during authentication.
+Admin authority comes from the audited VA Dispatch control plane. The only
+recovery exception promotes a verified Clerk organization admin when the
+tenant has no active application administrator.
 
 Clerk directory role keys are normalized by removing `org:` and mapping:
 
@@ -73,17 +80,59 @@ pilot = 1, dispatcher = 2, admin = 3
 
 `requireRole("dispatcher")` therefore permits dispatchers and administrators. `requireRole("admin")` permits administrators only.
 
-The stored local membership role is authoritative after provisioning.
-`/members/sync` is admin-only, pages the complete Clerk organization directory,
-and returns explicit partial-failure reporting. The web admin control plane
-provides search, impact review, safe role/status updates, replacement pilot
-selection, and directory synchronization.
+The stored local membership role and status are authoritative after
+provisioning. Active role changes are synchronized to Clerk before the local
+change commits. A disabled or pending local membership is never reactivated
+merely because a stale Clerk organization membership exists.
+
+The native tenant administration flow provides:
+
+- direct pilot/dispatcher invitations through Clerk email;
+- pilot/dispatcher applications from signed-in users with manual admin review;
+- application approval, which creates or updates Clerk organization membership
+  before local access becomes active;
+- rejection without granting Clerk membership;
+- role/status changes with existing assigned-work and last-admin guards;
+- member removal, which disables local access first and then removes Clerk
+  membership, returning an explicit retry state if Clerk is unavailable; and
+- `/members/sync`, an admin-only, fully paged reconciliation tool with explicit
+  partial-failure reporting.
 
 Membership statuses are:
 
 - `active`: may authenticate;
 - `invited`: rejected by the API until activated; and
 - `disabled`: rejected by the API.
+
+For self-service signup, `invited` means a pending application and
+`requested_role` records the requested pilot/dispatcher role. Approval or
+rejection clears that request atomically. A returning disabled member may apply
+again, but still needs another explicit decision.
+
+## Signup and approval sequence
+
+```mermaid
+sequenceDiagram
+    participant U as Applicant
+    participant W as VA Dispatch
+    participant C as Clerk
+    participant A as Tenant Admin
+    participant D as PostgreSQL
+
+    U->>C: Create/sign in to account
+    C-->>W: Verified user session, no organization required
+    U->>W: Apply for pilot or dispatcher role
+    W->>D: Store invited membership + requested role + audit
+    A->>W: Approve application
+    W->>C: Create/update organization membership and role
+    W->>D: Activate membership + clear request + audit
+    U->>C: Select tenant organization
+    W->>D: Verify active local membership
+    W-->>U: Open tenant application
+```
+
+Direct invitations skip the application decision: Clerk sends the invitation
+and the accepted organization role is provisioned on first tenant access.
 
 ## Resource authorization
 
@@ -159,5 +208,8 @@ in production and use separate non-production authority.
 - Derive it from authenticated context and include it in every repository predicate.
 - Do not load business data before the web tenant agreement check completes.
 - Keep role mapping conservative; unknown Clerk roles remain pilots.
+- Keep Clerk automatic organization creation, Verified Domain auto-enrollment,
+  and native membership-request flows disabled for this deployment; VA
+  Dispatch owns the manual approval state.
 - Test both unauthorized role access and cross-tenant UUID access for new resources.
 - Do not return Clerk secrets, Hoppie credentials, or encrypted values in serializers.

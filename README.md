@@ -55,15 +55,22 @@ Guarded retention, export, legal-hold, and verified request procedures are in
 [`docs/privacy-operations.md`](docs/privacy-operations.md); the software does
 not by itself certify GDPR compliance.
 
-Clerk Organizations must be enabled, organization slugs must be enabled, and the vSAS Clerk organization slug must be `vsas`. Set `VSAS_CLERK_ORG_ID` to that organization's Clerk ID. The API provisions or repairs the initial vSAS tenant from this trusted value on first authenticated access, then verifies the URL slug, active Clerk organization slug, and API `/me` tenant before loading operational data.
+Clerk Organizations must use optional membership, organization slugs must be
+enabled, end-user organization creation and Verified Domain enrollment must be
+disabled, and the Primary Role Set must contain `org:admin`, `org:dispatcher`,
+and `org:pilot`. The vSAS Clerk organization slug is `vsas`; set
+`VSAS_CLERK_ORG_ID` to its immutable ID. Tenant admins then manage invitations,
+manual pilot/dispatcher signup approval, roles, removal, and tenant membership
+settings inside VA Dispatch. See the Wiki configuration reference for the
+one-time global Clerk setup.
 
 ## Core flows
 
-| Role       | Capabilities                                        |
-| ---------- | --------------------------------------------------- |
-| Pilot      | Request schedule, accept / decline / cancel flights |
-| Dispatcher | Fulfill requests, flight board, ACARS send/receive  |
-| Admin      | Tenant settings, memberships, ACARS config          |
+| Role       | Capabilities                                                         |
+| ---------- | -------------------------------------------------------------------- |
+| Pilot      | Request schedule, accept / decline / cancel flights                  |
+| Dispatcher | Fulfill requests, flight board, ACARS send/receive                   |
+| Admin      | Tenant settings, invitations, approvals, roles/removal, ACARS config |
 
 ## ACARS
 

@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Trash2,
   Unplug,
+  UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -18,13 +19,14 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHeading } from "@/components/page-heading";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { HelpText, Input, Label } from "@/components/ui/fields";
+import { HelpText, Input, Label, Select } from "@/components/ui/fields";
 import { ErrorState, LoadingState } from "@/components/ui/states";
 import { apiErrorMessage } from "@/lib/api/http";
 import {
   acarsConfigSchema,
   tenantBrandResponseSchema,
   tenantDetailSchema,
+  tenantAdministrationResponseSchema,
   type BrandPresence,
   type TenantBrand,
   type TenantDetail,
@@ -73,6 +75,7 @@ export function OrganizationSettings({ slug }: { slug: string }) {
       />
       <div className="space-y-6">
         <BrandSettingsCard slug={slug} tenant={tenant.data} />
+        <MemberAccessCard slug={slug} tenant={tenant.data} />
         <Card className="overflow-hidden">
           <CardHeader
             title="Before connecting"
@@ -98,6 +101,198 @@ export function OrganizationSettings({ slug }: { slug: string }) {
         <HoppieConfigCard slug={slug} tenant={tenant.data} />
       </div>
     </>
+  );
+}
+
+function MemberAccessCard({
+  slug,
+  tenant,
+}: {
+  slug: string;
+  tenant: TenantDetail;
+}) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(tenant.name);
+  const [applicationsEnabled, setApplicationsEnabled] = useState(
+    tenant.memberAccess.applicationsEnabled,
+  );
+  const [pilotApplicationsEnabled, setPilotApplicationsEnabled] = useState(
+    tenant.memberAccess.pilotApplicationsEnabled,
+  );
+  const [dispatcherApplicationsEnabled, setDispatcherApplicationsEnabled] =
+    useState(tenant.memberAccess.dispatcherApplicationsEnabled);
+  const [invitationExpiryDays, setInvitationExpiryDays] = useState(
+    tenant.memberAccess.invitationExpiryDays,
+  );
+  const save = useMutation({
+    mutationFn: () =>
+      api("/tenant", {
+        method: "PATCH",
+        schema: tenantAdministrationResponseSchema,
+        ...jsonBody({
+          name: name.trim(),
+          memberAccess: {
+            applicationsEnabled,
+            pilotApplicationsEnabled,
+            dispatcherApplicationsEnabled,
+            invitationExpiryDays,
+          },
+        }),
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<TenantDetail>(
+        [slug, "organization-settings", "tenant"],
+        (current) =>
+          current
+            ? {
+                ...current,
+                name: updated.name,
+                settings: updated.settings,
+                memberAccess: updated.memberAccess,
+              }
+            : current,
+      );
+    },
+  });
+  const hasApplicationRole =
+    pilotApplicationsEnabled || dispatcherApplicationsEnabled;
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader
+        title="Membership access"
+        description="Control this tenant's organization name, direct-invitation lifetime, and manually approved pilot or dispatcher applications. These settings do not change global Clerk configuration."
+        action={<UsersRound aria-hidden className="size-5 text-slate-700" />}
+      />
+      <form
+        className="space-y-6 p-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate();
+        }}
+      >
+        <div className="max-w-xl">
+          <Label htmlFor="organization-name">Organization name</Label>
+          <Input
+            id="organization-name"
+            required
+            minLength={1}
+            maxLength={120}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <HelpText>
+            Saved in VA Dispatch and synchronized to this Clerk organization.
+            The tenant URL slug remains fixed.
+          </HelpText>
+        </div>
+
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-semibold text-slate-900">
+            Self-service applications
+          </legend>
+          <CheckboxSetting
+            checked={applicationsEnabled}
+            onChange={setApplicationsEnabled}
+            label="Accept membership applications"
+            description="Signed-in users may request access, but cannot enter the tenant until an administrator approves them."
+          />
+          <div className="grid gap-3 pl-6 sm:grid-cols-2">
+            <CheckboxSetting
+              checked={pilotApplicationsEnabled}
+              onChange={setPilotApplicationsEnabled}
+              label="Pilot applications"
+              description="Allow users to request pilot membership."
+              disabled={!applicationsEnabled}
+            />
+            <CheckboxSetting
+              checked={dispatcherApplicationsEnabled}
+              onChange={setDispatcherApplicationsEnabled}
+              label="Dispatcher applications"
+              description="Allow users to request dispatcher membership."
+              disabled={!applicationsEnabled}
+            />
+          </div>
+          {applicationsEnabled && !hasApplicationRole ? (
+            <p role="alert" className="text-sm font-medium text-red-700">
+              Enable at least one application role.
+            </p>
+          ) : null}
+        </fieldset>
+
+        <div className="max-w-xs">
+          <Label htmlFor="invitation-expiry">Invitation lifetime</Label>
+          <Select
+            id="invitation-expiry"
+            value={invitationExpiryDays}
+            onChange={(event) =>
+              setInvitationExpiryDays(Number(event.target.value))
+            }
+          >
+            <option value={7}>7 days</option>
+            <option value={14}>14 days</option>
+            <option value={30}>30 days</option>
+          </Select>
+        </div>
+
+        <Button
+          type="submit"
+          disabled={
+            save.isPending ||
+            !name.trim() ||
+            (applicationsEnabled && !hasApplicationRole)
+          }
+        >
+          {save.isPending ? "Saving…" : "Save membership access"}
+        </Button>
+        {save.data ? (
+          <p role="status" className="text-sm font-medium text-emerald-800">
+            Membership access settings saved.
+            {!save.data.clerkSynchronized
+              ? " Clerk synchronization is skipped in local auth-bypass mode."
+              : ""}
+          </p>
+        ) : null}
+        {save.error ? (
+          <p role="alert" className="text-sm font-medium text-red-700">
+            {apiErrorMessage(save.error)}
+          </p>
+        ) : null}
+      </form>
+    </Card>
+  );
+}
+
+function CheckboxSetting({
+  checked,
+  onChange,
+  label,
+  description,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  description: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="flex gap-3 text-sm">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 size-4 accent-[var(--brand-action)]"
+      />
+      <span>
+        <span className="block font-semibold text-slate-950">{label}</span>
+        <span className="mt-1 block leading-5 text-slate-600">
+          {description}
+        </span>
+      </span>
+    </label>
   );
 }
 
