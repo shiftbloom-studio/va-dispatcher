@@ -20,15 +20,21 @@ const tenant: TenantConfig = {
 };
 
 describe("TenantLogo", () => {
-  it("uses the Next.js image optimizer for tenant logos", () => {
+  it("loads the tenant logo directly without the unavailable image optimizer", () => {
     render(<TenantLogo tenant={tenant} />);
 
-    const source = screen
-      .getByRole("img", { name: "Virtual SAS logo" })
-      .getAttribute("src");
-    expect(source).not.toBeNull();
-    const optimizedUrl = new URL(source ?? "", "http://localhost");
-    expect(optimizedUrl.pathname).toBe("/_next/image");
-    expect(optimizedUrl.searchParams.get("url")).toBe("/tenants/vsas/logo.jpg");
+    expect(
+      screen.getByRole("img", { name: "Virtual SAS logo" }),
+    ).toHaveAttribute("src", "/tenants/vsas/logo.jpg");
+  });
+
+  it("can display the active Clerk organization logo", () => {
+    render(
+      <TenantLogo tenant={tenant} src="https://img.clerk.com/org_vsas-logo" />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: "Virtual SAS logo" }),
+    ).toHaveAttribute("src", "https://img.clerk.com/org_vsas-logo");
   });
 });

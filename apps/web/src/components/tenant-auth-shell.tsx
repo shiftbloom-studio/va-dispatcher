@@ -34,7 +34,7 @@ export function TenantAuthShell({
           <div className="absolute inset-y-0 right-0 w-px bg-[var(--brand)] opacity-80" />
           <div className="auth-flight-path absolute inset-x-0 top-1/3 h-px opacity-40" />
           <div className="relative flex items-center gap-4">
-            <TenantLogo tenant={tenant} className="size-16" sizes="64px" />
+            <TenantLogo tenant={tenant} className="size-16" />
             <span className="font-display text-xl font-bold">
               {tenant.shortName} Live Operations
             </span>
@@ -59,11 +59,7 @@ export function TenantAuthShell({
         <section className="flex items-center justify-center bg-slate-50 p-5 text-slate-950 sm:p-10">
           <div className="w-full max-w-md">
             <div className="mb-8 text-center lg:hidden">
-              <TenantLogo
-                tenant={tenant}
-                className="mx-auto size-16"
-                sizes="64px"
-              />
+              <TenantLogo tenant={tenant} className="mx-auto size-16" />
               <h1 className="mt-4 font-display text-3xl font-semibold text-slate-950">
                 {tenant.shortName} Live Operations
               </h1>

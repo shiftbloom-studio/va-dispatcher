@@ -1,6 +1,10 @@
 "use client";
 
-import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
+import {
+  OrganizationSwitcher,
+  UserButton,
+  useOrganization,
+} from "@clerk/nextjs";
 import {
   ClipboardList,
   LayoutDashboard,
@@ -82,9 +86,14 @@ export function AppShell({
         <aside className="brand-sidebar relative hidden min-h-screen border-r border-slate-200 bg-white md:sticky md:top-0 md:flex md:h-screen md:flex-col">
           <Link
             href={`/${slug}`}
+            prefetch={false}
             className="flex min-h-24 items-center gap-3 border-b border-slate-200 px-6 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--brand-action)]"
           >
-            <TenantLogo tenant={tenant} className="size-13" sizes="52px" />
+            {bypass ? (
+              <TenantLogo tenant={tenant} className="size-13" />
+            ) : (
+              <ClerkTenantLogo tenant={tenant} className="size-13" />
+            )}
             <span className="min-w-0">
               <span className="block truncate font-display text-lg font-black tracking-tight text-slate-950">
                 {tenant.shortName}
@@ -106,6 +115,7 @@ export function AppShell({
                   <Link
                     key={href}
                     href={`/${slug}${href}`}
+                    prefetch={false}
                     aria-current={active ? "page" : undefined}
                     className={`group relative flex min-h-12 items-center gap-3 border-l-2 px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand-action)] ${
                       active
@@ -168,9 +178,14 @@ export function AppShell({
           <header className="sticky top-0 z-40 flex h-16 items-center border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
             <Link
               href={`/${slug}`}
+              prefetch={false}
               className="flex min-w-0 items-center gap-3 md:hidden"
             >
-              <TenantLogo tenant={tenant} className="size-9" sizes="36px" />
+              {bypass ? (
+                <TenantLogo tenant={tenant} className="size-9" />
+              ) : (
+                <ClerkTenantLogo tenant={tenant} className="size-9" />
+              )}
               <span className="truncate font-display text-sm font-black text-slate-950">
                 {tenant.shortName}
               </span>
@@ -210,6 +225,7 @@ export function AppShell({
             <Link
               key={href}
               href={`/${slug}${href}`}
+              prefetch={false}
               aria-current={active ? "page" : undefined}
               className={`relative flex min-w-0 flex-col items-center justify-center gap-1 px-1 text-[10px] font-bold ${
                 active ? "text-[var(--brand-action)]" : "text-slate-500"
@@ -227,6 +243,24 @@ export function AppShell({
         })}
       </nav>
     </div>
+  );
+}
+
+function ClerkTenantLogo({
+  tenant,
+  className,
+}: {
+  tenant: TenantConfig;
+  className: string;
+}) {
+  const { organization } = useOrganization();
+
+  return (
+    <TenantLogo
+      tenant={tenant}
+      src={organization?.imageUrl ?? tenant.logo.src}
+      className={className}
+    />
   );
 }
 
