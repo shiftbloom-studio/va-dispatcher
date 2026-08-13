@@ -49,6 +49,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/",
+        destination: "/vsas",
+        permanent: false,
+      },
+      {
         source: "/favicon.ico",
         destination: "/icon.svg",
         permanent: true,
