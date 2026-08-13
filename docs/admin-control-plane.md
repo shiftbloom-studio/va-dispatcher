@@ -30,8 +30,9 @@ Self-service application is separate from Clerk organization membership:
 
 1. A verified signed-in Clerk user submits a pilot or dispatcher request for a
    registered tenant slug.
-2. VA Dispatch stores that tenant/user pair as `invited` with
-   `requested_role`; the user still has no business-route access.
+2. VA Dispatch stores that tenant/user pair as `invited`, with `role` holding
+   the requested pilot/dispatcher role; the user still has no business-route
+   access.
 3. An admin approves or rejects it in this console. Competing approve/reject/
    cancel decisions are serialized against the pending status.
 4. Approval creates or updates Clerk membership first, then atomically

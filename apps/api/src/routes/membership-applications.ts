@@ -169,9 +169,7 @@ function applicationResponse(
                 ? ("pending" as const)
                 : ("closed" as const),
           requestedRole:
-            membership.requestedRole === "dispatcher" ||
-            (membership.requestedRole === null &&
-              membership.role === "dispatcher")
+            membership.role === "dispatcher"
               ? ("dispatcher" as const)
               : ("pilot" as const),
           displayName: membership.displayName,

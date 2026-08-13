@@ -185,7 +185,6 @@ export async function listMemberships(input: {
       tenantId: memberList.tenantId,
       clerkUserId: memberList.clerkUserId,
       role: memberList.role,
-      requestedRole: memberList.requestedRole,
       displayName: memberList.displayName,
       pilotCallsign: memberList.pilotCallsign,
       simbriefUserId: memberList.simbriefUserId,
@@ -313,7 +312,6 @@ type RawMembershipRow = {
   tenantId: string;
   clerkUserId: string;
   role: MemberRole;
-  requestedRole: MemberRole | null;
   displayName: string | null;
   pilotCallsign: string | null;
   simbriefUserId: string | null;
@@ -380,7 +378,6 @@ export async function createDirectoryMembershipWithAudit(input: {
       c.tenant_id as "tenantId",
       c.clerk_user_id as "clerkUserId",
       c.role,
-      c.requested_role as "requestedRole",
       c.display_name as "displayName",
       c.pilot_callsign as "pilotCallsign",
       c.simbrief_user_id as "simbriefUserId",
@@ -445,7 +442,6 @@ export async function provisionMembershipWithAudit(input: {
       c.tenant_id as "tenantId",
       c.clerk_user_id as "clerkUserId",
       c.role,
-      c.requested_role as "requestedRole",
       c.display_name as "displayName",
       c.pilot_callsign as "pilotCallsign",
       c.simbrief_user_id as "simbriefUserId",
@@ -492,12 +488,11 @@ export async function submitMembershipApplicationWithAudit(input: {
   const result = await db.execute<RawMembershipRow>(sql`
     with submitted as (
       insert into memberships (
-        tenant_id, clerk_user_id, role, requested_role, display_name, status, created_at, updated_at
+        tenant_id, clerk_user_id, role, display_name, status, created_at, updated_at
       )
       values (
         ${input.tenantId}::uuid,
         ${input.clerkUserId},
-        'pilot',
         ${input.requestedRole}::member_role,
         ${input.displayName},
         'invited',
@@ -506,7 +501,7 @@ export async function submitMembershipApplicationWithAudit(input: {
       )
       on conflict (tenant_id, clerk_user_id) do update
       set
-        requested_role = excluded.requested_role,
+        role = excluded.role,
         display_name = coalesce(excluded.display_name, memberships.display_name),
         status = 'invited',
         updated_at = excluded.updated_at
@@ -524,7 +519,7 @@ export async function submitMembershipApplicationWithAudit(input: {
         'membership',
         s.id::text,
         jsonb_build_object(
-          'requestedRole', s.requested_role,
+          'requestedRole', s.role,
           'authority', 'verified_clerk_user'
         ),
         ${submittedAt}
@@ -536,7 +531,6 @@ export async function submitMembershipApplicationWithAudit(input: {
       s.tenant_id as "tenantId",
       s.clerk_user_id as "clerkUserId",
       s.role,
-      s.requested_role as "requestedRole",
       s.display_name as "displayName",
       s.pilot_callsign as "pilotCallsign",
       s.simbrief_user_id as "simbriefUserId",
@@ -594,7 +588,6 @@ export async function cancelMembershipApplicationWithAudit(input: {
       c.tenant_id as "tenantId",
       c.clerk_user_id as "clerkUserId",
       c.role,
-      c.requested_role as "requestedRole",
       c.display_name as "displayName",
       c.pilot_callsign as "pilotCallsign",
       c.simbrief_user_id as "simbriefUserId",
@@ -681,7 +674,6 @@ type AdministrativeUpdateRow = {
   tenantId: string | null;
   clerkUserId: string | null;
   role: MemberRole | null;
-  requestedRole: MemberRole | null;
   displayName: string | null;
   pilotCallsign: string | null;
   simbriefUserId: string | null;
@@ -722,9 +714,6 @@ export async function administrativelyUpdateMembership(input: {
   const hasPilotCallsign = input.patch.pilotCallsign !== undefined;
   const hasStatus = input.patch.status !== undefined;
   const replacementId = input.reassignToMembershipId ?? null;
-  const clearRequestedRole =
-    input.auditAction === "membership.application_approved" ||
-    input.auditAction === "membership.application_rejected";
 
   const lock = db.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 1447126::bigint))`,
@@ -860,10 +849,6 @@ export async function administrativelyUpdateMembership(input: {
       update memberships m
       set
         role = e.next_role,
-        requested_role = case
-          when ${clearRequestedRole} then null
-          else m.requested_role
-        end,
         display_name = case when ${hasDisplayName} then ${input.patch.displayName ?? null}::text else m.display_name end,
         pilot_callsign = case when ${hasPilotCallsign} then ${input.patch.pilotCallsign ?? null}::text else m.pilot_callsign end,
         status = e.next_status,
@@ -1021,14 +1006,12 @@ export async function administrativelyUpdateMembership(input: {
         jsonb_build_object(
           'before', jsonb_build_object(
             'role', t.role,
-            'requestedRole', t.requested_role,
             'status', t.status,
             'displayName', t.display_name,
             'pilotCallsign', t.pilot_callsign
           ),
           'after', jsonb_build_object(
             'role', u.role,
-            'requestedRole', u.requested_role,
             'status', u.status,
             'displayName', u.display_name,
             'pilotCallsign', u.pilot_callsign
@@ -1080,7 +1063,6 @@ export async function administrativelyUpdateMembership(input: {
       u.tenant_id as "tenantId",
       u.clerk_user_id as "clerkUserId",
       u.role,
-      u.requested_role as "requestedRole",
       u.display_name as "displayName",
       u.pilot_callsign as "pilotCallsign",
       u.simbrief_user_id as "simbriefUserId",
@@ -1173,7 +1155,6 @@ export async function recoverMembershipAsTenantAdmin(input: {
       r.tenant_id as "tenantId",
       r.clerk_user_id as "clerkUserId",
       r.role,
-      r.requested_role as "requestedRole",
       r.display_name as "displayName",
       r.pilot_callsign as "pilotCallsign",
       r.simbrief_user_id as "simbriefUserId",
@@ -1203,7 +1184,6 @@ function rawMembership(row: RawMembershipRow): Membership {
     tenantId: row.tenantId,
     clerkUserId: row.clerkUserId,
     role: row.role,
-    requestedRole: row.requestedRole,
     displayName: row.displayName,
     pilotCallsign: row.pilotCallsign,
     simbriefUserId: row.simbriefUserId,
