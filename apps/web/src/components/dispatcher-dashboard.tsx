@@ -1,47 +1,38 @@
 "use client";
 
 import { ClipboardList, Plane, RadioTower } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import { DispatcherFlightList } from "@/components/dispatcher-flight-list";
 import { OperationsBoard } from "@/components/operations-board";
 import { PageHeading } from "@/components/page-heading";
 import { RequestQueue } from "@/components/request-queue";
+import {
+  dispatcherCopy,
+  type DispatcherView,
+} from "@/components/dispatcher-view";
 
-type View = "operations" | "requests" | "flights";
-
-const views: Array<{ value: View; label: string; icon: typeof RadioTower }> = [
+const views: Array<{
+  value: DispatcherView;
+  label: string;
+  icon: typeof RadioTower;
+}> = [
   { value: "operations", label: "Operations", icon: RadioTower },
   { value: "requests", label: "Requests", icon: ClipboardList },
   { value: "flights", label: "Flights", icon: Plane },
 ];
 
-export function DispatcherDashboard({ slug }: { slug: string }) {
-  const search = useSearchParams();
+export function DispatcherDashboard({
+  slug,
+  view,
+}: {
+  slug: string;
+  view: DispatcherView;
+}) {
   const router = useRouter();
-  const candidate = search.get("view");
-  const view: View =
-    candidate === "requests" || candidate === "flights"
-      ? candidate
-      : "operations";
-  const copy = {
-    operations: {
-      title: "Operations dashboard",
-      description:
-        "Plan accepted flights, publish releases, monitor active flying, and close the monthly operation from one live board.",
-    },
-    requests: {
-      title: "Schedule requests",
-      description: "Review pilot availability and offer complete schedules.",
-    },
-    flights: {
-      title: "Flight management",
-      description:
-        "Create ad-hoc flights and manage every explicit operational transition.",
-    },
-  }[view];
+  const copy = dispatcherCopy[view];
 
-  function select(next: View) {
+  function select(next: DispatcherView) {
     const params = new URLSearchParams();
     if (next !== "operations") params.set("view", next);
     router.replace(
