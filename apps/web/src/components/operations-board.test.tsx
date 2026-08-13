@@ -126,6 +126,28 @@ describe("dispatcher operations board", () => {
     });
   });
 
+  it("reserves the board and telemetry geometry while initial data loads", () => {
+    apiMock.mockImplementation(() => new Promise(() => undefined));
+
+    render(
+      <TestQueryProvider>
+        <OperationsBoard slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    const loadingBoard = screen.getByRole("status", {
+      name: "Loading live operations board",
+    });
+    expect(loadingBoard).toHaveClass("animate-pulse");
+    expect(loadingBoard.querySelector(".animate-spin")).toBeNull();
+    expect(loadingBoard.querySelectorAll(".min-h-52")).toHaveLength(5);
+    expect(
+      screen.getByRole("status", {
+        name: "Loading live simulator telemetry",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("uses true presence metrics and keeps overdue counts aligned with the visible lane", async () => {
     render(
       <TestQueryProvider>
