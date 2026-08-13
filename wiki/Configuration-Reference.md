@@ -12,7 +12,7 @@ Primary example: `apps/api/.env.example`.
 | `VERCEL_ENV`                                      | unset                            | Vercel supplies it                                     | `development`, `preview`, or `production`; takes precedence when selecting the production ACARS policy |
 | `PORT`                                            | `3001`                           | Local override only                                    | Positive integer used by the local Node server                                                         |
 | `CORS_ORIGIN`                                     | `http://localhost:3000`          | Fallback cross-origin deployment                       | Comma-separated allowed web origins                                                                    |
-| `APP_ORIGIN`                                      | unset                            | Provider callback browser redirects                    | Public web origin; HTTPS in production                                                                 |
+| `APP_ORIGIN`                                      | unset                            | Provider callbacks and Clerk invitations               | Public web origin; HTTPS in production                                                                 |
 | `DATABASE_URL`                                    | unset                            | Every authenticated or persistent workflow             | PostgreSQL connection URL, normally Neon                                                               |
 | `CLERK_SECRET_KEY`                                | unset                            | Real authentication and Clerk member sync              | Server secret; never expose as `NEXT_PUBLIC_*`                                                         |
 | `CLERK_PUBLISHABLE_KEY`                           | unset                            | Deployment integration may provide it                  | Parsed by API configuration; browser Clerk uses `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`                    |
@@ -100,12 +100,30 @@ The repository cannot decide which optional disclosure duties apply to a specifi
 
 ## Clerk configuration
 
-The current frontend requires:
+The global Clerk application administrator must configure the instance once:
 
-- Organizations enabled;
-- organization slugs enabled;
-- a vSAS organization with slug exactly `vsas`; and
-- `VSAS_CLERK_ORG_ID` set to that organization's immutable ID.
+1. Enable Organizations with **membership optional**. Applicants must be able
+   to hold a verified user session before they belong to an organization.
+2. Enable organization slugs.
+3. Disable user-created organizations and automatic first-organization
+   creation. Only global application administrators provision tenants.
+4. Disable Verified Domain automatic invitations/suggestions and Clerk-native
+   membership requests for this deployment. VA Dispatch owns the tenant-level
+   manual approval queue; enabling a second enrollment path would create
+   inconsistent approval state.
+5. Add custom roles with keys `pilot` and `dispatcher`, producing
+   `org:pilot` and `org:dispatcher`. Include them with `org:admin` in the
+   Primary Role Set and make `org:pilot` the new-member default.
+6. Create the vSAS organization with slug exactly `vsas` and set
+   `VSAS_CLERK_ORG_ID` to its immutable ID.
+7. Set `APP_ORIGIN` to the public web origin so invitation links return to the
+   correct tenant path. Confirm the Clerk allowed redirect/origin settings
+   cover that deployment.
+
+Do not give tenant administrators Clerk Dashboard team access. Their Clerk
+organization role and the VA Dispatch `admin` role are tenant-scoped; global
+instance settings, API keys, tenant provisioning, role definitions, and
+Verified Domain policy remain with the global application administrator.
 
 Clerk organization roles map as follows:
 
@@ -115,11 +133,18 @@ Clerk organization roles map as follows:
 | `dispatcher`                          | `dispatcher`     |
 | `pilot`, `member`, unknown, or absent | `pilot`          |
 
-First login always provisions an audited pilot. The stored local membership is
-the runtime role; admin directory sync or the admin control plane may promote
-it. The sole recovery exception can promote a verified Clerk organization Admin
-when the tenant has no active application Admin. Disabled or invited local
-memberships cannot access the application.
+First tenant access provisions the verified `org:pilot` or `org:dispatcher`
+role. The stored local membership is the runtime authority after provisioning,
+and active role changes from the VA Dispatch admin console are synchronized
+back to Clerk. The sole recovery exception can promote a verified Clerk
+organization Admin when the tenant has no active application Admin. Disabled
+or invited local memberships cannot access the application and are not revived
+by directory synchronization.
+
+Tenant administrators configure the organization name, allowed application
+roles, application open/closed switch, and 7/14/30-day invitation lifetime at
+`/:slug/settings/organization`. They send/revoke invitations, decide
+applications, manage roles, and remove members at `/:slug/admin`.
 
 ## Hoppie configuration
 
@@ -153,7 +178,9 @@ Before promoting a deployment:
 
 1. Load `/health`, confirm the database-configured flag and effective ACARS
    provider, then verify readiness with a synthetic authenticated read.
-2. Sign in through the tenant URL and confirm URL, Clerk organization, and API tenant agree.
+2. Create a synthetic account through the tenant URL, submit an application,
+   approve it in the tenant admin UI, select the organization, and confirm URL,
+   Clerk organization, role, and API tenant agree.
 3. Load `/impressum` and `/privacy`; verify real operator details and all links.
 4. Confirm `NEXT_PUBLIC_SOURCE_URL` points to the corresponding source of the deployed version.
 5. From an admin account, test the Hoppie ground station.
@@ -164,5 +191,7 @@ Before promoting a deployment:
    exposing credentials.
 10. Publish a synthetic dispatch release and verify its weather-unavailable
     fallback as well as the successful provider path where permitted.
-11. Issue a synthetic simulator device token, ingest a sequenced sample, verify
+11. Verify direct pilot/dispatcher invitation, role change, removal, failed-
+    provider retry messaging, and application closed/role-specific policy.
+12. Issue a synthetic simulator device token, ingest a sequenced sample, verify
     dispatcher presence/OOOI, then revoke the token.

@@ -29,6 +29,11 @@ export async function updateMemberAsAdministrator(input: {
   actorMembershipId: string;
   membershipId: string;
   patch: MemberUpdateInput;
+  auditAction?:
+    | "member.updated"
+    | "membership.application_approved"
+    | "membership.application_rejected"
+    | "membership.kick_requested";
 }): Promise<{
   membership: Membership;
   reassignedFlightCount: number;
@@ -41,9 +46,23 @@ export async function updateMemberAsAdministrator(input: {
     membershipId: input.membershipId,
     patch,
     reassignToMembershipId,
+    auditAction: input.auditAction,
+    ...(input.auditAction === "membership.application_approved" ||
+    input.auditAction === "membership.application_rejected"
+      ? { expectedStatus: "invited" as const }
+      : {}),
   });
 
   if (result.kind === "not_found") {
+    if (
+      input.auditAction === "membership.application_approved" ||
+      input.auditAction === "membership.application_rejected"
+    ) {
+      throw new AppError(
+        "CONFLICT",
+        "This membership application is no longer pending",
+      );
+    }
     throw new AppError("NOT_FOUND", "Member not found");
   }
   if (result.kind === "blocked") {

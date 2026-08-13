@@ -185,6 +185,7 @@ export async function listMemberships(input: {
       tenantId: memberList.tenantId,
       clerkUserId: memberList.clerkUserId,
       role: memberList.role,
+      requestedRole: memberList.requestedRole,
       displayName: memberList.displayName,
       pilotCallsign: memberList.pilotCallsign,
       simbriefUserId: memberList.simbriefUserId,
@@ -312,6 +313,7 @@ type RawMembershipRow = {
   tenantId: string;
   clerkUserId: string;
   role: MemberRole;
+  requestedRole: MemberRole | null;
   displayName: string | null;
   pilotCallsign: string | null;
   simbriefUserId: string | null;
@@ -378,6 +380,7 @@ export async function createDirectoryMembershipWithAudit(input: {
       c.tenant_id as "tenantId",
       c.clerk_user_id as "clerkUserId",
       c.role,
+      c.requested_role as "requestedRole",
       c.display_name as "displayName",
       c.pilot_callsign as "pilotCallsign",
       c.simbrief_user_id as "simbriefUserId",
@@ -395,10 +398,11 @@ export async function createDirectoryMembershipWithAudit(input: {
   return row ? rawMembership(row) : null;
 }
 
-/** First-login provisioning is always pilot-only and atomically audited. */
-export async function provisionPilotMembershipWithAudit(input: {
+/** First-login provisioning from a verified Clerk organization membership. */
+export async function provisionMembershipWithAudit(input: {
   tenantId: string;
   clerkUserId: string;
+  role: Exclude<MemberRole, "admin">;
 }): Promise<Membership> {
   const db = getDb();
   const createdAt = new Date();
@@ -410,7 +414,7 @@ export async function provisionPilotMembershipWithAudit(input: {
       values (
         ${input.tenantId}::uuid,
         ${input.clerkUserId},
-        'pilot',
+        ${input.role}::member_role,
         'active',
         ${createdAt},
         ${createdAt}
@@ -441,6 +445,7 @@ export async function provisionPilotMembershipWithAudit(input: {
       c.tenant_id as "tenantId",
       c.clerk_user_id as "clerkUserId",
       c.role,
+      c.requested_role as "requestedRole",
       c.display_name as "displayName",
       c.pilot_callsign as "pilotCallsign",
       c.simbrief_user_id as "simbriefUserId",
@@ -462,6 +467,149 @@ export async function provisionPilotMembershipWithAudit(input: {
   const existing = await findMembership(input.tenantId, input.clerkUserId);
   if (!existing) throw new Error("Provisioned membership disappeared");
   return existing;
+}
+
+/** Backward-compatible pilot seam used by repository contract tests. */
+export function provisionPilotMembershipWithAudit(input: {
+  tenantId: string;
+  clerkUserId: string;
+}): Promise<Membership> {
+  return provisionMembershipWithAudit({ ...input, role: "pilot" });
+}
+
+/**
+ * Create or reopen a tenant membership application and its audit event in one
+ * statement. An existing active member is never downgraded by this flow.
+ */
+export async function submitMembershipApplicationWithAudit(input: {
+  tenantId: string;
+  clerkUserId: string;
+  requestedRole: Exclude<MemberRole, "admin">;
+  displayName: string | null;
+}): Promise<{ membership: Membership; submitted: boolean }> {
+  const db = getDb();
+  const submittedAt = new Date();
+  const result = await db.execute<RawMembershipRow>(sql`
+    with submitted as (
+      insert into memberships (
+        tenant_id, clerk_user_id, role, requested_role, display_name, status, created_at, updated_at
+      )
+      values (
+        ${input.tenantId}::uuid,
+        ${input.clerkUserId},
+        'pilot',
+        ${input.requestedRole}::member_role,
+        ${input.displayName},
+        'invited',
+        ${submittedAt},
+        ${submittedAt}
+      )
+      on conflict (tenant_id, clerk_user_id) do update
+      set
+        requested_role = excluded.requested_role,
+        display_name = coalesce(excluded.display_name, memberships.display_name),
+        status = 'invited',
+        updated_at = excluded.updated_at
+      where memberships.status <> 'active'
+      returning *
+    ),
+    recorded_audit as (
+      insert into audit_events (
+        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
+      )
+      select
+        s.tenant_id,
+        s.id,
+        'membership.application_submitted',
+        'membership',
+        s.id::text,
+        jsonb_build_object(
+          'requestedRole', s.requested_role,
+          'authority', 'verified_clerk_user'
+        ),
+        ${submittedAt}
+      from submitted s
+      returning id
+    )
+    select
+      s.id,
+      s.tenant_id as "tenantId",
+      s.clerk_user_id as "clerkUserId",
+      s.role,
+      s.requested_role as "requestedRole",
+      s.display_name as "displayName",
+      s.pilot_callsign as "pilotCallsign",
+      s.simbrief_user_id as "simbriefUserId",
+      s.simbrief_verified_at as "simbriefVerifiedAt",
+      s.navigraph_subject as "navigraphSubject",
+      s.navigraph_username as "navigraphUsername",
+      s.navigraph_connected_at as "navigraphConnectedAt",
+      s.status,
+      s.created_at as "createdAt",
+      s.updated_at as "updatedAt",
+      (select id from recorded_audit limit 1) as "auditId"
+    from submitted s
+  `);
+  const row = result.rows[0] as RawMembershipRow | undefined;
+  if (row) return { membership: rawMembership(row), submitted: true };
+
+  const existing = await findMembership(input.tenantId, input.clerkUserId);
+  if (!existing) throw new Error("Membership application disappeared");
+  return { membership: existing, submitted: false };
+}
+
+/** Cancel only the signed-in user's own pending application. */
+export async function cancelMembershipApplicationWithAudit(input: {
+  tenantId: string;
+  clerkUserId: string;
+}): Promise<Membership | null> {
+  const db = getDb();
+  const cancelledAt = new Date();
+  const result = await db.execute<RawMembershipRow>(sql`
+    with cancelled as (
+      update memberships m
+      set status = 'disabled', updated_at = ${cancelledAt}
+      where m.tenant_id = ${input.tenantId}::uuid
+        and m.clerk_user_id = ${input.clerkUserId}
+        and m.status = 'invited'
+      returning m.*
+    ),
+    recorded_audit as (
+      insert into audit_events (
+        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
+      )
+      select
+        c.tenant_id,
+        c.id,
+        'membership.application_cancelled',
+        'membership',
+        c.id::text,
+        jsonb_build_object('authority', 'verified_clerk_user'),
+        ${cancelledAt}
+      from cancelled c
+      returning id
+    )
+    select
+      c.id,
+      c.tenant_id as "tenantId",
+      c.clerk_user_id as "clerkUserId",
+      c.role,
+      c.requested_role as "requestedRole",
+      c.display_name as "displayName",
+      c.pilot_callsign as "pilotCallsign",
+      c.simbrief_user_id as "simbriefUserId",
+      c.simbrief_verified_at as "simbriefVerifiedAt",
+      c.navigraph_subject as "navigraphSubject",
+      c.navigraph_username as "navigraphUsername",
+      c.navigraph_connected_at as "navigraphConnectedAt",
+      c.status,
+      c.created_at as "createdAt",
+      c.updated_at as "updatedAt",
+      (select id from recorded_audit limit 1) as "auditId"
+    from cancelled c
+  `);
+  const row = result.rows[0] as RawMembershipRow | undefined;
+  return row ? rawMembership(row) : null;
 }
 
 /** Update self-owned profile/connected-account fields; role/status use the admin transaction. */
@@ -533,6 +681,7 @@ type AdministrativeUpdateRow = {
   tenantId: string | null;
   clerkUserId: string | null;
   role: MemberRole | null;
+  requestedRole: MemberRole | null;
   displayName: string | null;
   pilotCallsign: string | null;
   simbriefUserId: string | null;
@@ -558,7 +707,13 @@ export async function administrativelyUpdateMembership(input: {
   actorMembershipId: string;
   patch: AdministrativeMemberPatch;
   reassignToMembershipId?: string;
-  auditAction?: "member.updated" | "member.directory_synced";
+  expectedStatus?: Membership["status"];
+  auditAction?:
+    | "member.updated"
+    | "member.directory_synced"
+    | "membership.application_approved"
+    | "membership.application_rejected"
+    | "membership.kick_requested";
 }): Promise<AdministrativeUpdateResult> {
   const db = getDb();
   const changedAt = new Date();
@@ -567,6 +722,9 @@ export async function administrativelyUpdateMembership(input: {
   const hasPilotCallsign = input.patch.pilotCallsign !== undefined;
   const hasStatus = input.patch.status !== undefined;
   const replacementId = input.reassignToMembershipId ?? null;
+  const clearRequestedRole =
+    input.auditAction === "membership.application_approved" ||
+    input.auditAction === "membership.application_rejected";
 
   const lock = db.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 1447126::bigint))`,
@@ -588,6 +746,10 @@ export async function administrativelyUpdateMembership(input: {
       from memberships m
       where m.tenant_id = ${input.tenantId}::uuid
         and m.id = ${input.membershipId}::uuid
+        and (
+          ${input.expectedStatus ?? null}::member_status is null
+          or m.status = ${input.expectedStatus ?? null}::member_status
+        )
       for update of m
     ),
     replacement as materialized (
@@ -698,6 +860,10 @@ export async function administrativelyUpdateMembership(input: {
       update memberships m
       set
         role = e.next_role,
+        requested_role = case
+          when ${clearRequestedRole} then null
+          else m.requested_role
+        end,
         display_name = case when ${hasDisplayName} then ${input.patch.displayName ?? null}::text else m.display_name end,
         pilot_callsign = case when ${hasPilotCallsign} then ${input.patch.pilotCallsign ?? null}::text else m.pilot_callsign end,
         status = e.next_status,
@@ -855,12 +1021,14 @@ export async function administrativelyUpdateMembership(input: {
         jsonb_build_object(
           'before', jsonb_build_object(
             'role', t.role,
+            'requestedRole', t.requested_role,
             'status', t.status,
             'displayName', t.display_name,
             'pilotCallsign', t.pilot_callsign
           ),
           'after', jsonb_build_object(
             'role', u.role,
+            'requestedRole', u.requested_role,
             'status', u.status,
             'displayName', u.display_name,
             'pilotCallsign', u.pilot_callsign
@@ -912,6 +1080,7 @@ export async function administrativelyUpdateMembership(input: {
       u.tenant_id as "tenantId",
       u.clerk_user_id as "clerkUserId",
       u.role,
+      u.requested_role as "requestedRole",
       u.display_name as "displayName",
       u.pilot_callsign as "pilotCallsign",
       u.simbrief_user_id as "simbriefUserId",
@@ -1004,6 +1173,7 @@ export async function recoverMembershipAsTenantAdmin(input: {
       r.tenant_id as "tenantId",
       r.clerk_user_id as "clerkUserId",
       r.role,
+      r.requested_role as "requestedRole",
       r.display_name as "displayName",
       r.pilot_callsign as "pilotCallsign",
       r.simbrief_user_id as "simbriefUserId",
@@ -1033,6 +1203,7 @@ function rawMembership(row: RawMembershipRow): Membership {
     tenantId: row.tenantId,
     clerkUserId: row.clerkUserId,
     role: row.role,
+    requestedRole: row.requestedRole,
     displayName: row.displayName,
     pilotCallsign: row.pilotCallsign,
     simbriefUserId: row.simbriefUserId,

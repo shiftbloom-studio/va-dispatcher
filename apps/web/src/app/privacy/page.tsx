@@ -80,10 +80,10 @@ export default async function PrivacyPage() {
           headings={["Data", "Purpose", "Legal basis", "Retention criteria"]}
           rows={[
             [
-              "Account identifiers, name, email or login identifier, organization, role, display name, and pilot callsign",
-              "Authenticate you, maintain membership, authorize tenant and role access, and administer the service",
+              "Account identifiers, name, email or login/invitation identifier, organization, requested and assigned role, application/invitation and membership status, display name, and pilot callsign",
+              "Authenticate you, review a tenant membership application, send an invitation, maintain membership, authorize tenant and role access, and administer the service",
               "Article 6(1)(b) GDPR where needed to provide the requested member service; otherwise Article 6(1)(f) GDPR (operate and secure the voluntary service)",
-              "For the active account or membership and afterwards only while needed for account closure, legal obligations, or legal claims",
+              "For pending and active account or membership administration and afterwards only under the approved unsuccessful-application, account-closure, legal-obligation, or legal-claims retention criteria",
             ],
             [
               "Availability windows, schedule requests, preferences, notes, assigned flights, timestamps, and operational status",
@@ -139,8 +139,9 @@ export default async function PrivacyPage() {
         </p>
         <ul className="list-disc space-y-3 pl-6">
           <li>
-            <strong>Clerk, Inc.</strong> — account authentication, organization
-            membership, sessions, and abuse protection. See the{" "}
+            <strong>Clerk, Inc.</strong> — account authentication, tenant
+            invitations, organization membership and roles, sessions, and abuse
+            protection. See the{" "}
             <a
               href="https://clerk.com/legal/dpa"
               target="_blank"

@@ -20,6 +20,7 @@ import { publicRoutes } from "./routes/public.js";
 import { auditRoutes } from "./routes/audit.js";
 import { telemetryClientRoutes, telemetryRoutes } from "./routes/telemetry.js";
 import { privacyRoutes } from "./routes/privacy.js";
+import { membershipApplicationRoutes } from "./routes/membership-applications.js";
 import type { AppVariables } from "./middleware/auth.js";
 
 // Ensure env is loaded once at import for local/dev.
@@ -92,6 +93,9 @@ export function createApp() {
   // not Clerk or browser BotID. Keep this narrow route before business auth.
   v1.route("/", telemetryClientRoutes);
   v1.use("*", requireHuman);
+  // Signed-in applicants do not have an active organization yet. This narrow
+  // route verifies the Clerk user but deliberately does not require tenant auth.
+  v1.route("/", membershipApplicationRoutes);
   v1.route("/", meRoutes);
   v1.route("/", tenantRoutes);
   v1.route("/", membersRoutes);

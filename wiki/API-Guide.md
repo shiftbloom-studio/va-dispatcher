@@ -32,6 +32,11 @@ Authorization: Bearer <token>
 The token must contain a user subject and active organization. The organization
 is resolved to a tenant; clients never submit `tenantId`.
 
+`/membership-application` is a deliberate pre-membership exception: it
+requires a verified Clerk user subject but not an active organization. It
+accepts only the registered tenant slug and requested role, resolves both the
+tenant and caller identity server-side, and returns no operational data.
+
 Non-production development bypass accepts `X-Dev-User-Id`, `X-Dev-Org-Id`, and
 `X-Dev-Role` when `AUTH_DEV_BYPASS=true`. Narrow exceptions use their own
 credentials instead of Clerk:
@@ -134,21 +139,30 @@ Do not parse, modify, or synthesize cursors in a client.
 
 ### Tenant and members
 
-| Method   | Path                        | Minimum access | Purpose                                            |
-| -------- | --------------------------- | -------------- | -------------------------------------------------- |
-| `GET`    | `/public/tenants/{slug}`    | Public         | Pre-auth tenant name and brand                     |
-| `GET`    | `/tenant`                   | Authenticated  | Current tenant, brand, and ACARS configuration     |
-| `PATCH`  | `/tenant`                   | Admin          | Update tenant name/settings                        |
-| `PATCH`  | `/tenant/brand`             | Admin          | Update seed color and brand presence               |
-| `POST`   | `/tenant/brand/logo`        | Admin          | Upload and select the tenant logo                  |
-| `DELETE` | `/tenant/brand/logo`        | Admin          | Remove the uploaded tenant logo                    |
-| `PUT`    | `/tenant/acars-config`      | Admin          | Test and save station/logon                        |
-| `POST`   | `/tenant/acars-config/test` | Admin          | Test saved configuration                           |
-| `DELETE` | `/tenant/acars-config`      | Admin          | Remove encrypted logon and test timestamp          |
-| `GET`    | `/members`                  | Dispatcher     | Search/filter tenant memberships                   |
-| `GET`    | `/members/{id}/impact`      | Admin          | Preview assigned work affected by a member change  |
-| `PATCH`  | `/members/{id}`             | Admin          | Change/reassign role, profile, callsign, or status |
-| `POST`   | `/members/sync`             | Admin          | Reconcile the paged Clerk organization directory   |
+| Method   | Path                                | Minimum access | Purpose                                                |
+| -------- | ----------------------------------- | -------------- | ------------------------------------------------------ |
+| `GET`    | `/public/tenants/{slug}`            | Public         | Pre-auth tenant name, brand, and application policy    |
+| `GET`    | `/tenant`                           | Authenticated  | Current tenant, brand, access, and ACARS configuration |
+| `PATCH`  | `/tenant`                           | Admin          | Update tenant name/settings and membership policy      |
+| `PATCH`  | `/tenant/brand`                     | Admin          | Update seed color and brand presence                   |
+| `POST`   | `/tenant/brand/logo`                | Admin          | Upload and select the tenant logo                      |
+| `DELETE` | `/tenant/brand/logo`                | Admin          | Remove the uploaded tenant logo                        |
+| `PUT`    | `/tenant/acars-config`              | Admin          | Test and save station/logon                            |
+| `POST`   | `/tenant/acars-config/test`         | Admin          | Test saved configuration                               |
+| `DELETE` | `/tenant/acars-config`              | Admin          | Remove encrypted logon and test timestamp              |
+| `GET`    | `/members`                          | Dispatcher     | Search/filter tenant memberships                       |
+| `GET`    | `/members/{id}/impact`              | Admin          | Preview assigned work affected by a member change      |
+| `PATCH`  | `/members/{id}`                     | Admin          | Change/reassign role, profile, callsign, or status     |
+| `DELETE` | `/members/{id}`                     | Admin          | Disable locally, reassign work, then remove from Clerk |
+| `GET`    | `/members/invitations`              | Admin          | List pending Clerk tenant invitations                  |
+| `POST`   | `/members/invitations`              | Admin          | Invite a pilot or dispatcher                           |
+| `DELETE` | `/members/invitations/{id}`         | Admin          | Revoke a pending invitation                            |
+| `GET`    | `/membership-application`           | Signed-in user | Read own application state for a tenant slug           |
+| `POST`   | `/membership-application`           | Signed-in user | Submit pilot/dispatcher application                    |
+| `DELETE` | `/membership-application`           | Signed-in user | Cancel own pending application                         |
+| `POST`   | `/members/{id}/application/approve` | Admin          | Synchronize Clerk and activate application             |
+| `POST`   | `/members/{id}/application/reject`  | Admin          | Reject and close pending application                   |
+| `POST`   | `/members/sync`                     | Admin          | Reconcile the paged Clerk organization directory       |
 
 ### Schedule requests
 

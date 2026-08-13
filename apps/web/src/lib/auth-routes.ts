@@ -5,6 +5,7 @@ export function getTenantAuthRoutes(slug: string) {
 
   return {
     home,
+    join: `${home}/join`,
     signIn,
     signUp: `${home}/sign-up`,
     taskUrls: {

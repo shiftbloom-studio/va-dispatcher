@@ -387,6 +387,25 @@ const schemas = {
     type: "string",
     enum: ["active", "invited", "disabled"],
   },
+  MemberAccessSettings: {
+    type: "object",
+    required: [
+      "applicationsEnabled",
+      "pilotApplicationsEnabled",
+      "dispatcherApplicationsEnabled",
+      "invitationExpiryDays",
+    ],
+    properties: {
+      applicationsEnabled: { type: "boolean" },
+      pilotApplicationsEnabled: { type: "boolean" },
+      dispatcherApplicationsEnabled: { type: "boolean" },
+      invitationExpiryDays: {
+        type: "integer",
+        minimum: 1,
+        maximum: 30,
+      },
+    },
+  },
   ScheduleRequestStatus: {
     type: "string",
     enum: [
@@ -555,6 +574,7 @@ const schemas = {
       "id",
       "clerkUserId",
       "role",
+      "requestedRole",
       "displayName",
       "pilotCallsign",
       "status",
@@ -565,6 +585,7 @@ const schemas = {
       id: schemaRef("Uuid"),
       clerkUserId: { type: "string" },
       role: schemaRef("Role"),
+      requestedRole: { ...schemaRef("Role"), nullable: true },
       displayName: schemaRef("NullableString"),
       pilotCallsign: {
         type: "string",
@@ -629,6 +650,7 @@ const schemas = {
       "hoppieLastTestedAt",
       "brand",
       "settings",
+      "memberAccess",
     ],
     properties: {
       id: schemaRef("Uuid"),
@@ -645,16 +667,26 @@ const schemas = {
       hoppieLastTestedAt: schemaRef("NullableDateTime"),
       brand: schemaRef("TenantBrand"),
       settings: schemaRef("ArbitraryObject"),
+      memberAccess: schemaRef("MemberAccessSettings"),
     },
   },
   TenantPatchResponse: {
     type: "object",
-    required: ["id", "slug", "name", "settings"],
+    required: [
+      "id",
+      "slug",
+      "name",
+      "settings",
+      "memberAccess",
+      "clerkSynchronized",
+    ],
     properties: {
       id: schemaRef("Uuid"),
       slug: { type: "string" },
       name: { type: "string" },
       settings: schemaRef("ArbitraryObject"),
+      memberAccess: schemaRef("MemberAccessSettings"),
+      clerkSynchronized: { type: "boolean" },
     },
   },
   TenantBrandResponse: {
@@ -664,11 +696,12 @@ const schemas = {
   },
   PublicTenantResponse: {
     type: "object",
-    required: ["slug", "name", "brand"],
+    required: ["slug", "name", "brand", "memberAccess"],
     properties: {
       slug: { type: "string" },
       name: { type: "string" },
       brand: schemaRef("TenantBrand"),
+      memberAccess: schemaRef("MemberAccessSettings"),
     },
   },
   ScheduleRequest: {
@@ -1225,9 +1258,12 @@ const schemas = {
   },
   UpdateTenantInput: {
     type: "object",
+    minProperties: 1,
+    additionalProperties: false,
     properties: {
       name: { type: "string", minLength: 1, maxLength: 120 },
       settings: schemaRef("ArbitraryObject"),
+      memberAccess: schemaRef("MemberAccessSettings"),
     },
   },
   UpdateTenantBrandInput: {
@@ -1276,6 +1312,42 @@ const schemas = {
         description:
           "Required when assigned draft/offered/accepted/briefed work or open requests exist and this change makes the member inactive or changes the pilot to a non-pilot role. The replacement must be a different active pilot.",
       },
+    },
+  },
+  CreateOrganizationInvitationInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["emailAddress", "role"],
+    properties: {
+      emailAddress: { type: "string", format: "email", maxLength: 320 },
+      role: { type: "string", enum: ["pilot", "dispatcher"] },
+    },
+  },
+  MembershipApplicationInput: {
+    type: "object",
+    additionalProperties: false,
+    required: ["tenantSlug", "requestedRole"],
+    properties: {
+      tenantSlug: { type: "string", minLength: 1, maxLength: 80 },
+      requestedRole: {
+        type: "string",
+        enum: ["pilot", "dispatcher"],
+      },
+    },
+  },
+  MembershipApplicationDecisionInput: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      role: { type: "string", enum: ["pilot", "dispatcher"] },
+      reassignToMembershipId: schemaRef("Uuid"),
+    },
+  },
+  KickMemberInput: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      reassignToMembershipId: schemaRef("Uuid"),
     },
   },
   CreateScheduleRequestInput: {
@@ -1655,13 +1727,107 @@ const schemas = {
       schemaRef("Member"),
       {
         type: "object",
-        required: ["reassignedFlightCount", "reassignedScheduleRequestCount"],
+        required: [
+          "reassignedFlightCount",
+          "reassignedScheduleRequestCount",
+          "clerkSynchronized",
+        ],
         properties: {
           reassignedFlightCount: { type: "integer", minimum: 0 },
           reassignedScheduleRequestCount: { type: "integer", minimum: 0 },
+          clerkSynchronized: {
+            type: "boolean",
+            description:
+              "Whether Clerk organization membership is synchronized with the application membership.",
+          },
         },
       },
     ],
+  },
+  MemberKickResponse: {
+    allOf: [
+      schemaRef("MemberUpdateResponse"),
+      {
+        type: "object",
+        required: ["completionAuditRecorded"],
+        properties: {
+          completionAuditRecorded: { type: "boolean" },
+        },
+      },
+    ],
+  },
+  OrganizationInvitation: {
+    type: "object",
+    required: [
+      "id",
+      "emailAddress",
+      "role",
+      "status",
+      "createdAt",
+      "updatedAt",
+      "expiresAt",
+    ],
+    properties: {
+      id: { type: "string" },
+      emailAddress: { type: "string", format: "email" },
+      role: { type: "string", example: "org:pilot" },
+      status: {
+        type: "string",
+        enum: ["pending", "accepted", "revoked", "expired"],
+      },
+      createdAt: schemaRef("DateTime"),
+      updatedAt: schemaRef("DateTime"),
+      expiresAt: schemaRef("DateTime"),
+    },
+  },
+  OrganizationInvitationListResponse: {
+    type: "object",
+    required: ["items", "totalCount"],
+    properties: {
+      items: { type: "array", items: schemaRef("OrganizationInvitation") },
+      totalCount: { type: "integer", minimum: 0 },
+    },
+  },
+  OrganizationInvitationMutationResponse: {
+    type: "object",
+    required: ["invitation", "auditRecorded"],
+    properties: {
+      invitation: schemaRef("OrganizationInvitation"),
+      auditRecorded: { type: "boolean" },
+    },
+  },
+  MembershipApplicationResponse: {
+    type: "object",
+    required: ["applicationsEnabled", "allowedRoles", "application"],
+    properties: {
+      applicationsEnabled: { type: "boolean" },
+      allowedRoles: {
+        type: "array",
+        items: { type: "string", enum: ["pilot", "dispatcher"] },
+      },
+      application: {
+        type: "object",
+        nullable: true,
+        required: [
+          "state",
+          "requestedRole",
+          "displayName",
+          "submittedAt",
+          "updatedAt",
+        ],
+        properties: {
+          state: { type: "string", enum: ["pending", "active", "closed"] },
+          requestedRole: {
+            type: "string",
+            enum: ["pilot", "dispatcher"],
+          },
+          displayName: schemaRef("NullableString"),
+          submittedAt: schemaRef("DateTime"),
+          updatedAt: schemaRef("DateTime"),
+        },
+      },
+      submitted: { type: "boolean" },
+    },
   },
   SyncMembersResponse: {
     type: "object",
@@ -2489,6 +2655,135 @@ export const openApiDocument = {
         },
       },
     },
+    "/membership-application": {
+      get: {
+        tags: ["Members"],
+        operationId: "getMembershipApplication",
+        summary: "Get the caller's tenant membership application",
+        description:
+          "Requires a verified Clerk user session, but no active organization membership. The tenant is resolved from the server-known slug.",
+        parameters: [
+          requiredQueryParameter("tenantSlug", "Virtual Airline tenant slug.", {
+            type: "string",
+            minLength: 1,
+            maxLength: 80,
+          }),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Application state and tenant application policy.",
+            schemaRef("MembershipApplicationResponse"),
+          ),
+          ...resourceErrors,
+        },
+      },
+      post: {
+        tags: ["Members"],
+        operationId: "submitMembershipApplication",
+        summary: "Apply to join a tenant",
+        description:
+          "Requires a verified Clerk user session, but no active organization membership. A tenant administrator must approve the application before access becomes active.",
+        requestBody: jsonRequest(schemaRef("MembershipApplicationInput")),
+        responses: {
+          "200": jsonResponse(
+            "Submitted or existing application state.",
+            schemaRef("MembershipApplicationResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+      delete: {
+        tags: ["Members"],
+        operationId: "cancelMembershipApplication",
+        summary: "Cancel the caller's pending tenant application",
+        parameters: [
+          requiredQueryParameter("tenantSlug", "Virtual Airline tenant slug.", {
+            type: "string",
+            minLength: 1,
+            maxLength: 80,
+          }),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Closed application state.",
+            schemaRef("MembershipApplicationResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/members/invitations": {
+      get: {
+        tags: ["Members"],
+        operationId: "listOrganizationInvitations",
+        summary: "List pending tenant invitations",
+        description: "Requires the admin role.",
+        "x-required-role": "admin",
+        parameters: [
+          queryParameter("offset", "Zero-based Clerk page offset.", {
+            type: "integer",
+            minimum: 0,
+            default: 0,
+          }),
+          queryParameter("limit", "Maximum invitations to return.", {
+            type: "integer",
+            minimum: 1,
+            maximum: 100,
+            default: 50,
+          }),
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Pending Clerk organization invitations.",
+            schemaRef("OrganizationInvitationListResponse"),
+          ),
+          ...authenticatedErrors,
+        },
+      },
+      post: {
+        tags: ["Members"],
+        operationId: "createOrganizationInvitation",
+        summary: "Invite a pilot or dispatcher",
+        description:
+          "Requires the admin role. Creates a Clerk organization invitation with the tenant's configured expiry.",
+        "x-required-role": "admin",
+        requestBody: jsonRequest(
+          schemaRef("CreateOrganizationInvitationInput"),
+        ),
+        responses: {
+          "200": jsonResponse(
+            "Created invitation.",
+            schemaRef("OrganizationInvitationMutationResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/members/invitations/{invitationId}": {
+      delete: {
+        tags: ["Members"],
+        operationId: "revokeOrganizationInvitation",
+        summary: "Revoke a pending tenant invitation",
+        description: "Requires the admin role.",
+        "x-required-role": "admin",
+        parameters: [
+          {
+            name: "invitationId",
+            in: "path",
+            required: true,
+            description: "Clerk organization invitation ID.",
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": jsonResponse(
+            "Revoked invitation.",
+            schemaRef("OrganizationInvitationMutationResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
     "/members": {
       get: {
         tags: ["Members"],
@@ -2544,6 +2839,61 @@ export const openApiDocument = {
         responses: {
           "200": jsonResponse(
             "Updated member.",
+            schemaRef("MemberUpdateResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+      delete: {
+        tags: ["Members"],
+        operationId: "kickMember",
+        summary: "Remove a member from the tenant",
+        description:
+          "Requires the admin role. Disables application access atomically before removing the Clerk organization membership. Outstanding work requires an explicit active-pilot replacement.",
+        "x-required-role": "admin",
+        parameters: [pathParameter("id", "Membership ID.")],
+        requestBody: jsonRequest(schemaRef("KickMemberInput")),
+        responses: {
+          "200": jsonResponse(
+            "Disabled member and Clerk synchronization state.",
+            schemaRef("MemberKickResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/members/{id}/application/approve": {
+      post: {
+        tags: ["Members"],
+        operationId: "approveMembershipApplication",
+        summary: "Approve a pending membership application",
+        description:
+          "Requires the admin role. Synchronizes Clerk organization membership before activating the application membership.",
+        "x-required-role": "admin",
+        parameters: [pathParameter("id", "Membership application ID.")],
+        requestBody: jsonRequest(
+          schemaRef("MembershipApplicationDecisionInput"),
+        ),
+        responses: {
+          "200": jsonResponse(
+            "Approved and activated member.",
+            schemaRef("MemberUpdateResponse"),
+          ),
+          ...mutationErrors,
+        },
+      },
+    },
+    "/members/{id}/application/reject": {
+      post: {
+        tags: ["Members"],
+        operationId: "rejectMembershipApplication",
+        summary: "Reject a pending membership application",
+        description: "Requires the admin role.",
+        "x-required-role": "admin",
+        parameters: [pathParameter("id", "Membership application ID.")],
+        responses: {
+          "200": jsonResponse(
+            "Rejected and closed application.",
             schemaRef("MemberUpdateResponse"),
           ),
           ...mutationErrors,

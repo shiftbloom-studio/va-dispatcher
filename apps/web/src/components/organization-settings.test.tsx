@@ -30,6 +30,12 @@ const tenant = {
     logoUrl: null,
   },
   settings: {},
+  memberAccess: {
+    applicationsEnabled: true,
+    pilotApplicationsEnabled: true,
+    dispatcherApplicationsEnabled: true,
+    invitationExpiryDays: 30,
+  },
 };
 
 describe("organization settings", () => {
@@ -39,6 +45,17 @@ describe("organization settings", () => {
       (path: string, options: { method?: string; body?: string }) => {
         if (path === "/tenant" && !options.method)
           return Promise.resolve(tenant);
+        if (path === "/tenant" && options.method === "PATCH") {
+          const body = JSON.parse(options.body ?? "{}");
+          return Promise.resolve({
+            id: tenant.id,
+            slug: tenant.slug,
+            name: body.name,
+            settings: tenant.settings,
+            memberAccess: body.memberAccess,
+            clerkSynchronized: true,
+          });
+        }
         if (path === "/tenant/acars-config" && options.method === "PUT") {
           return Promise.resolve({
             hoppieStation: "SAS",
@@ -122,6 +139,42 @@ describe("organization settings", () => {
     });
     expect(
       await screen.findByText("Brand color and presence saved."),
+    ).toBeInTheDocument();
+  });
+
+  it("configures manual applications and Clerk invitation lifetime", async () => {
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <OrganizationSettings slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Dispatcher applications/ }),
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Invitation lifetime"),
+      "14",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Save membership access" }),
+    );
+
+    const settingsCall = apiMock.mock.calls.find(
+      ([path, options]) => path === "/tenant" && options.method === "PATCH",
+    );
+    expect(JSON.parse(settingsCall?.[1].body ?? "{}")).toEqual({
+      name: "Virtual SAS",
+      memberAccess: {
+        applicationsEnabled: true,
+        pilotApplicationsEnabled: true,
+        dispatcherApplicationsEnabled: false,
+        invitationExpiryDays: 14,
+      },
+    });
+    expect(
+      await screen.findByText("Membership access settings saved."),
     ).toBeInTheDocument();
   });
 });

@@ -32,6 +32,12 @@ describe("BotID policy", () => {
   it("uses Basic for other mutations and skips reads and internal routes", () => {
     expect(botIdCheckLevel("POST", "/api/v1/schedule-requests")).toBe("basic");
     expect(botIdCheckLevel("PATCH", "/api/v1/me")).toBe("basic");
+    expect(botIdCheckLevel("POST", "/api/v1/membership-application")).toBe(
+      "basic",
+    );
+    expect(botIdCheckLevel("DELETE", "/api/v1/members/member-id")).toBe(
+      "basic",
+    );
     expect(botIdCheckLevel("GET", "/api/v1/flights")).toBeNull();
     expect(
       botIdCheckLevel("POST", "/api/v1/internal/cron/acars-poll"),
