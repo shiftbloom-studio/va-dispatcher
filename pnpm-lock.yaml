@@ -63,6 +63,9 @@ importers:
       drizzle-kit:
         specifier: 1.0.0-rc.4
         version: 1.0.0-rc.4
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       pg:
         specifier: 8.23.0
         version: 8.23.0
