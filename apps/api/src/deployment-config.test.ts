@@ -65,6 +65,10 @@ describe("Vercel service packaging", () => {
     expect(deployWorkflow).toContain("workflow_run:");
     expect(deployWorkflow).toContain("workflows: [CI]");
     expect(deployWorkflow).toContain("gitSource:");
+    expect(deployWorkflow).toContain(
+      'if (target === "production") payload.target = target;',
+    );
+    expect(deployWorkflow).not.toContain("project,\n              target,");
     expect(deployWorkflow).toContain("VERCEL_GITHUB_REPOSITORY_ID");
     expect(deployWorkflow).toContain("needs.select.outputs.deploy == 'true'");
     expect(deployWorkflow).not.toContain("actions/checkout");

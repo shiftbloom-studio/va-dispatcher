@@ -57,6 +57,9 @@ deployment succeeds only after `/api/ready` confirms the live schema. A merge
 to `main` repeats the same flow for Production. Fork and Dependabot pull
 requests validate but do not receive deployment credentials.
 
+The Vercel deployment request omits `target` for Preview, as required by the
+API, and sends `target: production` only for Production.
+
 Schema application uses Drizzle's machine-readable output mode and deliberately
 omits `--force`: a destructive or ambiguous proposal exits with missing hints
 instead of being applied. Vercel's `forceNew` deployment parameter requests a
