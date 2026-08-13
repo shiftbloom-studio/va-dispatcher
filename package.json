@@ -2,6 +2,7 @@
   "name": "va-dispatch",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "description": "Multi-tenant Virtual Airline Live Dispatch & ACARS tool",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/shiftbloom-studio/va-dispatcher",

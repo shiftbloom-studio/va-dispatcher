@@ -20,11 +20,15 @@ const tenant: TenantConfig = {
 };
 
 describe("TenantLogo", () => {
-  it("loads the source directly without relying on the unavailable image optimizer route", () => {
+  it("uses the Next.js image optimizer for tenant logos", () => {
     render(<TenantLogo tenant={tenant} />);
 
-    expect(
-      screen.getByRole("img", { name: "Virtual SAS logo" }),
-    ).toHaveAttribute("src", "/tenants/vsas/logo.jpg");
+    const source = screen
+      .getByRole("img", { name: "Virtual SAS logo" })
+      .getAttribute("src");
+    expect(source).not.toBeNull();
+    const optimizedUrl = new URL(source ?? "", "http://localhost");
+    expect(optimizedUrl.pathname).toBe("/_next/image");
+    expect(optimizedUrl.searchParams.get("url")).toBe("/tenants/vsas/logo.jpg");
   });
 });

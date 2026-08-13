@@ -4,9 +4,8 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
 import { OrganizationMismatch } from "@/components/organization-mismatch";
 import { QueryProvider } from "@/components/query-provider";
-import { getPublicTenantConfig } from "@/lib/public-tenant";
 import { getServerIdentity } from "@/lib/server-identity";
-import { tenantConfigFromDetail } from "@/lib/tenant";
+import { getTenantConfig, tenantConfigFromDetail } from "@/lib/tenant";
 
 export default async function ProtectedLayout({
   children,
@@ -16,7 +15,7 @@ export default async function ProtectedLayout({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const tenant = await getPublicTenantConfig(slug);
+  const tenant = getTenantConfig(slug);
   if (!tenant) notFound();
 
   const identity = await getServerIdentity(slug);

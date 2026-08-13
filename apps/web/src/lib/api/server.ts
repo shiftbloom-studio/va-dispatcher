@@ -29,5 +29,9 @@ export function serverPublicApi<TSchema extends z.ZodType>(
   path: string,
   schema: TSchema,
 ): Promise<z.output<TSchema>> {
-  return requestJson(`${apiOrigin()}/api/v1${path}`, { schema });
+  return requestJson(`${apiOrigin()}/api/v1${path}`, {
+    schema,
+    cache: "force-cache",
+    next: { revalidate: 60 },
+  });
 }

@@ -24,21 +24,24 @@ describe("generic pagination cursors", () => {
     expect(decodeCursor(cursor)).toEqual({
       sortAt: "2026-08-12T12:00:00.000Z",
       id: "flight_123",
-      legacy: false,
     });
   });
 
-  it("keeps old generic cursors usable outside the flight list", () => {
-    const legacyCursor = opaque({
+  it("rejects old and malformed generic cursors", () => {
+    const oldCursor = opaque({
       createdAt: "2026-08-12T12:00:00.000Z",
       id: "flight_123",
     });
 
-    expect(decodeCursor(legacyCursor)).toEqual({
-      sortAt: "2026-08-12T12:00:00.000Z",
-      id: "flight_123",
-      legacy: true,
-    });
+    expect(() => decodeCursor(oldCursor)).toThrow("Invalid cursor");
+    expect(() =>
+      decodeCursor(
+        opaque({
+          sortAt: "not-a-time",
+          id: "flight_123",
+        }),
+      ),
+    ).toThrow("Invalid cursor");
   });
 });
 

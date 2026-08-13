@@ -56,7 +56,14 @@ describe("live API contract smoke fixtures", () => {
       windowStart: "2026-09-01T08:00:00.000Z",
       windowEnd: "2026-09-02T08:00:00.000Z",
       desiredFlightCount: 1,
-      preferences: {},
+      preferences: {
+        availability: [
+          {
+            startAt: "2026-09-01T08:00:00.000Z",
+            endAt: "2026-09-02T08:00:00.000Z",
+          },
+        ],
+      },
       version: 1,
       status: "pending",
       rejectReason: null,
@@ -227,8 +234,8 @@ describe("live API contract smoke fixtures", () => {
     ).toBe("telex");
   });
 
-  it("validates detailed schedule availability while accepting legacy rows", () => {
-    expect(schedulePreferencesSchema.parse({})).toEqual({});
+  it("requires and validates detailed schedule availability", () => {
+    expect(() => schedulePreferencesSchema.parse({})).toThrow();
     expect(
       schedulePreferencesSchema.parse({
         availability: [
