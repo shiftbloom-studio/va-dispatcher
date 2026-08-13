@@ -187,10 +187,9 @@ jobs:
               githubCommitRef: ref,
             };
             if (prNumber) meta.githubPrId = prNumber;
-            writeFileSync(file, JSON.stringify({
+            const payload = {
               name: "va-dispatcher",
               project,
-              target,
               gitSource: {
                 type: "github",
                 repoId: Number(repoId),
@@ -198,7 +197,11 @@ jobs:
                 sha,
               },
               meta,
-            }));
+            };
+            // Vercel represents Preview by omitting target. The API accepts
+            // "production", "staging", or a custom environment identifier.
+            if (target === "production") payload.target = target;
+            writeFileSync(file, JSON.stringify(payload));
           ' "${request_file}" "${VERCEL_PROJECT_ID}" "${GITHUB_REPOSITORY_ID}" "${DEPLOY_SHA}" "${DEPLOY_REF}" "${DEPLOY_TARGET}" "${PR_NUMBER}"
 
           http_status="$(curl \
