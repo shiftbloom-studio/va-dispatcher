@@ -3,6 +3,9 @@
  * Public /api/* → api service; everything else → web.
  */
 export const config = {
+  // Keep server rendering and API/database round trips in the same region as
+  // the eu-central-1 Neon database.
+  regions: ["fra1"],
   services: {
     web: {
       root: "apps/web",
@@ -18,7 +21,15 @@ export const config = {
     },
     api: {
       root: "apps/api",
+      framework: "hono",
       entrypoint: "src/index.ts",
+      // The emitted handler is native ESM. Vercel's function trace must retain
+      // the root package boundary so Node interprets app.js as an ES module.
+      functions: {
+        "src/index.ts": {
+          includeFiles: "package.json",
+        },
+      },
     },
   },
   rewrites: [

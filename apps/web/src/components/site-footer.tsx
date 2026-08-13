@@ -12,12 +12,14 @@ export function SiteFooter({ className = "" }: { className?: string }) {
       >
         <Link
           href="/impressum"
+          prefetch={false}
           className="rounded-sm underline decoration-slate-300 underline-offset-4 transition hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
           Impressum
         </Link>
         <Link
           href="/privacy"
+          prefetch={false}
           className="rounded-sm underline decoration-slate-300 underline-offset-4 transition hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
           Privacy Notice

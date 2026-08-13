@@ -10,8 +10,14 @@ export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export type CursorPayload = {
   sortAt: string;
   id: string;
-  legacy?: boolean;
 };
+
+const cursorPayloadSchema = z
+  .object({
+    sortAt: z.string().datetime({ offset: true }),
+    id: z.string(),
+  })
+  .strict();
 
 const flightCursorPayloadSchema = z
   .object({
@@ -31,29 +37,7 @@ export function encodeCursor(payload: CursorPayload): string {
 export function decodeCursor(cursor: string): CursorPayload {
   try {
     const raw = Buffer.from(cursor, "base64url").toString("utf8");
-    const parsed = JSON.parse(raw) as {
-      sortAt?: unknown;
-      createdAt?: unknown;
-      id?: unknown;
-    };
-    // Cursors are opaque. Keep the previous field long enough to preserve its
-    // former query behavior while fresh cursors use the actual sort field.
-    let sortAt: string | null = null;
-    let legacy = false;
-    if (typeof parsed.sortAt === "string") {
-      sortAt = parsed.sortAt;
-    } else if (typeof parsed.createdAt === "string") {
-      sortAt = parsed.createdAt;
-      legacy = true;
-    }
-    if (
-      !sortAt ||
-      typeof parsed.id !== "string" ||
-      Number.isNaN(new Date(sortAt).getTime())
-    ) {
-      throw new Error("invalid");
-    }
-    return { sortAt, id: parsed.id, legacy };
+    return cursorPayloadSchema.parse(JSON.parse(raw));
   } catch {
     throw new Error("Invalid cursor");
   }
