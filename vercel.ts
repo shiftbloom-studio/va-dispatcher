@@ -22,13 +22,16 @@ export const config = {
     api: {
       root: "apps/api",
       framework: "hono",
-      entrypoint: "dist/vercel.js",
-      buildCommand: "pnpm run build:vercel",
+      // Services validates the entrypoint before running the service build.
+      // Keep a checked-in TypeScript entrypoint, then replace it with the
+      // dependency-complete bundle inside Vercel's isolated build checkout.
+      entrypoint: "vercel-entry.ts",
+      buildCommand: "node scripts/build-vercel-bundle.mjs vercel-entry.ts",
       // Vercel Services currently emits the Hono entrypoint without tracing
       // pnpm workspace dependencies. Bundle them before packaging and retain
       // the ESM package boundary for Vercel's generated app.js wrapper.
       functions: {
-        "dist/vercel.js": {
+        "vercel-entry.ts": {
           includeFiles: "package.json",
         },
       },

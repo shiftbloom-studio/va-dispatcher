@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/local.ts",
     "build": "node ./node_modules/typescript7/bin/tsc -p tsconfig.build.json",
-    "build:vercel": "esbuild src/index.ts --bundle --platform=node --target=node24 --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/vercel.js && node scripts/verify-vercel-bundle.mjs",
+    "build:vercel": "node scripts/build-vercel-bundle.mjs dist/vercel.js",
     "start": "node dist/local.js",
     "typecheck": "node ./node_modules/typescript7/bin/tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

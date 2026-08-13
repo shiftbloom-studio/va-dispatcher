@@ -53,9 +53,11 @@ claims on later requests.
 
 If the API runtime log reports `ERR_MODULE_NOT_FOUND` for `hono` from
 `/var/task/app.js`, the Hono service was emitted without its pnpm workspace
-dependencies. The API service must point at `dist/vercel.js` and run
-`pnpm run build:vercel`; that command bundles runtime dependencies and imports
-the result from an isolated temporary directory before accepting the build.
+dependencies. The API service keeps `vercel-entry.ts` checked in because
+Vercel validates the path before its service build, then replaces that file in
+the isolated build checkout with a dependency-complete bundle. Run
+`pnpm run build:vercel` locally; the command writes to `dist/` and imports the
+result from an isolated temporary directory before accepting the build.
 Do not add one missing package at a time to the function because the next bare
 runtime import will fail in the same way.
 
