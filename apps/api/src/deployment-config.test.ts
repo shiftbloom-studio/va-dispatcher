@@ -70,6 +70,8 @@ describe("Vercel service packaging", () => {
     );
     expect(deployWorkflow).not.toContain("project,\n              target,");
     expect(deployWorkflow).toContain("VERCEL_GITHUB_REPOSITORY_ID");
+    expect(deployWorkflow).toContain("VERCEL_PROTECTION_BYPASS");
+    expect(deployWorkflow).toContain("x-vercel-protection-bypass:");
     expect(deployWorkflow).toContain("needs.select.outputs.deploy == 'true'");
     expect(deployWorkflow).not.toContain("actions/checkout");
     expect(deployWorkflow).not.toContain("pull_request_target");

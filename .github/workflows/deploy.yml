@@ -110,6 +110,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       GITHUB_REPOSITORY_ID: ${{ vars.VERCEL_GITHUB_REPOSITORY_ID }}
@@ -123,6 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${VERCEL_TOKEN:?Configure the VERCEL_TOKEN GitHub Actions secret}"
+          : "${VERCEL_PROTECTION_BYPASS:?Configure the VERCEL_PROTECTION_BYPASS GitHub Actions secret}"
           : "${VERCEL_ORG_ID:?Configure the VERCEL_ORG_ID GitHub Actions variable}"
           : "${VERCEL_PROJECT_ID:?Configure the VERCEL_PROJECT_ID GitHub Actions variable}"
           : "${GITHUB_REPOSITORY_ID:?Configure the VERCEL_GITHUB_REPOSITORY_ID GitHub Actions variable}"
@@ -261,6 +263,7 @@ jobs:
               --silent \
               --show-error \
               --max-time 15 \
+              --header "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}" \
               --output "${health_file}" \
               --write-out '%{http_code}' \
               "${DEPLOYMENT_URL}/api/ready" || true)"

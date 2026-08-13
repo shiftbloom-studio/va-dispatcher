@@ -33,17 +33,21 @@ Complete this one-time repository setup:
    project. Do not reuse an individual's interactive CLI token. Record its
    expiry and rotate it before that date.
 2. Add the token as the repository Actions secret `VERCEL_TOKEN`.
-3. Add repository Actions variables `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, and
+3. Create a dedicated Vercel **Protection Bypass for Automation** value with a
+   note such as `GitHub Actions readiness`, then add it as the repository
+   Actions secret `VERCEL_PROTECTION_BYPASS`. Keep Vercel Authentication on.
+4. Add repository Actions variables `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, and
    `VERCEL_GITHUB_REPOSITORY_ID`.
-4. Keep GitHub deployment environments named exactly `Preview` and
+5. Keep GitHub deployment environments named exactly `Preview` and
    `Production` so deployment history stays separated by target.
-5. Keep application build/runtime secrets, including each environment's Neon
+6. Keep application build/runtime secrets, including each environment's Neon
    `DATABASE_URL`, in Vercel. Do not duplicate database credentials in GitHub.
 
 The repository values can be configured with GitHub CLI:
 
 ```bash
 gh secret set VERCEL_TOKEN
+gh secret set VERCEL_PROTECTION_BYPASS
 gh variable set VERCEL_ORG_ID --body 'team_It06hb34UWpmpYHmmWA449es'
 gh variable set VERCEL_PROJECT_ID --body 'prj_1kNdOUg4hWdWOqgkYelF9yP1vbu7'
 gh variable set VERCEL_GITHUB_REPOSITORY_ID --body '1331688878'
@@ -56,6 +60,10 @@ token. The API service's Vercel build applies the canonical schema, and the
 deployment succeeds only after `/api/ready` confirms the live schema. A merge
 to `main` repeats the same flow for Production. Fork and Dependabot pull
 requests validate but do not receive deployment credentials.
+
+The readiness request sends the Vercel-documented
+`x-vercel-protection-bypass` header so the probe works against an
+authentication-protected Preview without making that Preview public.
 
 The Vercel deployment request omits `target` for Preview, as required by the
 API, and sends `target: production` only for Production.

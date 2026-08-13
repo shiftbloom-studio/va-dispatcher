@@ -72,9 +72,11 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 
 1. Provision or select Neon, Clerk, and Vercel environments.
 2. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference).
-3. Configure the one-time GitHub `VERCEL_TOKEN` secret, Vercel project/team
-   and repository variables, and the `Preview` and `Production` environments
-   described in `docs/maintainer-setup.md`.
+3. Configure the one-time GitHub `VERCEL_TOKEN` and
+   `VERCEL_PROTECTION_BYPASS` secrets, Vercel project/team and repository
+   variables, and the `Preview` and `Production` environments described in
+   `docs/maintainer-setup.md`. The bypass is used only for readiness while
+   Vercel Authentication remains enabled on Preview deployments.
 4. Open or update an internal pull request. GitHub runs the database contracts,
    quality checks, and integrated E2E suite. A separate default-branch workflow
    then deploys that exact successful commit without executing pull-request code
