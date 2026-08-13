@@ -115,15 +115,20 @@ The browser client does not add these headers itself. Use them when calling the 
 
 To exercise production-like authentication locally:
 
-1. Enable Clerk Organizations and organization slugs.
-2. Create an organization whose slug is exactly `vsas`.
-3. Set its organization ID as `VSAS_CLERK_ORG_ID` in the API.
-4. Put the Clerk secret key in both server environments and the publishable key in the web environment.
-5. Set `AUTH_DEV_BYPASS=false`.
-6. Seed or let the trusted configured organization repair the initial vSAS tenant on first authenticated access.
-7. Sign in at `/vsas/sign-in` and select the vSAS organization.
+1. Enable Clerk Organizations with optional membership and organization slugs.
+2. Disable user-created organizations and Verified Domain enrollment; add
+   `org:pilot` and `org:dispatcher` to the Primary Role Set.
+3. Create an organization whose slug is exactly `vsas`.
+4. Set its organization ID as `VSAS_CLERK_ORG_ID` in the API.
+5. Put the Clerk secret key in both server environments and the publishable key in the web environment.
+6. Set `APP_ORIGIN=http://localhost:3000` and `AUTH_DEV_BYPASS=false`.
+7. Seed or let the trusted configured organization repair the initial vSAS tenant on first authenticated access.
+8. Sign up at `/vsas/sign-up`, exercise `/vsas/join`, and approve or invite the
+   account from a tenant admin session.
 
-Unknown organizations are not automatically provisioned. A new member of a registered tenant is provisioned as a pilot unless Clerk's organization role maps to `dispatcher` or `admin`.
+Unknown organizations are not automatically provisioned. A new member of a
+registered tenant is provisioned as pilot or dispatcher from the verified role;
+admin still requires the app control plane or no-active-admin recovery seam.
 
 ## Local ACARS
 

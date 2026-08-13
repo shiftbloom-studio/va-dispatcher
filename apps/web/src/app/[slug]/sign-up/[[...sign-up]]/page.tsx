@@ -28,7 +28,7 @@ export default async function SignUpPage({
         <SignUp
           path={routes.signUp}
           routing="path"
-          fallbackRedirectUrl={routes.home}
+          fallbackRedirectUrl={routes.join}
           signInFallbackRedirectUrl={routes.home}
           signInUrl={routes.signIn}
           appearance={TENANT_AUTH_APPEARANCE}

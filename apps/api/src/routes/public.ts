@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { findTenantBySlug } from "../db/repositories/tenants.js";
 import { serializeBrand } from "../domain/tenants/brand.js";
+import { memberAccessSettings } from "../domain/tenants/member-access.js";
 import { AppError } from "../lib/errors.js";
 
 export const publicRoutes = new Hono();
@@ -13,5 +14,6 @@ publicRoutes.get("/public/tenants/:slug", async (c) => {
     slug: tenant.slug,
     name: tenant.name,
     brand: serializeBrand(tenant),
+    memberAccess: memberAccessSettings(tenant.settings),
   });
 });

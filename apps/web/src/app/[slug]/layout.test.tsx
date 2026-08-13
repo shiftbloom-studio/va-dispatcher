@@ -27,7 +27,7 @@ describe("tenant Clerk routing", () => {
       signInUrl: "/vsas/sign-in",
       signUpUrl: "/vsas/sign-up",
       signInFallbackRedirectUrl: "/vsas",
-      signUpFallbackRedirectUrl: "/vsas",
+      signUpFallbackRedirectUrl: "/vsas/join",
       taskUrls: {
         "choose-organization": "/vsas/tasks/choose-organization",
         "reset-password": "/vsas/tasks/reset-password",

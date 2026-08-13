@@ -18,6 +18,46 @@ error payloads or produce an unbounded response. Members absent from Clerk are
 not disabled automatically; an administrator must review and disable them
 explicitly.
 
+## Invitations and manual applications
+
+The console sends and revokes pilot/dispatcher invitations through Clerk's
+Backend API. Invitation email stays in Clerk and in the admin-only live
+response; audit metadata records role and expiry without copying the address.
+The configured 7/14/30-day lifetime and the tenant return URL come from
+organization settings and `APP_ORIGIN`.
+
+Self-service application is separate from Clerk organization membership:
+
+1. A verified signed-in Clerk user submits a pilot or dispatcher request for a
+   registered tenant slug.
+2. VA Dispatch stores that tenant/user pair as `invited` with
+   `requested_role`; the user still has no business-route access.
+3. An admin approves or rejects it in this console. Competing approve/reject/
+   cancel decisions are serialized against the pending status.
+4. Approval creates or updates Clerk membership first, then atomically
+   activates the local role and audit. A local failure remains fail-closed and
+   can be retried safely. Rejection leaves Clerk untouched and closes the local
+   request.
+
+A returning disabled member can apply again. Historical membership identity
+and operational ownership remain intact; approval uses the same assigned-work
+guards before changing an existing pilot to dispatcher.
+
+## Role synchronization and removal
+
+Active role changes synchronize `org:pilot`, `org:dispatcher`, or `org:admin`
+to Clerk before the guarded local update. If the local update fails, the API
+attempts to restore the previous Clerk role; the local authorization record is
+unchanged and authoritative.
+
+**Remove from organization** is the complete offboarding action. It first runs
+the local disable/reassignment transaction and audit. Only after local access
+is denied does it delete Clerk organization membership. A Clerk outage returns
+`clerkSynchronized=false`: access remains safely disabled, the UI shows a
+warning, and repeating removal retries only the provider step. Directory sync
+never reactivates disabled memberships. Do not use the plain status selector as
+a substitute when Clerk membership must also be removed.
+
 Clerk synchronization may update role and display name or create an active
 membership. Each mutation and the aggregate sync result is audited. A failed
 per-member audit insert rolls back the corresponding membership mutation. If
@@ -39,10 +79,10 @@ atomic, and audited as `member.admin_recovered`. It cannot replace normal role
 management while any active application administrator remains.
 
 A verified Clerk member without an application membership is first provisioned
-as an active `pilot`, regardless of their Clerk directory role. Creation and the
-`member.self_provisioned` audit event are one transaction. Dispatcher or admin
-privilege then requires an audited directory sync or explicit application-admin
-change, except for the no-active-admin recovery case above.
+as active `pilot` or `dispatcher` according to the role assigned by VA Dispatch
+invitation/approval. Creation and the `member.self_provisioned` audit event are
+one transaction. Admin privilege requires an explicit application-admin change,
+except for the no-active-admin recovery case above.
 
 ## Assigned-work policy
 

@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   decryptSecret: vi.fn(),
   findTenantById: vi.fn(),
   updateTenant: vi.fn(),
+  updateOrganization: vi.fn(),
   writeAudit: vi.fn(),
 }));
 
@@ -26,6 +27,9 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
         clerkOrgId: "org_test",
       });
       await next();
+    }),
+    getClerkClient: () => ({
+      organizations: { updateOrganization: state.updateOrganization },
     }),
   };
 });
@@ -86,6 +90,7 @@ describe("tenant organization configuration", () => {
     state.encryptSecret.mockReturnValue("encrypted-new-logon");
     state.decryptSecret.mockReturnValue("existing-logon");
     state.ping.mockResolvedValue(true);
+    state.updateOrganization.mockResolvedValue({});
     state.updateTenant.mockImplementation(
       async (_tenantId: string, patch: Partial<Tenant>) => {
         tenant = { ...tenant, ...patch, updatedAt: new Date() };
@@ -152,6 +157,103 @@ describe("tenant organization configuration", () => {
     });
     expect(state.writeAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "tenant.brand_update" }),
+    );
+  });
+
+  it("lets only admins configure application roles and invitation expiry", async () => {
+    const payload = {
+      memberAccess: {
+        applicationsEnabled: true,
+        pilotApplicationsEnabled: true,
+        dispatcherApplicationsEnabled: false,
+        invitationExpiryDays: 14,
+      },
+    };
+
+    state.role = "dispatcher";
+    const forbidden = await app.request("/tenant", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(forbidden.status).toBe(403);
+
+    state.role = "admin";
+    const response = await app.request("/tenant", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      memberAccess: payload.memberAccess,
+      clerkSynchronized: true,
+    });
+    expect(state.updateTenant).toHaveBeenCalledWith("tenant_test", {
+      settings: { memberAccess: payload.memberAccess },
+    });
+    expect(state.writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "tenant_test",
+        action: "tenant.patch",
+        meta: expect.objectContaining({ fields: ["memberAccess"] }),
+      }),
+    );
+  });
+
+  it("rejects an open application policy with no eligible roles", async () => {
+    state.role = "admin";
+    const response = await app.request("/tenant", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        memberAccess: {
+          applicationsEnabled: true,
+          pilotApplicationsEnabled: false,
+          dispatcherApplicationsEnabled: false,
+          invitationExpiryDays: 30,
+        },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(state.updateTenant).not.toHaveBeenCalled();
+  });
+
+  it("rejects attempts to bypass the typed membership-access policy", async () => {
+    state.role = "admin";
+    const response = await app.request("/tenant", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        settings: {
+          memberAccess: {
+            applicationsEnabled: true,
+            invitationExpiryDays: 365,
+          },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(state.updateTenant).not.toHaveBeenCalled();
+  });
+
+  it("synchronizes the tenant name to Clerk before persisting it locally", async () => {
+    state.role = "admin";
+    const response = await app.request("/tenant", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Scandinavian Virtual" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(state.updateOrganization).toHaveBeenCalledWith("org_test", {
+      name: "Scandinavian Virtual",
+    });
+    expect(state.updateOrganization.mock.invocationCallOrder[0]).toBeLessThan(
+      state.updateTenant.mock.invocationCallOrder[0]!,
     );
   });
 

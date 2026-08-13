@@ -4,7 +4,7 @@ import { env } from "../env.js";
 import { AppError } from "../lib/errors.js";
 import {
   findMembership,
-  provisionPilotMembershipWithAudit,
+  provisionMembershipWithAudit,
   recoverMembershipAsTenantAdmin,
   upsertMembership,
 } from "../db/repositories/memberships.js";
@@ -26,8 +26,13 @@ export type AuthContext = {
   membership: Membership;
 };
 
+export type ClerkUserContext = {
+  clerkUserId: string;
+};
+
 export type AppVariables = {
   auth: AuthContext;
+  clerkUser: ClerkUserContext;
 };
 
 function bearerToken(authorizationHeader: string | undefined): string | null {
@@ -36,6 +41,50 @@ function bearerToken(authorizationHeader: string | undefined): string | null {
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
   return token;
 }
+
+/** Authenticate a Clerk user without requiring an active organization. */
+export const requireClerkUser = createMiddleware<{ Variables: AppVariables }>(
+  async (context, next) => {
+    if (!hasDatabase()) {
+      throw new AppError(
+        "INTERNAL",
+        "DATABASE_URL is required for authenticated routes",
+        { status: 503 },
+      );
+    }
+
+    const config = env();
+    if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
+      context.set("clerkUser", {
+        clerkUserId: context.req.header("X-Dev-User-Id") ?? "user_dev",
+      });
+      await next();
+      return;
+    }
+
+    if (!config.CLERK_SECRET_KEY) {
+      throw new AppError("INTERNAL", "CLERK_SECRET_KEY is not configured", {
+        status: 503,
+      });
+    }
+    const token = bearerToken(context.req.header("Authorization"));
+    if (!token) throw new AppError("UNAUTHORIZED", "Missing bearer token");
+
+    let payload: { sub?: string };
+    try {
+      payload = (await verifyToken(token, {
+        secretKey: config.CLERK_SECRET_KEY,
+      })) as typeof payload;
+    } catch (error) {
+      throw new AppError("UNAUTHORIZED", "Invalid token", { cause: error });
+    }
+    if (!payload.sub) {
+      throw new AppError("UNAUTHORIZED", "Token missing subject");
+    }
+    context.set("clerkUser", { clerkUserId: payload.sub });
+    await next();
+  },
+);
 
 /**
  * Authenticate + resolve tenant membership.
@@ -153,14 +202,13 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     let membership = await findMembership(tenant.id, clerkUserId);
     const clerkRole = mapClerkOrgRole(jwtPayload.org_role ?? jwtPayload.o?.rol);
     if (!membership) {
-      // Every new Clerk member starts as a pilot and is atomically audited.
-      // A Clerk organization admin may be promoted
-      // only by the serialized, audited no-active-admin recovery statement.
-      // Dispatcher/admin privilege otherwise requires an audited directory
-      // sync or explicit application-admin change.
-      membership = await provisionPilotMembershipWithAudit({
+      // Pilot and dispatcher authority can be provisioned from a Clerk role
+      // that tenant administration assigned. Admin still requires the narrow
+      // no-active-admin recovery path below.
+      membership = await provisionMembershipWithAudit({
         tenantId: tenant.id,
         clerkUserId,
+        role: clerkRole === "dispatcher" ? "dispatcher" : "pilot",
       });
     }
 

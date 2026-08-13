@@ -14,12 +14,21 @@ The application is tenant-addressed. vSAS uses `/vsas`, including:
 
 - `/vsas/sign-in`
 - `/vsas/sign-up`
+- `/vsas/join` for membership application and approval status
 - `/vsas/tasks/*` for Clerk session tasks
 - `/vsas/portal` for pilots
 - `/vsas/dispatch` for dispatchers and administrators
 - `/vsas/settings` for every active member
 
 The active Clerk organization must have the same slug as the URL. The application also verifies that the organization maps to the same database tenant before it reads operational data. If they do not agree, the user sees an organization-mismatch screen rather than data from another tenant.
+
+After account creation, a user without tenant membership is sent to
+`/vsas/join`. They can request the pilot or dispatcher role when that role is
+open. The request does not expose operational data and does not add the user to
+the Clerk organization. A tenant administrator must approve it in VA Dispatch;
+the applicant can return to the join page, cancel a pending request, or select
+the organization after approval. An administrator can instead send a direct
+pilot/dispatcher invitation from the member console.
 
 ## Pilot workflow
 
@@ -124,10 +133,19 @@ An administrator has every dispatcher capability and can open **Organization set
 
 The logon is encrypted before storage and is never returned to the browser. Removing it leaves ACARS unconfigured; production never falls back to the mock adapter.
 
-The admin control plane searches members, updates role/status, synchronizes the
-complete Clerk directory, safely reassigns eligible work, and exposes a
-redacted audit viewer/export. Privacy operations cover approved retention runs,
-subject requests, holds, and external-provider tasks.
+The admin control plane is also the complete tenant-level membership console.
+Administrators can send and revoke Clerk invitations, review and approve or
+reject pilot/dispatcher applications, promote or demote active members, remove
+members from the tenant, synchronize the complete Clerk directory, and safely
+reassign eligible work. Removal disables VA Dispatch access before Clerk is
+called; if provider removal fails, the UI reports the safe local disable and
+offers a retry. The organization-settings page controls the tenant name,
+application switches per role, and invitation lifetime without exposing the
+global Clerk dashboard.
+
+The redacted audit viewer/export records these membership operations. Privacy
+operations cover approved retention runs, subject requests, holds, and
+external-provider tasks.
 
 ## Role and capability matrix
 
@@ -143,8 +161,11 @@ subject requests, holds, and external-provider tasks.
 | Create, plan, edit, monitor, and advance flights |   —   |    Yes     |  Yes  |
 | Use dispatcher ACARS workspace                   |   —   |    Yes     |  Yes  |
 | List tenant members                              |   —   |    Yes     |  Yes  |
-| Synchronize Clerk members                        |   —   |    Yes     |  Yes  |
+| Apply for pilot/dispatcher tenant membership     |  Yes  |    Yes     |  Yes  |
+| Synchronize Clerk members                        |   —   |     —      |  Yes  |
+| Invite, approve, reject, or remove members       |   —   |     —      |  Yes  |
 | Change member roles/status and audit access      |   —   |     —      |  Yes  |
+| Configure tenant membership policy/name          |   —   |     —      |  Yes  |
 | Operate privacy lifecycle workflows              |   —   |     —      |  Yes  |
 | Configure organization Hoppie credentials        |   —   |     —      |  Yes  |
 

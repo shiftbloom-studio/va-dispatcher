@@ -6,6 +6,7 @@ describe("tenant auth routes", () => {
   it("keeps sign-in, sign-up, and session tasks inside the tenant shell", () => {
     expect(getTenantAuthRoutes("vsas")).toEqual({
       home: "/vsas",
+      join: "/vsas/join",
       signIn: "/vsas/sign-in",
       signUp: "/vsas/sign-up",
       taskUrls: {

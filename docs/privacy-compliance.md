@@ -27,8 +27,8 @@ operating procedures for the actual deployment with qualified counsel.
 
 | System                | Personal or linkable data                                                                                                                                                                                                                     |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clerk                 | User and organization identifiers, login identifier/email, name, authentication/session events, IP/device data                                                                                                                                |
-| `memberships`         | Clerk user ID, role, display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, status, timestamps                                                                              |
+| Clerk                 | User and organization identifiers, login/invitation email, invitation state, name, role, authentication/session events, IP/device data                                                                                                        |
+| `memberships`         | Clerk user ID, active and requested role, display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, application/membership status, timestamps                                  |
 | `schedule_requests`   | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                                                                                                         |
 | `flights`             | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                                                                                                        |
 | `dispatch_releases`   | Immutable dispatcher release revisions, operational route/weather, release notes/remarks, dispatcher link                                                                                                                                     |
@@ -46,6 +46,16 @@ operating procedures for the actual deployment with qualified counsel.
 
 Free-text fields can contain personal data even when the schema does not ask
 for it. Train dispatchers and members not to enter sensitive or unrelated data.
+
+Membership applications reuse the existing tenant membership subject rather
+than creating a second applicant profile. The server obtains the display name
+or verified primary email from Clerk; invitation email is handled by Clerk and
+is deliberately omitted from application audit metadata. Pending, rejected,
+cancelled, and removed membership rows remain within the existing membership
+retention/export/erasure policy so later reapplication and operational history
+do not silently fork identity. The controller must state the purpose and
+retention for unsuccessful applications in its approved account policy and
+privacy notice.
 
 ### MSFS 2024 telemetry decision
 

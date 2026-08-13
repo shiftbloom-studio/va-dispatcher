@@ -41,6 +41,7 @@ The primary production shape is a Vercel multi-service project. The Next.js serv
 ### Pilot
 
 - Sign in or create an account inside the tenant-branded Clerk shell.
+- Apply for pilot/dispatcher membership and wait for tenant-admin approval.
 - Save a display name, simulator devices, personal aircraft ACARS callsign,
   SimBrief identity, and Navigraph connection.
 - Request one or more flights across one or more non-overlapping UTC availability intervals.
@@ -64,7 +65,9 @@ The primary production shape is a Vercel multi-service project. The Next.js serv
 - Use every dispatcher capability.
 - Configure, test, replace, or remove the tenant's encrypted Hoppie ground-station credential.
 - Manage member roles/status, safe work reassignment, Clerk directory sync,
-  privacy operations, and tenant audit events through the web control plane.
+  direct invitations, manual applications, safe removal, tenant membership
+  policy, privacy operations, and tenant audit events through the web control
+  plane.
 
 ## Important boundaries
 

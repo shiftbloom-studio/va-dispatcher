@@ -1,13 +1,17 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import { isClerkAPIResponseError } from "@clerk/backend/errors";
 import type { AppVariables } from "../middleware/auth.js";
 import {
   getClerkClient,
   requireAuth,
   requireRole,
 } from "../middleware/auth.js";
-import { listMemberships } from "../db/repositories/memberships.js";
+import {
+  findMembershipById,
+  listMemberships,
+} from "../db/repositories/memberships.js";
 import {
   getAdministrativeMemberImpact,
   syncMembersFromDirectory,
@@ -17,6 +21,9 @@ import { env } from "../env.js";
 import { acarsStationSchema } from "../domain/acars/validation.js";
 import { isUniqueViolation } from "../lib/postgres.js";
 import { AppError } from "../lib/errors.js";
+import { clerkOrgRole } from "../domain/members/roles.js";
+import { memberAccessSettings } from "../domain/tenants/member-access.js";
+import { writeAudit } from "../db/repositories/audit.js";
 
 export const membersRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -62,6 +69,25 @@ const memberUpdateSchema = z
     }
   });
 
+const invitationQuerySchema = z.object({
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+const invitationInputSchema = z.object({
+  emailAddress: z.string().trim().email().max(320),
+  role: z.enum(["pilot", "dispatcher"]),
+});
+
+const applicationDecisionSchema = z.object({
+  role: z.enum(["pilot", "dispatcher"]).optional(),
+  reassignToMembershipId: z.string().uuid().optional(),
+});
+
+const kickMemberSchema = z.object({
+  reassignToMembershipId: z.string().uuid().optional(),
+});
+
 membersRoutes.use("/members", requireAuth);
 membersRoutes.use("/members/*", requireAuth);
 
@@ -75,6 +101,187 @@ const privateMemberResponse: MiddlewareHandler<{
 };
 membersRoutes.use("/members", privateMemberResponse);
 membersRoutes.use("/members/*", privateMemberResponse);
+
+membersRoutes.get(
+  "/members/invitations",
+  requireRole("admin"),
+  zValidator("query", invitationQuerySchema),
+  async (c) => {
+    const auth = c.get("auth");
+    if (clerkBypassed()) return c.json({ items: [], totalCount: 0 });
+    try {
+      const page =
+        await getClerkClient().organizations.getOrganizationInvitationList({
+          organizationId: auth.clerkOrgId,
+          status: ["pending"],
+          ...c.req.valid("query"),
+        });
+      return c.json({
+        items: page.data.map(publicInvitation),
+        totalCount: page.totalCount,
+      });
+    } catch (error) {
+      throw publicClerkError(error, "Clerk invitations could not be loaded");
+    }
+  },
+);
+
+membersRoutes.post(
+  "/members/invitations",
+  requireRole("admin"),
+  zValidator("json", invitationInputSchema),
+  async (c) => {
+    const auth = c.get("auth");
+    if (clerkBypassed()) {
+      throw new AppError(
+        "UNPROCESSABLE",
+        "Clerk invitations are unavailable in development auth-bypass mode",
+      );
+    }
+    const body = c.req.valid("json");
+    let invitation;
+    try {
+      invitation =
+        await getClerkClient().organizations.createOrganizationInvitation({
+          organizationId: auth.clerkOrgId,
+          inviterUserId: auth.clerkUserId,
+          emailAddress: body.emailAddress,
+          role: clerkOrgRole(body.role),
+          expiresInDays: memberAccessSettings(auth.tenant.settings)
+            .invitationExpiryDays,
+          redirectUrl: invitationRedirectUrl(auth.tenant.slug),
+          publicMetadata: {
+            vaDispatchRole: body.role,
+            tenantSlug: auth.tenant.slug,
+          },
+        });
+    } catch (error) {
+      throw publicClerkError(error, "Clerk could not create the invitation");
+    }
+    let auditRecorded = true;
+    try {
+      await writeAudit({
+        tenantId: auth.tenantId,
+        actorMembershipId: auth.membershipId,
+        action: "membership.invitation_created",
+        entityType: "organization_invitation",
+        entityId: invitation.id,
+        meta: {
+          role: body.role,
+          expiresAt: new Date(invitation.expiresAt).toISOString(),
+        },
+      });
+    } catch {
+      auditRecorded = false;
+    }
+    return c.json({ invitation: publicInvitation(invitation), auditRecorded });
+  },
+);
+
+membersRoutes.delete(
+  "/members/invitations/:invitationId",
+  requireRole("admin"),
+  async (c) => {
+    const auth = c.get("auth");
+    if (clerkBypassed()) {
+      throw new AppError(
+        "UNPROCESSABLE",
+        "Clerk invitations are unavailable in development auth-bypass mode",
+      );
+    }
+    let invitation;
+    try {
+      invitation =
+        await getClerkClient().organizations.revokeOrganizationInvitation({
+          organizationId: auth.clerkOrgId,
+          invitationId: c.req.param("invitationId"),
+          requestingUserId: auth.clerkUserId,
+        });
+    } catch (error) {
+      throw publicClerkError(error, "Clerk could not revoke the invitation");
+    }
+    let auditRecorded = true;
+    try {
+      await writeAudit({
+        tenantId: auth.tenantId,
+        actorMembershipId: auth.membershipId,
+        action: "membership.invitation_revoked",
+        entityType: "organization_invitation",
+        entityId: invitation.id,
+        meta: { role: invitation.role },
+      });
+    } catch {
+      auditRecorded = false;
+    }
+    return c.json({ invitation: publicInvitation(invitation), auditRecorded });
+  },
+);
+
+membersRoutes.post(
+  "/members/:id/application/approve",
+  requireRole("admin"),
+  zValidator("json", applicationDecisionSchema),
+  async (c) => {
+    const auth = c.get("auth");
+    const membership = await requireApplication(
+      auth.tenantId,
+      c.req.param("id"),
+    );
+    const body = c.req.valid("json");
+    const requestedRole = membership.requestedRole ?? membership.role;
+    const role =
+      body.role ?? (requestedRole === "admin" ? "pilot" : requestedRole);
+    if (!clerkBypassed()) {
+      await ensureClerkMembership({
+        organizationId: auth.clerkOrgId,
+        clerkUserId: membership.clerkUserId,
+        role,
+      });
+    }
+    const result = await updateMemberAsAdministrator({
+      tenantId: auth.tenantId,
+      actorMembershipId: auth.membershipId,
+      membershipId: membership.id,
+      patch: {
+        role,
+        status: "active",
+        reassignToMembershipId: body.reassignToMembershipId,
+      },
+      auditAction: "membership.application_approved",
+    });
+    return c.json({
+      ...publicMember(result.membership),
+      reassignedFlightCount: result.reassignedFlightCount,
+      reassignedScheduleRequestCount: result.reassignedScheduleRequestCount,
+      clerkSynchronized: !clerkBypassed(),
+    });
+  },
+);
+
+membersRoutes.post(
+  "/members/:id/application/reject",
+  requireRole("admin"),
+  async (c) => {
+    const auth = c.get("auth");
+    const membership = await requireApplication(
+      auth.tenantId,
+      c.req.param("id"),
+    );
+    const result = await updateMemberAsAdministrator({
+      tenantId: auth.tenantId,
+      actorMembershipId: auth.membershipId,
+      membershipId: membership.id,
+      patch: { status: "disabled" },
+      auditAction: "membership.application_rejected",
+    });
+    return c.json({
+      ...publicMember(result.membership),
+      reassignedFlightCount: result.reassignedFlightCount,
+      reassignedScheduleRequestCount: result.reassignedScheduleRequestCount,
+      clerkSynchronized: true,
+    });
+  },
+);
 
 membersRoutes.get(
   "/members",
@@ -110,22 +317,62 @@ membersRoutes.patch(
   async (c) => {
     const auth = c.get("auth");
     const id = c.req.param("id");
-    if (c.req.valid("json").reassignToMembershipId === id) {
+    const patch = c.req.valid("json");
+    if (patch.reassignToMembershipId === id) {
       throw new AppError("BAD_REQUEST", "A member cannot replace themselves");
+    }
+    const current = await findMembershipById(auth.tenantId, id);
+    if (!current) throw new AppError("NOT_FOUND", "Member not found");
+    if (current.status === "invited") {
+      throw new AppError(
+        "CONFLICT",
+        "Approve or reject pending applications through the application review action",
+      );
+    }
+    if (patch.status === "invited") {
+      throw new AppError(
+        "UNPROCESSABLE",
+        "Pending application status can only be created by the applicant",
+      );
+    }
+    const nextRole = patch.role ?? current.role;
+    const nextStatus = patch.status ?? current.status;
+    const needsClerkSync =
+      nextStatus === "active" &&
+      (current.status !== "active" || nextRole !== current.role);
+    if (needsClerkSync && !clerkBypassed()) {
+      await ensureClerkMembership({
+        organizationId: auth.clerkOrgId,
+        clerkUserId: current.clerkUserId,
+        role: nextRole,
+      });
     }
     try {
       const result = await updateMemberAsAdministrator({
         tenantId: auth.tenantId,
         actorMembershipId: auth.membershipId,
         membershipId: id,
-        patch: c.req.valid("json"),
+        patch,
       });
       return c.json({
         ...publicMember(result.membership),
         reassignedFlightCount: result.reassignedFlightCount,
         reassignedScheduleRequestCount: result.reassignedScheduleRequestCount,
+        clerkSynchronized: !needsClerkSync || !clerkBypassed(),
       });
     } catch (error) {
+      if (needsClerkSync && !clerkBypassed()) {
+        try {
+          await ensureClerkMembership({
+            organizationId: auth.clerkOrgId,
+            clerkUserId: current.clerkUserId,
+            role: current.role,
+          });
+        } catch {
+          // The application membership remains authoritative and unchanged.
+          // A later explicit save or directory sync can repair Clerk drift.
+        }
+      }
       if (isUniqueViolation(error)) {
         throw new AppError(
           "CONFLICT",
@@ -134,6 +381,71 @@ membersRoutes.patch(
       }
       throw error;
     }
+  },
+);
+
+membersRoutes.delete(
+  "/members/:id",
+  requireRole("admin"),
+  zValidator("json", kickMemberSchema),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id");
+    const body = c.req.valid("json");
+    if (body.reassignToMembershipId === id) {
+      throw new AppError("BAD_REQUEST", "A member cannot replace themselves");
+    }
+    const current = await findMembershipById(auth.tenantId, id);
+    if (!current) throw new AppError("NOT_FOUND", "Member not found");
+
+    let membership = current;
+    let reassignedFlightCount = 0;
+    let reassignedScheduleRequestCount = 0;
+    if (current.status !== "disabled") {
+      const result = await updateMemberAsAdministrator({
+        tenantId: auth.tenantId,
+        actorMembershipId: auth.membershipId,
+        membershipId: id,
+        patch: {
+          status: "disabled",
+          reassignToMembershipId: body.reassignToMembershipId,
+        },
+        auditAction: "membership.kick_requested",
+      });
+      membership = result.membership;
+      reassignedFlightCount = result.reassignedFlightCount;
+      reassignedScheduleRequestCount = result.reassignedScheduleRequestCount;
+    }
+
+    const clerkSynchronized = clerkBypassed()
+      ? false
+      : await removeClerkMembership({
+          organizationId: auth.clerkOrgId,
+          clerkUserId: membership.clerkUserId,
+        });
+    let completionAuditRecorded = false;
+    if (clerkSynchronized) {
+      try {
+        await writeAudit({
+          tenantId: auth.tenantId,
+          actorMembershipId: auth.membershipId,
+          action: "membership.kicked",
+          entityType: "membership",
+          entityId: membership.id,
+          meta: { clerkMembershipRemoved: true },
+        });
+        completionAuditRecorded = true;
+      } catch {
+        // The atomic local disable audit remains the durable security record.
+      }
+    }
+    return c.json({
+      ...publicMember(membership),
+      reassignedFlightCount,
+      reassignedScheduleRequestCount,
+      clerkSynchronized,
+      completionAuditRecorded,
+    });
   },
 );
 
@@ -172,6 +484,7 @@ function publicMember(membership: {
   id: string;
   clerkUserId: string;
   role: "pilot" | "dispatcher" | "admin";
+  requestedRole?: "pilot" | "dispatcher" | "admin" | null;
   displayName: string | null;
   pilotCallsign: string | null;
   status: "active" | "invited" | "disabled";
@@ -186,6 +499,7 @@ function publicMember(membership: {
     id: membership.id,
     clerkUserId: membership.clerkUserId,
     role: membership.role,
+    requestedRole: membership.requestedRole ?? null,
     displayName: membership.displayName,
     pilotCallsign: membership.pilotCallsign,
     status: membership.status,
@@ -201,4 +515,125 @@ function publicMember(membership: {
             membership.terminalRequestLinkedFlightCount,
         }),
   };
+}
+
+async function requireApplication(tenantId: string, membershipId: string) {
+  const membership = await findMembershipById(tenantId, membershipId);
+  if (!membership) throw new AppError("NOT_FOUND", "Application not found");
+  if (membership.status !== "invited") {
+    throw new AppError("CONFLICT", "This application is no longer pending");
+  }
+  return membership;
+}
+
+async function ensureClerkMembership(input: {
+  organizationId: string;
+  clerkUserId: string;
+  role: "pilot" | "dispatcher" | "admin";
+}): Promise<void> {
+  const client = getClerkClient();
+  try {
+    const existing = await client.organizations.getOrganizationMembershipList({
+      organizationId: input.organizationId,
+      userId: [input.clerkUserId],
+      limit: 1,
+    });
+    const payload = {
+      organizationId: input.organizationId,
+      userId: input.clerkUserId,
+      role: clerkOrgRole(input.role),
+    };
+    if (existing.data.length > 0) {
+      await client.organizations.updateOrganizationMembership(payload);
+    } else {
+      await client.organizations.createOrganizationMembership(payload);
+    }
+  } catch (error) {
+    throw publicClerkError(
+      error,
+      "Clerk could not synchronize the organization membership",
+    );
+  }
+}
+
+async function removeClerkMembership(input: {
+  organizationId: string;
+  clerkUserId: string;
+}): Promise<boolean> {
+  const client = getClerkClient();
+  try {
+    const existing = await client.organizations.getOrganizationMembershipList({
+      organizationId: input.organizationId,
+      userId: [input.clerkUserId],
+      limit: 1,
+    });
+    if (existing.data.length > 0) {
+      await client.organizations.deleteOrganizationMembership({
+        organizationId: input.organizationId,
+        userId: input.clerkUserId,
+      });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function publicInvitation(invitation: {
+  id: string;
+  emailAddress: string;
+  role: string;
+  status?: "pending" | "accepted" | "revoked" | "expired";
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+}) {
+  return {
+    id: invitation.id,
+    emailAddress: invitation.emailAddress,
+    role: invitation.role,
+    status: invitation.status ?? "pending",
+    createdAt: new Date(invitation.createdAt).toISOString(),
+    updatedAt: new Date(invitation.updatedAt).toISOString(),
+    expiresAt: new Date(invitation.expiresAt).toISOString(),
+  };
+}
+
+function invitationRedirectUrl(slug: string): string {
+  const config = env();
+  const origin = config.APP_ORIGIN ?? config.CORS_ORIGIN.split(",")[0]?.trim();
+  if (!origin) {
+    throw new AppError(
+      "INTERNAL",
+      "APP_ORIGIN or CORS_ORIGIN is required for organization invitations",
+      { status: 503 },
+    );
+  }
+  return new URL(`/${slug}`, origin).toString();
+}
+
+function clerkBypassed(): boolean {
+  const config = env();
+  return config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production";
+}
+
+function publicClerkError(error: unknown, message: string): AppError {
+  if (isClerkAPIResponseError(error)) {
+    if (error.status === 404) {
+      return new AppError("NOT_FOUND", message, { cause: error });
+    }
+    if (error.status === 409) {
+      return new AppError("CONFLICT", message, { cause: error });
+    }
+    if (error.status === 400 || error.status === 422) {
+      return new AppError("UNPROCESSABLE", message, { cause: error });
+    }
+    if (error.status === 429) {
+      return new AppError("UPSTREAM", "Clerk rate limit reached; try later", {
+        status: 429,
+        cause: error,
+      });
+    }
+  }
+  return new AppError("UPSTREAM", message, { cause: error });
 }

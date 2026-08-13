@@ -20,7 +20,8 @@ Compromise or misconfiguration at one boundary must not be assumed safe because 
 ### Authentication and tenant isolation
 
 - Clerk JWT verification on business routes.
-- Active organization required.
+- Active organization required for business data; the narrow application route
+  verifies a user without organization context and exposes no operational data.
 - Narrow trusted bootstrap for only `VSAS_CLERK_ORG_ID`.
 - Active local membership required.
 - Three-way web agreement among URL slug, Clerk organization, and API tenant.
@@ -31,7 +32,8 @@ Compromise or misconfiguration at one boundary must not be assumed safe because 
 - Ranked pilot, dispatcher, and admin roles.
 - Resource ownership for pilot schedule requests and flights.
 - Dispatcher-only operations board, member list, and ACARS.
-- Admin-only tenant/member mutations and Hoppie configuration.
+- Admin-only invitation/application decisions, tenant/member mutations,
+  removal, directory sync, and Hoppie configuration.
 
 ### Abuse prevention
 
@@ -80,19 +82,19 @@ Actions are pinned to full commit SHAs. Repository administrators must still ena
 
 ## Personal and linkable data inventory
 
-| System                    | Data                                                                              |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| Clerk                     | User/org IDs, login identifier/email, name, sessions, IP/device/security events   |
-| Memberships               | Clerk ID, role, display name, callsign, SimBrief/Navigraph identity, status       |
-| Schedule requests         | Availability, preferences, notes, status, reasons, timestamps                     |
-| Flights                   | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields           |
-| Dispatch planning         | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP            |
-| Simulator telemetry       | Device identity, position/phase samples, recent track, OOOI provenance            |
-| ACARS                     | Station identifiers, message text, provider metadata, actor, timestamps           |
-| Audit events              | Actor, action, entity IDs, metadata, time                                         |
-| Privacy operations        | Policy, request/hold/task state, approvals, reports, export cursor                |
-| Infrastructure            | Request IDs, IP and HTTP/security logs at providers                               |
-| Optional Vercel telemetry | Consent-gated aggregated page/referrer/device/coarse location and Web Vitals data |
+| System                    | Data                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Clerk                     | User/org IDs, login/invitation email, role/invitation state, name, sessions, IP/device/security events   |
+| Memberships               | Clerk ID, active/requested role, display name, callsign, SimBrief/Navigraph identity, application/status |
+| Schedule requests         | Availability, preferences, notes, status, reasons, timestamps                                            |
+| Flights                   | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields                                  |
+| Dispatch planning         | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP                                   |
+| Simulator telemetry       | Device identity, position/phase samples, recent track, OOOI provenance                                   |
+| ACARS                     | Station identifiers, message text, provider metadata, actor, timestamps                                  |
+| Audit events              | Actor, action, entity IDs, metadata, time                                                                |
+| Privacy operations        | Policy, request/hold/task state, approvals, reports, export cursor                                       |
+| Infrastructure            | Request IDs, IP and HTTP/security logs at providers                                                      |
+| Optional Vercel telemetry | Consent-gated aggregated page/referrer/device/coarse location and Web Vitals data                        |
 
 Treat every free-text field as potentially personal. Do not solicit sensitive or unrelated information.
 

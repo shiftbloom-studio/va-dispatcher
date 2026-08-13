@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  getClerkClient,
+  requireAuth,
+  requireRole,
+} from "../middleware/auth.js";
 import { findTenantById, updateTenant } from "../db/repositories/tenants.js";
 import { AppError } from "../lib/errors.js";
 import { decryptSecret, encryptSecret } from "../lib/crypto.js";
@@ -22,8 +26,33 @@ import {
   TENANT_LOGO_MAX_BYTES,
   validateTenantLogo,
 } from "../domain/tenants/logo.js";
+import {
+  memberAccessSettings,
+  withMemberAccessSettings,
+} from "../domain/tenants/member-access.js";
 
 export const tenantRoutes = new Hono<{ Variables: AppVariables }>();
+
+const memberAccessSchema = z
+  .object({
+    applicationsEnabled: z.boolean(),
+    pilotApplicationsEnabled: z.boolean(),
+    dispatcherApplicationsEnabled: z.boolean(),
+    invitationExpiryDays: z.number().int().min(1).max(30),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.applicationsEnabled &&
+      !value.pilotApplicationsEnabled &&
+      !value.dispatcherApplicationsEnabled
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Enable pilot or dispatcher applications before opening applications",
+      });
+    }
+  });
 
 tenantRoutes.use("/tenant", requireAuth);
 tenantRoutes.use("/tenant/*", requireAuth);
@@ -44,6 +73,7 @@ tenantRoutes.get("/tenant", async (c) => {
     hoppieLastTestedAt: hoppieLastTestedAt(tenant.settings),
     brand: serializeBrand(tenant),
     settings: tenant.settings,
+    memberAccess: memberAccessSettings(tenant.settings),
   });
 });
 
@@ -52,29 +82,107 @@ tenantRoutes.patch(
   requireRole("admin"),
   zValidator(
     "json",
-    z.object({
-      name: z.string().min(1).max(120).optional(),
-      settings: z.record(z.string(), z.unknown()).optional(),
-    }),
+    z
+      .object({
+        name: z.string().trim().min(1).max(120).optional(),
+        settings: z.record(z.string(), z.unknown()).optional(),
+        memberAccess: memberAccessSchema.optional(),
+      })
+      .superRefine((value, context) => {
+        if (
+          value.settings &&
+          Object.prototype.hasOwnProperty.call(value.settings, "memberAccess")
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["settings", "memberAccess"],
+            message: "Update membership access through the memberAccess field",
+          });
+        }
+      })
+      .refine((value) => Object.keys(value).length > 0, {
+        message: "At least one tenant field must be supplied",
+      }),
   ),
   async (c) => {
     const auth = c.get("auth");
     const body = c.req.valid("json");
-    const updated = await updateTenant(auth.tenantId, body);
-    if (!updated) throw new AppError("NOT_FOUND", "Tenant not found");
+    const current = await requireTenant(auth.tenantId);
+    const config = env();
+    let clerkSynchronized = true;
+    const clerkNameChanged = Boolean(body.name && body.name !== current.name);
+    if (clerkNameChanged) {
+      if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
+        clerkSynchronized = false;
+      } else {
+        try {
+          await getClerkClient().organizations.updateOrganization(
+            auth.clerkOrgId,
+            { name: body.name },
+          );
+        } catch (error) {
+          throw new AppError(
+            "UPSTREAM",
+            "Clerk could not update the organization name; no local settings were changed",
+            { cause: error },
+          );
+        }
+      }
+    }
+    const baseSettings = { ...current.settings, ...(body.settings ?? {}) };
+    const settings = body.memberAccess
+      ? withMemberAccessSettings(baseSettings, body.memberAccess)
+      : body.settings
+        ? baseSettings
+        : undefined;
+    let updated: Tenant | null;
+    try {
+      updated = await updateTenant(auth.tenantId, {
+        ...(body.name === undefined ? {} : { name: body.name }),
+        ...(settings === undefined ? {} : { settings }),
+      });
+    } catch (error) {
+      if (clerkNameChanged && clerkSynchronized) {
+        try {
+          await getClerkClient().organizations.updateOrganization(
+            auth.clerkOrgId,
+            { name: current.name },
+          );
+        } catch {
+          // Preserve the original database error. The next explicit save can
+          // converge the provider name, and no local authority was changed.
+        }
+      }
+      throw error;
+    }
+    if (!updated) {
+      if (clerkNameChanged && clerkSynchronized) {
+        try {
+          await getClerkClient().organizations.updateOrganization(
+            auth.clerkOrgId,
+            { name: current.name },
+          );
+        } catch {
+          // The tenant vanished locally; do not mask that primary condition.
+        }
+      }
+      throw new AppError("NOT_FOUND", "Tenant not found");
+    }
     await writeAudit({
       tenantId: auth.tenantId,
       actorMembershipId: auth.membershipId,
       action: "tenant.patch",
       entityType: "tenant",
       entityId: auth.tenantId,
-      meta: { fields: Object.keys(body) },
+      meta: { fields: Object.keys(body), clerkSynchronized },
     });
     return c.json({
       id: updated.id,
       slug: updated.slug,
       name: updated.name,
       settings: updated.settings,
+      memberAccess: memberAccessSettings(updated.settings),
+      clerkSynchronized,
     });
   },
 );
