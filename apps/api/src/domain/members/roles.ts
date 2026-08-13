@@ -30,3 +30,8 @@ export function mapClerkOrgRole(
   if (normalized === "pilot" || normalized === "member") return "pilot";
   return "pilot";
 }
+
+/** Clerk role keys are instance-defined once and assigned per tenant member. */
+export function clerkOrgRole(role: MemberRole): `org:${MemberRole}` {
+  return `org:${role}`;
+}

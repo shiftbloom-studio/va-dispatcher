@@ -35,6 +35,20 @@ export const tenantBrandSchema = z.object({
 });
 export type TenantBrand = z.infer<typeof tenantBrandSchema>;
 
+export const memberAccessSettingsSchema = z.object({
+  applicationsEnabled: z.boolean(),
+  pilotApplicationsEnabled: z.boolean(),
+  dispatcherApplicationsEnabled: z.boolean(),
+  invitationExpiryDays: z.number().int().min(1).max(30),
+});
+const defaultMemberAccessSettings = {
+  applicationsEnabled: true,
+  pilotApplicationsEnabled: true,
+  dispatcherApplicationsEnabled: true,
+  invitationExpiryDays: 30,
+};
+export type MemberAccessSettings = z.infer<typeof memberAccessSettingsSchema>;
+
 export const tenantSchema = z.object({
   id: z.string(),
   slug: z.string(),
@@ -50,6 +64,7 @@ export const tenantDetailSchema = tenantSchema.extend({
   hoppieLastTestedAt: z.string().nullable(),
   brand: tenantBrandSchema,
   settings: z.record(z.string(), z.unknown()),
+  memberAccess: memberAccessSettingsSchema.default(defaultMemberAccessSettings),
 });
 export type TenantDetail = z.infer<typeof tenantDetailSchema>;
 
@@ -69,6 +84,16 @@ export const publicTenantSchema = z.object({
   slug: z.string(),
   name: z.string(),
   brand: tenantBrandSchema,
+  memberAccess: memberAccessSettingsSchema.default(defaultMemberAccessSettings),
+});
+
+export const tenantAdministrationResponseSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  name: z.string(),
+  settings: z.record(z.string(), z.unknown()),
+  memberAccess: memberAccessSettingsSchema,
+  clerkSynchronized: z.boolean(),
 });
 
 export const meSchema = z.object({
@@ -390,6 +415,7 @@ export const memberSchema = z.object({
   id: z.string(),
   clerkUserId: z.string(),
   role: roleSchema,
+  requestedRole: roleSchema.nullable().default(null),
   pilotCallsign: z.string().nullish(),
   displayName: z.string().nullish(),
   status: z.enum(["active", "invited", "disabled"]),
@@ -414,6 +440,44 @@ export const memberImpactSchema = z.object({
 export const memberUpdateResponseSchema = memberSchema.extend({
   reassignedFlightCount: z.number().int().nonnegative(),
   reassignedScheduleRequestCount: z.number().int().nonnegative(),
+  clerkSynchronized: z.boolean().default(true),
+});
+export const memberKickResponseSchema = memberUpdateResponseSchema.extend({
+  completionAuditRecorded: z.boolean(),
+});
+export const organizationInvitationSchema = z.object({
+  id: z.string(),
+  emailAddress: z.string().email(),
+  role: z.string(),
+  status: z.enum(["pending", "accepted", "revoked", "expired"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  expiresAt: z.string(),
+});
+export type OrganizationInvitation = z.infer<
+  typeof organizationInvitationSchema
+>;
+export const organizationInvitationsSchema = z.object({
+  items: z.array(organizationInvitationSchema),
+  totalCount: z.number().int().nonnegative(),
+});
+export const organizationInvitationMutationSchema = z.object({
+  invitation: organizationInvitationSchema,
+  auditRecorded: z.boolean(),
+});
+export const membershipApplicationSchema = z.object({
+  applicationsEnabled: z.boolean(),
+  allowedRoles: z.array(z.enum(["pilot", "dispatcher"])),
+  application: z
+    .object({
+      state: z.enum(["pending", "active", "closed"]),
+      requestedRole: roleSchema,
+      displayName: z.string().nullable(),
+      submittedAt: z.string(),
+      updatedAt: z.string(),
+    })
+    .nullable(),
+  submitted: z.boolean().optional(),
 });
 export const memberSyncResponseSchema = z.object({
   complete: z.boolean(),

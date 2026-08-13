@@ -20,6 +20,7 @@ export default async function ProtectedLayout({
 
   const identity = await getServerIdentity(slug);
   if (identity.kind === "signed-out") redirect(`/${slug}/sign-in`);
+  if (identity.kind === "join-required") redirect(`/${slug}/join`);
   if (identity.kind === "mismatch") {
     return (
       <OrganizationMismatch tenantName={tenant.name} reason={identity.reason} />

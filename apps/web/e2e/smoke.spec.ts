@@ -1138,3 +1138,138 @@ test("admin configures the tenant Hoppie ground station", async ({
   ).toBeVisible();
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
 });
+
+test("admin invites, approves, and removes tenant members without Clerk UI", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    { name: "e2e-role", value: "admin", domain: "127.0.0.1", path: "/" },
+  ]);
+  await baseFixtures(page);
+  const applicant = {
+    ...pilot,
+    id: "26000000-0000-4000-8000-000000000031",
+    clerkUserId: "user-applicant",
+    role: "pilot",
+    requestedRole: "dispatcher",
+    displayName: "Dispatcher Applicant",
+    pilotCallsign: null,
+    status: "invited",
+    openFlightCount: 0,
+    activeFlightCount: 0,
+    openScheduleRequestCount: 0,
+    terminalRequestLinkedFlightCount: 0,
+  };
+  const activeApplicant = {
+    ...applicant,
+    role: "dispatcher",
+    requestedRole: null,
+    status: "active",
+  };
+  let pending = true;
+  let invited = false;
+  let removed = false;
+
+  await page.route("**/api/v1/me", (route) =>
+    json(route, {
+      user: { clerkUserId: "admin-test" },
+      membership: {
+        ...pilot,
+        id: "admin-membership",
+        role: "admin",
+        displayName: "Test Admin",
+      },
+      tenant: {
+        id: "tenant-vsas",
+        slug: "vsas",
+        name: "Virtual SAS",
+        hoppieStation: "VSAS",
+      },
+    }),
+  );
+  await page.route("**/api/v1/members/invitations*", (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        emailAddress: "new.dispatcher@example.test",
+        role: "dispatcher",
+      });
+      invited = true;
+      return json(route, {
+        invitation: {
+          id: "orginv-e2e",
+          emailAddress: "new.dispatcher@example.test",
+          role: "org:dispatcher",
+          status: "pending",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          expiresAt: "2026-09-30T00:00:00.000Z",
+        },
+        auditRecorded: true,
+      });
+    }
+    return json(route, { items: [], totalCount: 0 });
+  });
+  await page.route(
+    `**/api/v1/members/${applicant.id}/application/approve`,
+    (route) => {
+      expect(route.request().postDataJSON()).toEqual({ role: "dispatcher" });
+      pending = false;
+      return json(route, {
+        ...activeApplicant,
+        reassignedFlightCount: 0,
+        reassignedScheduleRequestCount: 0,
+        clerkSynchronized: true,
+      });
+    },
+  );
+  await page.route(`**/api/v1/members/${applicant.id}`, (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    expect(route.request().postDataJSON()).toEqual({});
+    removed = true;
+    return json(route, {
+      ...activeApplicant,
+      status: "disabled",
+      reassignedFlightCount: 0,
+      reassignedScheduleRequestCount: 0,
+      clerkSynchronized: true,
+      completionAuditRecorded: true,
+    });
+  });
+  await page.route("**/api/v1/members?*", (route) => {
+    const url = new URL(route.request().url());
+    return json(route, {
+      items:
+        url.searchParams.get("status") === "invited"
+          ? pending
+            ? [applicant]
+            : []
+          : [activeApplicant],
+      nextCursor: null,
+    });
+  });
+
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/vsas/admin");
+  await continueWithoutAnalytics(page);
+
+  await page.getByLabel("Email address").fill("new.dispatcher@example.test");
+  await page.getByLabel("Tenant role").selectOption("dispatcher");
+  await page.getByRole("button", { name: "Send invitation" }).click();
+  await expect(page.getByText("Invitation updated.")).toBeVisible();
+  expect(invited).toBe(true);
+
+  await expect(page.getByText("Dispatcher Applicant").first()).toBeVisible();
+  await page.getByRole("button", { name: "Approve" }).click();
+  await expect(
+    page.getByText("No applications are waiting for review."),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Remove from organization" }).click();
+  await expect(
+    page.getByText(
+      "Member removed from the organization and disabled locally.",
+    ),
+  ).toBeVisible();
+  expect(removed).toBe(true);
+});

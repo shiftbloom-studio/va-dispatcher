@@ -36,13 +36,25 @@ The active Clerk organization slug differs from the URL. Select the vSAS organiz
 
 ### “Membership is not active”
 
-The local membership is `invited` or `disabled`. An administrator must review and change it through the authorized membership workflow.
+The local membership is `invited` or `disabled`. Check `/vsas/join` for a
+pending application. An administrator must approve it or restore/remove the
+member through the authorized tenant workflow. Clerk directory presence alone
+never reactivates local access.
+
+### Invitation was accepted but access is still denied
+
+Confirm the invitation role is `org:pilot` or `org:dispatcher`, its organization
+slug matches the tenant URL, and the user selected that active organization. If
+the user already has a disabled/invited local record, review it in VA Dispatch;
+do not delete application history or bypass local status. A failed removal can
+also leave a safe disabled record plus a stale Clerk membership—repeat **Remove
+from organization** to finish provider synchronization.
 
 ### Wrong role after a Clerk change
 
 Runtime authorization uses the local membership. Run the paged Clerk directory
 synchronization or update the membership as an Admin, then verify the
-conservative mapping. First provisioning is audited as pilot-only. The sole
+conservative mapping. First provisioning is audited as pilot or dispatcher. The sole
 authentication-time exception promotes a verified Clerk organization Admin
 when the tenant has no active application Admin; it does not keep syncing Clerk
 claims on later requests.

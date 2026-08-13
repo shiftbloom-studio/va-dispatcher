@@ -11,6 +11,8 @@ import {
   listMemberships,
   provisionPilotMembershipWithAudit,
   recoverMembershipAsTenantAdmin,
+  submitMembershipApplicationWithAudit,
+  cancelMembershipApplicationWithAudit,
 } from "./memberships.js";
 
 const { Pool } = pg;
@@ -735,6 +737,130 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       [TENANT_ONE, "user_unaudited_first_login"],
     );
     expect(membership.rows[0]?.count).toBe(0);
+  });
+
+  it("submits, updates, and cancels a tenant-scoped membership application atomically", async () => {
+    const clerkUserId = "user_membership_applicant";
+    const submitted = await submitMembershipApplicationWithAudit({
+      tenantId: TENANT_ONE,
+      clerkUserId,
+      requestedRole: "dispatcher",
+      displayName: "Applicant",
+    });
+    expect(submitted).toMatchObject({
+      submitted: true,
+      membership: {
+        tenantId: TENANT_ONE,
+        clerkUserId,
+        role: "pilot",
+        requestedRole: "dispatcher",
+        status: "invited",
+      },
+    });
+
+    const revised = await submitMembershipApplicationWithAudit({
+      tenantId: TENANT_ONE,
+      clerkUserId,
+      requestedRole: "pilot",
+      displayName: "Applicant Updated",
+    });
+    expect(revised.membership).toMatchObject({
+      id: submitted.membership.id,
+      requestedRole: "pilot",
+      displayName: "Applicant Updated",
+      status: "invited",
+    });
+
+    await expect(
+      cancelMembershipApplicationWithAudit({
+        tenantId: TENANT_TWO,
+        clerkUserId,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      cancelMembershipApplicationWithAudit({
+        tenantId: TENANT_ONE,
+        clerkUserId,
+      }),
+    ).resolves.toMatchObject({
+      id: submitted.membership.id,
+      requestedRole: "pilot",
+      status: "disabled",
+    });
+
+    const audit = await pool.query<{ action: string }>(
+      `select action from audit_events
+       where tenant_id = $1 and entity_id = $2
+       order by created_at`,
+      [TENANT_ONE, submitted.membership.id],
+    );
+    expect(audit.rows.map((row) => row.action)).toEqual([
+      "membership.application_submitted",
+      "membership.application_submitted",
+      "membership.application_cancelled",
+    ]);
+  });
+
+  it("never downgrades an active member through membership application submission", async () => {
+    const result = await submitMembershipApplicationWithAudit({
+      tenantId: TENANT_ONE,
+      clerkUserId: "pilot_one",
+      requestedRole: "dispatcher",
+      displayName: "Attempted Application",
+    });
+
+    expect(result).toMatchObject({
+      submitted: false,
+      membership: {
+        id: PILOT_ONE,
+        role: "pilot",
+        requestedRole: null,
+        status: "active",
+      },
+    });
+    const audit = await pool.query<{ count: number }>(
+      `select count(*)::int as count from audit_events
+       where tenant_id = $1
+         and entity_id = $2
+         and action = 'membership.application_submitted'`,
+      [TENANT_ONE, PILOT_ONE],
+    );
+    expect(audit.rows[0]?.count).toBe(0);
+  });
+
+  it("accepts only the first decision for a pending membership application", async () => {
+    const submitted = await submitMembershipApplicationWithAudit({
+      tenantId: TENANT_ONE,
+      clerkUserId: "user_decision_race",
+      requestedRole: "dispatcher",
+      displayName: "Decision Race",
+    });
+    const approved = await administrativelyUpdateMembership({
+      tenantId: TENANT_ONE,
+      membershipId: submitted.membership.id,
+      actorMembershipId: ADMIN_ONE,
+      patch: { role: "dispatcher", status: "active" },
+      expectedStatus: "invited",
+      auditAction: "membership.application_approved",
+    });
+    expect(approved).toMatchObject({
+      kind: "updated",
+      membership: {
+        role: "dispatcher",
+        requestedRole: null,
+        status: "active",
+      },
+    });
+
+    const staleDecision = await administrativelyUpdateMembership({
+      tenantId: TENANT_ONE,
+      membershipId: submitted.membership.id,
+      actorMembershipId: ADMIN_ONE,
+      patch: { status: "disabled" },
+      expectedStatus: "invited",
+      auditAction: "membership.application_rejected",
+    });
+    expect(staleDecision).toEqual({ kind: "not_found" });
   });
 
   it("recovers a verified caller only when the tenant has no active admin", async () => {

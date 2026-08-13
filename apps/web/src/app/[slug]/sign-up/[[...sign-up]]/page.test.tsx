@@ -54,7 +54,7 @@ describe("tenant sign-up", () => {
     );
     expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
       "data-fallback-url",
-      "/vsas",
+      "/vsas/join",
     );
     expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
       "data-sign-in-fallback-url",

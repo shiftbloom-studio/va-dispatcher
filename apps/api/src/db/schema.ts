@@ -237,6 +237,7 @@ export const memberships = pgTable(
       .references(() => tenants.id, { onDelete: "cascade" }),
     clerkUserId: text("clerk_user_id").notNull(),
     role: memberRoleEnum("role").notNull().default("pilot"),
+    requestedRole: memberRoleEnum("requested_role"),
     displayName: text("display_name"),
     pilotCallsign: text("pilot_callsign"),
     simbriefUserId: text("simbrief_user_id"),

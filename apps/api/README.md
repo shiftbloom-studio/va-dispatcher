@@ -28,7 +28,10 @@ public CDNs; the OpenAPI JSON endpoint has no external runtime dependency.
 
 ## Auth
 
-**Production:** `Authorization: Bearer <Clerk session JWT>` with an active Organization (VA tenant).
+**Production:** `Authorization: Bearer <Clerk session JWT>` with an active
+Organization (VA tenant). The narrow membership-application route verifies the
+user subject without requiring organization membership and exposes no
+operational data.
 
 **Local / dev:** set `AUTH_DEV_BYPASS=true` (never in production) and send:
 
@@ -40,7 +43,10 @@ X-Dev-Role: admin   # pilot | dispatcher | admin
 
 ## Bootstrap vSAS
 
-1. Create Clerk Organization for vSAS; copy org id → `VSAS_CLERK_ORG_ID`.
+1. Configure Clerk for optional organization membership, disable end-user
+   organization creation and Verified Domain enrollment, add `org:pilot` and
+   `org:dispatcher`, create vSAS, and copy its org id to
+   `VSAS_CLERK_ORG_ID`.
 2. Create an empty database, set `DATABASE_URL`, and run `pnpm db:push` from the
    exact release commit. This pre-production Shiftbloom project recreates its
    database when the canonical schema changes.
@@ -68,6 +74,9 @@ curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
 - Dispatch: `GET /dispatch/board`, `GET /dispatch/inbox`
 - Telemetry: `POST /telemetry/ingest`, `GET /dispatch/telemetry`, `GET /flights/:id/telemetry`
 - Profile: `PATCH /me` (display name and own ACARS callsign)
+- Membership applications: `GET/POST/DELETE /membership-application`
+- Tenant administration: invitation CRUD, application approve/reject,
+  role/status updates, safe removal, and `POST /members/sync`
 - ACARS: `GET/POST /acars/messages`
 - Development fixture: `POST /acars/simulate` (non-production mock adapter only)
 - ACARS config: `PUT/DELETE /tenant/acars-config`, `POST /tenant/acars-config/test` (admin)

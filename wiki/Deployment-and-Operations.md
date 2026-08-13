@@ -31,10 +31,15 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 
 ### Clerk
 
-- Enable Organizations and organization slugs.
+- Enable Organizations with optional membership and organization slugs.
+- Disable user-created organizations, automatic first-organization creation,
+  and Verified Domain enrollment/membership requests.
+- Add `org:pilot` and `org:dispatcher` to the Primary Role Set alongside
+  `org:admin`; use pilot as the new-member default.
 - Create the vSAS organization with slug `vsas`.
 - Store its ID in `VSAS_CLERK_ORG_ID`.
-- Map organization roles deliberately and review access periodically.
+- Keep Clerk Dashboard team access global-only. Review tenant application roles
+  and organization membership periodically through VA Dispatch.
 
 ### Hoppie
 
@@ -71,7 +76,8 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 5. Deploy web and API services.
 6. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
    that exact organization create or repair the trusted vSAS mapping.
-7. Sign in through `/vsas` and verify role routing.
+7. Sign up through `/vsas`, submit a pilot or dispatcher application, approve
+   it in the tenant Admin console, select the organization, and verify routing.
 8. Load and review `/impressum` and `/privacy` before public promotion.
 9. As an Admin, configure/test Hoppie and branding; as the assigned pilot and
    dispatcher, verify any enabled SimBrief, Navigraph, and weather integration.
@@ -96,10 +102,11 @@ its pre-production database rather than evolving an existing catalog.
 
 Production returns not found for `/internal/seed/vsas`. The first authenticated
 request from the exact `VSAS_CLERK_ORG_ID` creates or repairs the `vsas` tenant
-mapping. A new local membership is first provisioned and audited as a pilot. A
-verified Clerk organization Admin may use the serialized recovery path only
-while the tenant has no active application Admin; later changes use the Admin
-control plane. No other Clerk organization receives that bootstrap behavior.
+mapping. A new local membership is provisioned and audited as a pilot or
+dispatcher according to its verified Clerk role. A verified Clerk organization
+Admin may use the serialized recovery path only while the tenant has no active
+application Admin; later changes use the Admin control plane. No other Clerk
+organization receives that bootstrap behavior.
 
 The seed route remains a non-production convenience for disposable local
 environments, using either the development auth bypass or cron bearer.
@@ -171,6 +178,11 @@ analytics as full application monitoring.
 - Wrong active organization shows mismatch without tenant data.
 - Pilot, dispatcher, and admin land in the expected surface.
 - Disabled membership is denied.
+- Signed-in users without an organization can see only their tenant
+  application state, not operational data.
+- Pilot and dispatcher applications require an explicit tenant-admin decision.
+- Removing a member disables local access even if Clerk removal is temporarily
+  unavailable; a retry completes provider synchronization.
 
 ### Security and privacy
 
@@ -197,6 +209,8 @@ analytics as full application monitoring.
 - Dispatch sends a harmless synthetic telex and receives a harmless response.
 - An admin can inspect redacted audit history and the configured privacy
   workflow without executing destructive external work.
+- An admin can invite a pilot/dispatcher, approve or reject a synthetic
+  application, change an active role, and safely remove the synthetic member.
 
 ## Rollback and recovery
 

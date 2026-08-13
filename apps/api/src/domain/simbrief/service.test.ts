@@ -80,6 +80,7 @@ const membership: Membership = {
   tenantId: "20000000-0000-4000-8000-000000000001",
   clerkUserId: "user_test",
   role: "pilot",
+  requestedRole: null,
   displayName: "Test Pilot",
   pilotCallsign: "SAS123",
   simbriefUserId: "123456",
