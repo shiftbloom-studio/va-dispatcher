@@ -16,9 +16,13 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 
+import {
+  OperationsBoardSkeleton,
+  SimulatorTelemetrySkeleton,
+} from "@/components/operations-board-skeleton";
 import { FlightPlanningDialog } from "@/components/flight-planning-workspace";
 import { StatusBadge } from "@/components/ui/badge";
-import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { apiErrorMessage } from "@/lib/api/http";
 import {
   dispatchBoardSchema,
@@ -204,7 +208,7 @@ export function OperationsBoard({ slug }: { slug: string }) {
   });
 
   if (board.isPending || members.isPending) {
-    return <LoadingState label="Loading live operations board" />;
+    return <OperationsBoardSkeleton />;
   }
   if (board.isError || members.isError) {
     return (
@@ -380,7 +384,7 @@ export function OperationsBoard({ slug }: { slug: string }) {
           <Activity aria-hidden className="size-6 text-slate-500" />
         </div>
         {telemetry.isPending ? (
-          <LoadingState label="Loading live simulator telemetry" />
+          <SimulatorTelemetrySkeleton />
         ) : telemetry.isError ? (
           <ErrorState
             message={apiErrorMessage(telemetry.error)}

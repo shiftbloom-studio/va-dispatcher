@@ -655,6 +655,69 @@ test("dispatcher scans the live board and opens flight planning", async ({
   await expect(planning.getByText("Pilot confirmation required")).toBeVisible();
 });
 
+test("dispatcher keeps stable dashboard geometry while live data loads", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    { name: "e2e-role", value: "dispatcher", domain: "127.0.0.1", path: "/" },
+  ]);
+  await baseFixtures(page);
+
+  let releaseData: () => void = () => {};
+  const dataGate = new Promise<void>((resolve) => {
+    releaseData = () => resolve();
+  });
+  await page.route("**/api/v1/members", async (route) => {
+    await dataGate;
+    return json(route, { items: [pilot], nextCursor: null });
+  });
+  await page.route("**/api/v1/dispatch/board", async (route) => {
+    await dataGate;
+    return json(route, emptyBoard());
+  });
+  await page.route("**/api/v1/dispatch/telemetry", async (route) => {
+    await dataGate;
+    return json(route, {
+      items: [],
+      summary: {
+        onlinePilots: 0,
+        flyingPilots: 0,
+        stalePilots: 0,
+        definition: "Synthetic trusted receipt summary",
+      },
+      generatedAt: timestamp,
+    });
+  });
+
+  await page.goto("/vsas/dispatch");
+
+  const heading = page.getByRole("heading", { name: "Operations dashboard" });
+  const tabs = page.getByRole("tablist", { name: "Dispatcher workspace" });
+  const loadingBoard = page.getByRole("status", {
+    name: "Loading live operations board",
+  });
+  await expect(heading).toBeVisible();
+  await expect(tabs).toBeVisible();
+  await expect(loadingBoard).toBeVisible();
+  await expect(loadingBoard.locator(".animate-spin")).toHaveCount(0);
+  await expect(loadingBoard.locator(".min-h-52")).toHaveCount(5);
+
+  const headingBefore = await heading.boundingBox();
+  const tabsBefore = await tabs.boundingBox();
+  expect(headingBefore).not.toBeNull();
+  expect(tabsBefore).not.toBeNull();
+
+  releaseData();
+  await expect(page.getByRole("region", { name: "Overdue" })).toBeVisible();
+  await expect(loadingBoard).toBeHidden();
+
+  const headingAfter = await heading.boundingBox();
+  const tabsAfter = await tabs.boundingBox();
+  expect(headingAfter?.y).toBe(headingBefore?.y);
+  expect(tabsAfter?.y).toBe(tabsBefore?.y);
+});
+
 test("pilot cancels a request and explicitly cancels pre-departure flights", async ({
   page,
   context,
