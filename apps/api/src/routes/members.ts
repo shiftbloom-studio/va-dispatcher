@@ -228,9 +228,8 @@ membersRoutes.post(
       c.req.param("id"),
     );
     const body = c.req.valid("json");
-    const requestedRole = membership.requestedRole ?? membership.role;
     const role =
-      body.role ?? (requestedRole === "admin" ? "pilot" : requestedRole);
+      body.role ?? (membership.role === "admin" ? "pilot" : membership.role);
     if (!clerkBypassed()) {
       await ensureClerkMembership({
         organizationId: auth.clerkOrgId,
@@ -484,7 +483,6 @@ function publicMember(membership: {
   id: string;
   clerkUserId: string;
   role: "pilot" | "dispatcher" | "admin";
-  requestedRole?: "pilot" | "dispatcher" | "admin" | null;
   displayName: string | null;
   pilotCallsign: string | null;
   status: "active" | "invited" | "disabled";
@@ -499,7 +497,7 @@ function publicMember(membership: {
     id: membership.id,
     clerkUserId: membership.clerkUserId,
     role: membership.role,
-    requestedRole: membership.requestedRole ?? null,
+    requestedRole: membership.status === "invited" ? membership.role : null,
     displayName: membership.displayName,
     pilotCallsign: membership.pilotCallsign,
     status: membership.status,
