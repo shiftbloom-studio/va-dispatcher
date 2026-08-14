@@ -173,35 +173,6 @@ jobs:
             --raw-field log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             >/dev/null
 
-      - name: Verify staged Production configuration
-        if: needs.select.outputs.target == 'production'
-        shell: bash
-        run: |
-          set -euo pipefail
-          project_file="${RUNNER_TEMP}/va-dispatch-vercel-project.json"
-
-          http_status="$(curl \
-            --silent \
-            --show-error \
-            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
-            --output "${project_file}" \
-            --write-out '%{http_code}' \
-            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}")"
-
-          if [[ ! "${http_status}" =~ ^2 ]]; then
-            echo "Unable to verify the Vercel project configuration" >&2
-            exit 1
-          fi
-
-          node --input-type=module -e '
-            import { readFileSync } from "node:fs";
-            const project = JSON.parse(readFileSync(process.argv[1], "utf8"));
-            if (project.autoAssignCustomDomains !== false) {
-              console.error("Disable Auto-assign Custom Production Domains before deploying Production");
-              process.exit(1);
-            }
-          ' "${project_file}"
-
       - name: Create deployment from the validated Git commit
         id: vercel
         shell: bash
@@ -229,9 +200,12 @@ jobs:
               },
               meta,
             };
-            // Vercel represents Preview by omitting target. The API accepts
-            // "production", "staging", or a custom environment identifier.
-            if (target === "production") payload.target = target;
+            // Vercel represents Preview by omitting target. Production is
+            // staged explicitly so readiness can pass before domains move.
+            if (target === "production") {
+              payload.target = target;
+              payload.autoAssignCustomDomains = false;
+            }
             writeFileSync(file, JSON.stringify(payload));
           ' "${request_file}" "${VERCEL_PROJECT_ID}" "${GITHUB_REPOSITORY_ID}" "${DEPLOY_SHA}" "${DEPLOY_REF}" "${DEPLOY_TARGET}" "${PR_NUMBER}"
 

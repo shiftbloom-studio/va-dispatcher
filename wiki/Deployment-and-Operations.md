@@ -64,8 +64,8 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 - Configure both services and all server/public environment values.
 - Let GitHub Actions coordinate deployments; checked-in configuration disables
   Vercel's independent Git deployment so CI and readiness finish first.
-- Disable automatic custom Production-domain assignment so the workflow can
-  promote a staged Production deployment only after readiness passes.
+- The workflow disables custom Production-domain assignment on each deployment
+  request, then promotes the staged build only after readiness passes.
 - Enable Secure Backend Access with OIDC Federation for BotID server verification.
 - Use an eligible plan for Deep Analysis and the one-minute cron.
 - Configure spend notifications for Deep Analysis and other metered features.
