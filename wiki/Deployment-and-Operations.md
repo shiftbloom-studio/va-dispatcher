@@ -74,11 +74,11 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 
 1. Provision or select Neon, Clerk, and Vercel environments.
 2. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference).
-3. Configure the one-time GitHub `VERCEL_TOKEN` and
-   `VERCEL_PROTECTION_BYPASS` secrets, Vercel project/team and repository
-   variables, and the `Preview` and `Production` environments described in
-   `docs/maintainer-setup.md`. The bypass is used only for readiness while
-   Vercel Authentication remains enabled on Preview deployments.
+3. Configure the one-time GitHub `VERCEL_TOKEN` secret, Vercel project/team and
+   repository variables, and the `Preview` and `Production` environments
+   described in `docs/maintainer-setup.md`. Configure Protection Bypass for
+   Automation in Vercel; the workflow reads its current value only for
+   readiness while Vercel Authentication remains enabled on Preview deployments.
 4. For a schema change, with explicit operator approval, recreate the intended
    empty database and run `pnpm db:push` from the exact validated revision. The
    deployment workflow never changes the database.
