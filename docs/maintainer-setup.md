@@ -34,8 +34,9 @@ Complete this one-time repository setup:
    expiry and rotate it before that date.
 2. Add the token as the repository Actions secret `VERCEL_TOKEN`.
 3. Create a dedicated Vercel **Protection Bypass for Automation** value with a
-   note such as `GitHub Actions readiness`, then add it as the repository
-   Actions secret `VERCEL_PROTECTION_BYPASS`. Keep Vercel Authentication on.
+   note such as `GitHub Actions readiness`. The workflow reads the current value
+   through the project-scoped Vercel token; do not duplicate it in GitHub. Keep
+   Vercel Authentication on.
 4. Add repository Actions variables `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, and
    `VERCEL_GITHUB_REPOSITORY_ID`.
 5. Keep GitHub deployment environments named exactly `Preview` and
@@ -47,7 +48,6 @@ The repository values can be configured with GitHub CLI:
 
 ```bash
 gh secret set VERCEL_TOKEN
-gh secret set VERCEL_PROTECTION_BYPASS
 gh variable set VERCEL_ORG_ID --body '<vercel-team-id>'
 gh variable set VERCEL_PROJECT_ID --body '<vercel-project-id>'
 gh variable set VERCEL_GITHUB_REPOSITORY_ID --body '<github-repository-id>'
@@ -64,9 +64,10 @@ succeeds only after `/api/ready` confirms the already-provisioned live schema.
 A merge to `main` repeats the same flow for Production. Fork and Dependabot
 pull requests validate but do not receive deployment credentials.
 
-The readiness request sends the Vercel-documented
-`x-vercel-protection-bypass` header so the probe works against an
-authentication-protected Preview without making that Preview public.
+The readiness step loads the current automation bypass from the Vercel project
+with `VERCEL_TOKEN`, masks it immediately, and sends the Vercel-documented
+`x-vercel-protection-bypass` header. The probe therefore works against an
+authentication-protected Preview without copying or exposing the bypass.
 
 The Vercel deployment request omits `target` for Preview, as required by the
 API. Production uses `target: production` with

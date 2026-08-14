@@ -73,7 +73,8 @@ describe("Vercel service packaging", () => {
     );
     expect(deployWorkflow).not.toContain("project,\n              target,");
     expect(deployWorkflow).toContain("VERCEL_GITHUB_REPOSITORY_ID");
-    expect(deployWorkflow).toContain("VERCEL_PROTECTION_BYPASS");
+    expect(deployWorkflow).not.toContain("VERCEL_PROTECTION_BYPASS");
+    expect(deployWorkflow).toContain('settings?.scope === "automation-bypass"');
     expect(deployWorkflow).toContain("x-vercel-protection-bypass:");
     expect(deployWorkflow).not.toContain("project.autoAssignCustomDomains");
     expect(deployWorkflow).toContain(
