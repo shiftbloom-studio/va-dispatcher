@@ -110,7 +110,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       GITHUB_REPOSITORY_ID: ${{ vars.VERCEL_GITHUB_REPOSITORY_ID }}
@@ -124,7 +123,6 @@ jobs:
         run: |
           set -euo pipefail
           : "${VERCEL_TOKEN:?Configure the VERCEL_TOKEN GitHub Actions secret}"
-          : "${VERCEL_PROTECTION_BYPASS:?Configure the VERCEL_PROTECTION_BYPASS GitHub Actions secret}"
           : "${VERCEL_ORG_ID:?Configure the VERCEL_ORG_ID GitHub Actions variable}"
           : "${VERCEL_PROJECT_ID:?Configure the VERCEL_PROJECT_ID GitHub Actions variable}"
           : "${GITHUB_REPOSITORY_ID:?Configure the VERCEL_GITHUB_REPOSITORY_ID GitHub Actions variable}"
@@ -173,35 +171,6 @@ jobs:
             --raw-field log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             >/dev/null
 
-      - name: Verify staged Production configuration
-        if: needs.select.outputs.target == 'production'
-        shell: bash
-        run: |
-          set -euo pipefail
-          project_file="${RUNNER_TEMP}/va-dispatch-vercel-project.json"
-
-          http_status="$(curl \
-            --silent \
-            --show-error \
-            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
-            --output "${project_file}" \
-            --write-out '%{http_code}' \
-            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}")"
-
-          if [[ ! "${http_status}" =~ ^2 ]]; then
-            echo "Unable to verify the Vercel project configuration" >&2
-            exit 1
-          fi
-
-          node --input-type=module -e '
-            import { readFileSync } from "node:fs";
-            const project = JSON.parse(readFileSync(process.argv[1], "utf8"));
-            if (project.autoAssignCustomDomains !== false) {
-              console.error("Disable Auto-assign Custom Production Domains before deploying Production");
-              process.exit(1);
-            }
-          ' "${project_file}"
-
       - name: Create deployment from the validated Git commit
         id: vercel
         shell: bash
@@ -229,9 +198,12 @@ jobs:
               },
               meta,
             };
-            // Vercel represents Preview by omitting target. The API accepts
-            // "production", "staging", or a custom environment identifier.
-            if (target === "production") payload.target = target;
+            // Vercel represents Preview by omitting target. Production is
+            // staged explicitly so readiness can pass before domains move.
+            if (target === "production") {
+              payload.target = target;
+              payload.autoAssignCustomDomains = false;
+            }
             writeFileSync(file, JSON.stringify(payload));
           ' "${request_file}" "${VERCEL_PROJECT_ID}" "${GITHUB_REPOSITORY_ID}" "${DEPLOY_SHA}" "${DEPLOY_REF}" "${DEPLOY_TARGET}" "${PR_NUMBER}"
 
@@ -293,13 +265,41 @@ jobs:
         run: |
           set -euo pipefail
           health_file="${RUNNER_TEMP}/va-dispatch-readiness.json"
+          project_file="${RUNNER_TEMP}/va-dispatch-vercel-project.json"
+
+          http_status="$(curl \
+            --silent \
+            --show-error \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --output "${project_file}" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}")"
+
+          if [[ ! "${http_status}" =~ ^2 ]]; then
+            echo "Unable to load the Vercel automation bypass" >&2
+            exit 1
+          fi
+
+          protection_bypass="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const project = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            const entry = Object.entries(project.protectionBypass ?? {}).find(
+              ([, settings]) => settings?.scope === "automation-bypass",
+            );
+            if (!entry) process.exit(1);
+            process.stdout.write(entry[0]);
+          ' "${project_file}")" || {
+            echo "Configure Protection Bypass for Automation in Vercel" >&2
+            exit 1
+          }
+          echo "::add-mask::${protection_bypass}"
 
           for _ in {1..80}; do
             http_status="$(curl \
               --silent \
               --show-error \
               --max-time 15 \
-              --header "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}" \
+              --header "x-vercel-protection-bypass: ${protection_bypass}" \
               --output "${health_file}" \
               --write-out '%{http_code}' \
               "${DEPLOYMENT_URL}/api/ready" || true)"
