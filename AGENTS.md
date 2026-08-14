@@ -101,13 +101,10 @@ pnpm db:studio
 ```
 
 `db:push` and `db:studio` act on the configured database. Confirm the target and
-obtain authorization before using them manually. This Shiftbloom project is
-pre-production: `schema.ts` is canonical, and the deployment workflow applies
-it in machine-readable mode without Drizzle's data-loss `--force`, so missing
-destructive-change hints fail the build. Keep deployed changes additive and
-backward-compatible. Before an incompatible change must preserve durable data,
-stop and adopt reviewed migrations and rollback. Never infer that a `.env` file
-is safe.
+obtain authorization before using them. This Shiftbloom project is
+pre-production: `schema.ts` is canonical, databases are recreated when the
+schema changes, and `db:push` must never target user data that needs preserving.
+Never infer that a `.env` file is safe.
 
 ## Runtime shape and request flow
 
@@ -318,14 +315,11 @@ provider errors, secrets, or stack traces. Pagination must use the shared
 helpers and deterministic ordering.
 
 The canonical schema is `apps/api/src/db/schema.ts`. Apply schema changes to a
-disposable database with `pnpm db:push`, then run the relevant real-PostgreSQL
-contracts. Deployment applies the same schema without Drizzle's data-loss
-`--force` and uses machine-readable output; missing destructive-change hints
-must fail closed. Never preserve an outdated test catalog by adding
-legacy-adoption machinery. Preserve foreign keys, tenant indexes, uniqueness
-constraints, and timestamp semantics. Before an incompatible change must
-preserve durable production data, stop and adopt reviewed migrations,
-compatibility sequencing, and rollback.
+new empty database with `pnpm db:push`, then run the relevant real-PostgreSQL
+contracts. Never preserve an outdated test catalog by adding legacy-adoption
+machinery. Preserve foreign keys, tenant indexes, uniqueness constraints, and
+timestamp semantics. If this project later carries durable production data,
+stop and agree a new data-evolution policy before changing the schema.
 
 Audit security- and operations-relevant mutations. Audit rows should record
 the authenticated actor, tenant, action, entity, and useful non-secret metadata

@@ -63,7 +63,9 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 
 - Configure both services and all server/public environment values.
 - Let GitHub Actions coordinate deployments; checked-in configuration disables
-  Vercel's independent Git deployment so CI and schema readiness finish first.
+  Vercel's independent Git deployment so CI and readiness finish first.
+- Disable automatic custom Production-domain assignment so the workflow can
+  promote a staged Production deployment only after readiness passes.
 - Enable Secure Backend Access with OIDC Federation for BotID server verification.
 - Use an eligible plan for Deep Analysis and the one-minute cron.
 - Configure spend notifications for Deep Analysis and other metered features.
@@ -77,21 +79,25 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
    variables, and the `Preview` and `Production` environments described in
    `docs/maintainer-setup.md`. The bypass is used only for readiness while
    Vercel Authentication remains enabled on Preview deployments.
-4. Open or update an internal pull request. GitHub runs the database contracts,
+4. For a schema change, with explicit operator approval, recreate the intended
+   empty database and run `pnpm db:push` from the exact validated revision. The
+   deployment workflow never changes the database.
+5. Open or update an internal pull request. GitHub runs the database contracts,
    quality checks, and integrated E2E suite. A separate default-branch workflow
    then deploys that exact successful commit without executing pull-request code
-   with deployment credentials. Vercel applies `schema.ts`, builds the
-   application, and exposes a preview only if `/api/ready` succeeds.
-5. Review and merge the green pull request. The deployment workflow repeats for
-   the exact successful `main` commit and verifies Production readiness.
-6. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
+   with deployment credentials. Vercel builds the application and exposes a
+   preview only if `/api/ready` confirms the pre-provisioned schema.
+6. Review and merge the green pull request. The deployment workflow repeats for
+   the exact successful `main` commit, verifies the staged deployment, and then
+   promotes it to Production.
+7. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
    that exact organization create or repair the trusted vSAS mapping.
-7. Sign up through `/vsas`, submit a pilot or dispatcher application, approve
+8. Sign up through `/vsas`, submit a pilot or dispatcher application, approve
    it in the tenant Admin console, select the organization, and verify routing.
-8. Load and review `/impressum` and `/privacy` before public promotion.
-9. As an Admin, configure/test Hoppie and branding; as the assigned pilot and
-   dispatcher, verify any enabled SimBrief, Navigraph, and weather integration.
-10. Verify BotID, both cron routes, headers, logs, and a synthetic end-to-end
+9. Load and review `/impressum` and `/privacy` before public promotion.
+10. As an Admin, configure/test Hoppie and branding; as the assigned pilot and
+    dispatcher, verify any enabled SimBrief, Navigraph, and weather integration.
+11. Verify BotID, both cron routes, headers, logs, and a synthetic end-to-end
     workflow.
 
 Example initial tooling flow:
@@ -104,13 +110,11 @@ vercel integration add clerk
 vercel env pull apps/api/.env.local --yes
 ```
 
-The automated schema step uses Drizzle's machine-readable output mode and never
-passes its data-loss `--force` option. A destructive or ambiguous proposal
-returns missing hints and fails deployment instead of silently changing a
-shared catalog. Keep schema changes additive and compatible while an old
-deployment may still be serving. Before retaining durable production data
-through incompatible schema changes, adopt reviewed migrations and a rollback
-policy rather than weakening this guard.
+Do not apply schema, seed, or deployment changes to a shared environment
+without explicit operator approval and a rollback plan. This project replaces
+its pre-production database rather than evolving an existing catalog. The
+readiness gate detects a missing or incompatible workspace schema but does not
+repair it.
 
 ## Tenant bootstrap
 

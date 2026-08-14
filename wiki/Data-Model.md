@@ -220,21 +220,18 @@ pnpm db:studio
 ```
 
 `apps/api/src/db/schema.ts` is canonical. This Shiftbloom project is
-pre-production. Preview and Production deployments run `pnpm db:push` from the
-exact release commit during the API service's Vercel build, before the new
-application is promoted. Deployment uses Drizzle's machine-readable output
-mode and deliberately omits the data-loss `--force` option, so a destructive or
-ambiguous proposal exits with missing hints and fails closed.
+pre-production and recreates an empty database when its schema changes, then
+runs `pnpm db:push` from the exact release commit. Never use `db:push` on a
+database containing data that must be preserved.
 
 For a schema change:
 
 1. Update `schema.ts`.
-2. Apply the schema to a disposable database with `db:push` and keep deployed
-   changes additive and backward-compatible.
+2. Recreate a disposable database and apply the schema with `db:push`.
 3. Update repositories, services, serializers, OpenAPI, web schemas, and tests.
 4. Run the real PostgreSQL contracts against that fresh schema.
-5. Before making an incompatible change to a catalog with durable data, stop
-   and adopt reviewed migrations, compatibility sequencing, and rollback.
+5. If durable production data is introduced, stop and agree a new
+   data-evolution policy before changing the schema.
 
 ## Model boundaries
 
