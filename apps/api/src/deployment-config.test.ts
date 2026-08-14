@@ -27,17 +27,14 @@ describe("Vercel service packaging", () => {
     expect(vercelConfig).toContain("deploymentEnabled: false");
     expect(vercelConfig).toContain('entrypoint: "vercel-entry.ts"');
     expect(vercelConfig).toContain(
-      '"pnpm db:push:deploy && node scripts/build-vercel-bundle.mjs vercel-entry.ts"',
+      '"node scripts/build-vercel-bundle.mjs vercel-entry.ts"',
     );
     expect(vercelConfig).toContain('"vercel-entry.ts": {');
     expect(vercelConfig).toContain('includeFiles: "package.json"');
     expect(apiPackage.scripts?.["build:vercel"]).toBe(
       "node scripts/build-vercel-bundle.mjs dist/vercel.js",
     );
-    expect(apiPackage.scripts?.["db:push:deploy"]).toBe(
-      "drizzle-kit push --output=json",
-    );
-    expect(apiPackage.scripts?.["db:push:deploy"]).not.toContain("--force");
+    expect(apiPackage.scripts?.["db:push:deploy"]).toBeUndefined();
     expect(checkedInEntrypoint).toContain(
       'export { default } from "./src/index.js"',
     );
@@ -61,6 +58,10 @@ describe("Vercel service packaging", () => {
       new URL("../../../.github/workflows/deploy.yml", import.meta.url),
       "utf8",
     );
+    const ciWorkflow = readFileSync(
+      new URL("../../../.github/workflows/ci.yml", import.meta.url),
+      "utf8",
+    );
 
     expect(deployWorkflow).toContain("workflow_run:");
     expect(deployWorkflow).toContain("workflows: [CI]");
@@ -72,8 +73,17 @@ describe("Vercel service packaging", () => {
     expect(deployWorkflow).toContain("VERCEL_GITHUB_REPOSITORY_ID");
     expect(deployWorkflow).toContain("VERCEL_PROTECTION_BYPASS");
     expect(deployWorkflow).toContain("x-vercel-protection-bypass:");
+    expect(deployWorkflow).toContain("autoAssignCustomDomains !== false");
+    expect(deployWorkflow).toContain(
+      "/v10/projects/${VERCEL_PROJECT_ID}/promote/${VERCEL_DEPLOYMENT_ID}",
+    );
     expect(deployWorkflow).toContain("needs.select.outputs.deploy == 'true'");
     expect(deployWorkflow).not.toContain("actions/checkout");
     expect(deployWorkflow).not.toContain("pull_request_target");
+    expect(
+      ciWorkflow.match(
+        /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/g,
+      ),
+    ).toHaveLength(3);
   });
 });

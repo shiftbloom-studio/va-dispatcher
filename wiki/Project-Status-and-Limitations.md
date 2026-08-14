@@ -69,9 +69,8 @@ application on 13 August 2026. Re-verify it whenever behavior changes.
 
 - The backend is multi-tenant, while the checked-in web presentation registry
   currently contains only vSAS.
-- The project is pre-production. GitHub-coordinated Vercel deployments apply
-  canonical `schema.ts` with `db:push` before readiness, without Drizzle's
-  data-loss `--force`. Durable incompatible migrations are not yet supported.
+- The project is pre-production. Schema changes recreate an empty database and
+  apply canonical `schema.ts` with `db:push`; durable data evolution is not yet supported.
 - The integrated E2E authority is deliberately non-production-only and requires
   an explicitly confirmed disposable database.
 - A successful local or CI run is not a substitute for a post-deployment Clerk,
@@ -81,15 +80,15 @@ application on 13 August 2026. Re-verify it whenever behavior changes.
 
 Before calling a deployment fully ready:
 
-1. Confirm the automated schema step and `/api/ready` gate passed for the exact
-   deployment commit.
-2. Verify Clerk organization roles, legal configuration, BotID, and tenant
+1. Create an empty database and apply the exact release schema with `db:push`.
+2. Confirm `/api/ready` passed for the exact deployment commit.
+3. Verify Clerk organization roles, legal configuration, BotID, and tenant
    encryption keys.
-3. Complete deployed signup/application/approval, invitation, removal, pilot,
+4. Complete deployed signup/application/approval, invitation, removal, pilot,
    and dispatcher journeys.
-4. Verify Hoppie, SimBrief, Navigraph, and the MSFS client only with operator-
+5. Verify Hoppie, SimBrief, Navigraph, and the MSFS client only with operator-
    supplied credentials appropriate to that environment.
-5. Record any provider or legal prerequisite as external; do not replace it
+6. Record any provider or legal prerequisite as external; do not replace it
    with test-only configuration or a hidden fallback.
 
 ## Documentation rule

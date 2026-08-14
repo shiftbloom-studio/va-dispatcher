@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   # Preview shares one Vercel/Neon environment. Production is serialized
-  # separately, and neither schema synchronization may be cancelled midway.
+  # separately, and deployment verification is never cancelled midway.
   group: deploy-${{ github.event.workflow_run.event == 'push' && 'production' || 'preview' }}
   cancel-in-progress: false
 
@@ -169,9 +169,38 @@ jobs:
             --method POST \
             "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses" \
             --raw-field state=in_progress \
-            --raw-field description="Vercel build and schema synchronization started" \
+            --raw-field description="Vercel build started" \
             --raw-field log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             >/dev/null
+
+      - name: Verify staged Production configuration
+        if: needs.select.outputs.target == 'production'
+        shell: bash
+        run: |
+          set -euo pipefail
+          project_file="${RUNNER_TEMP}/va-dispatch-vercel-project.json"
+
+          http_status="$(curl \
+            --silent \
+            --show-error \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --output "${project_file}" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}")"
+
+          if [[ ! "${http_status}" =~ ^2 ]]; then
+            echo "Unable to verify the Vercel project configuration" >&2
+            exit 1
+          fi
+
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const project = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            if (project.autoAssignCustomDomains !== false) {
+              console.error("Disable Auto-assign Custom Production Domains before deploying Production");
+              process.exit(1);
+            }
+          ' "${project_file}"
 
       - name: Create deployment from the validated Git commit
         id: vercel
@@ -232,13 +261,20 @@ jobs:
             if (!payload.url || typeof payload.url !== "string") process.exit(1);
             process.stdout.write("https://" + payload.url);
           ' "${response_file}")"
+          deployment_id="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            if (!payload.id || typeof payload.id !== "string") process.exit(1);
+            process.stdout.write(payload.id);
+          ' "${response_file}")"
           echo "url=${deployment_url}" >> "${GITHUB_OUTPUT}"
+          echo "id=${deployment_id}" >> "${GITHUB_OUTPUT}"
           {
             echo "### Vercel ${DEPLOY_TARGET} deployment"
             echo
             echo "- Revision: \`${DEPLOY_SHA}\`"
             echo "- URL: ${deployment_url}"
-            echo "- Database schema: synchronized by the API service build"
+            echo "- Database schema: verified by \`/api/ready\`; not modified by the build"
           } >> "${GITHUB_STEP_SUMMARY}"
 
           gh api \
@@ -278,14 +314,6 @@ jobs:
                 payload.schema !== true
               ) process.exit(1);
             ' "${health_file}"; then
-              gh api \
-                --method POST \
-                "repos/${GITHUB_REPOSITORY}/deployments/${{ steps.github_deployment.outputs.id }}/statuses" \
-                --raw-field state=success \
-                --raw-field description="Workspace schema and API are ready" \
-                --raw-field environment_url="${DEPLOYMENT_URL}" \
-                --raw-field log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
-                >/dev/null
               exit 0
             fi
 
@@ -294,6 +322,55 @@ jobs:
 
           echo "Deployment did not become schema-ready within 400 seconds" >&2
           exit 1
+
+      - name: Promote staged Production deployment
+        if: needs.select.outputs.target == 'production'
+        shell: bash
+        env:
+          VERCEL_DEPLOYMENT_ID: ${{ steps.vercel.outputs.id }}
+        run: |
+          set -euo pipefail
+          response_file="${RUNNER_TEMP}/va-dispatch-vercel-promotion-response.json"
+
+          http_status="$(curl \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --output "${response_file}" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/promote/${VERCEL_DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}")"
+
+          if [[ "${http_status}" != "201" && "${http_status}" != "202" ]]; then
+            node --input-type=module -e '
+              import { readFileSync } from "node:fs";
+              const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+              console.error(payload.error?.message ?? "Vercel promotion request failed");
+            ' "${response_file}"
+            exit 1
+          fi
+
+          echo "- Promotion: staged deployment promoted after readiness passed" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Mark deployment successful
+        shell: bash
+        env:
+          DEPLOYMENT_URL: ${{ steps.vercel.outputs.url }}
+        run: |
+          set -euo pipefail
+          description="Workspace schema and API are ready"
+          if [[ "${DEPLOY_TARGET}" == "production" ]]; then
+            description="Workspace ready and Production promoted"
+          fi
+
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/deployments/${{ steps.github_deployment.outputs.id }}/statuses" \
+            --raw-field state=success \
+            --raw-field description="${description}" \
+            --raw-field environment_url="${DEPLOYMENT_URL}" \
+            --raw-field log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null
 
       - name: Mark failed deployment
         if: failure() && steps.github_deployment.outputs.id != ''

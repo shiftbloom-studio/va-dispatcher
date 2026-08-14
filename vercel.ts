@@ -3,7 +3,7 @@
  * Public /api/* → api service; everything else → web.
  */
 export const config = {
-  // GitHub Actions owns deployment ordering so schema synchronization finishes
+  // GitHub Actions owns deployment ordering so validation and readiness finish
   // before Vercel can promote the corresponding application revision.
   git: {
     deploymentEnabled: false,
@@ -31,11 +31,7 @@ export const config = {
       // Keep a checked-in TypeScript entrypoint, then replace it with the
       // dependency-complete bundle inside Vercel's isolated build checkout.
       entrypoint: "vercel-entry.ts",
-      // Drizzle v1 prompts instead of applying data-loss statements unless
-      // --force is supplied. Never add that flag here: incompatible changes
-      // must fail closed and use an explicit migration/recreation plan.
-      buildCommand:
-        "pnpm db:push:deploy && node scripts/build-vercel-bundle.mjs vercel-entry.ts",
+      buildCommand: "node scripts/build-vercel-bundle.mjs vercel-entry.ts",
       // Vercel Services currently emits the Hono entrypoint without tracing
       // pnpm workspace dependencies. Bundle them before packaging and retain
       // the ESM package boundary for Vercel's generated app.js wrapper.
