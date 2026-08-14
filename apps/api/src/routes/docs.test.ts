@@ -90,7 +90,7 @@ describe("API documentation", () => {
     ].sort();
 
     const documentedOperations = Object.entries(openApiDocument.paths)
-      .filter(([path]) => path !== "/health")
+      .filter(([path]) => path !== "/health" && path !== "/ready")
       .flatMap(([path, pathItem]) =>
         Object.keys(pathItem)
           .filter((key) => HTTP_METHODS.has(key))

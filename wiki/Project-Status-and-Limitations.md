@@ -81,13 +81,14 @@ application on 13 August 2026. Re-verify it whenever behavior changes.
 Before calling a deployment fully ready:
 
 1. Create an empty database and apply the exact release schema with `db:push`.
-2. Verify Clerk organization roles, legal configuration, BotID, and tenant
+2. Confirm `/api/ready` passed for the exact deployment commit.
+3. Verify Clerk organization roles, legal configuration, BotID, and tenant
    encryption keys.
-3. Complete deployed signup/application/approval, invitation, removal, pilot,
+4. Complete deployed signup/application/approval, invitation, removal, pilot,
    and dispatcher journeys.
-4. Verify Hoppie, SimBrief, Navigraph, and the MSFS client only with operator-
+5. Verify Hoppie, SimBrief, Navigraph, and the MSFS client only with operator-
    supplied credentials appropriate to that environment.
-5. Record any provider or legal prerequisite as external; do not replace it
+6. Record any provider or legal prerequisite as external; do not replace it
    with test-only configuration or a hidden fallback.
 
 ## Documentation rule

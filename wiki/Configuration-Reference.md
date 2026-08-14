@@ -162,6 +162,8 @@ Configure the tenant credential through `/:slug/settings/organization`. The API 
 
 The checked-in `vercel.ts` defines:
 
+- Vercel Git deployments disabled so GitHub Actions owns validation, readiness,
+  and promotion order;
 - `web` service rooted at `apps/web`;
 - `api` service rooted at `apps/api` with `src/index.ts` entrypoint;
 - a private service binding exposed to web as `API_INTERNAL_URL`;
@@ -169,6 +171,16 @@ The checked-in `vercel.ts` defines:
 - all remaining paths routed to web;
 - `/api/v1/internal/cron/acars-poll` every minute; and
 - `/api/v1/internal/cron/privacy-lifecycle` every hour.
+
+GitHub Actions needs the repository secrets `VERCEL_TOKEN` and
+`VERCEL_PROTECTION_BYPASS`, plus the repository variables `VERCEL_ORG_ID`,
+`VERCEL_PROJECT_ID`, and `VERCEL_GITHUB_REPOSITORY_ID`. Application and database
+secrets remain environment-scoped in Vercel. After CI succeeds, a default-branch
+workflow deploys only internal pull requests and `main` without checking out
+untrusted code while holding the Vercel token. It does not modify the database;
+`/api/ready` confirms connectivity and the tenant/membership schema. Production
+also requires automatic custom-domain assignment to be disabled so the workflow
+can promote the staged deployment only after readiness passes.
 
 A one-minute cron requires an eligible Vercel plan. If the cron is deployed less frequently, outbound messages still send immediately, but inbound Hoppie traffic appears later.
 

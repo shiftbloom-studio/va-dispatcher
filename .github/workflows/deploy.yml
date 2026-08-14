@@ -1,0 +1,392 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  # Preview shares one Vercel/Neon environment. Production is serialized
+  # separately, and deployment verification is never cancelled midway.
+  group: deploy-${{ github.event.workflow_run.event == 'push' && 'production' || 'preview' }}
+  cancel-in-progress: false
+
+jobs:
+  select:
+    name: Select validated revision
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      deploy: ${{ steps.selection.outputs.deploy }}
+      sha: ${{ steps.selection.outputs.sha }}
+      target: ${{ steps.selection.outputs.target }}
+      ref: ${{ steps.selection.outputs.ref }}
+      pr_number: ${{ steps.selection.outputs.pr_number }}
+    steps:
+      - name: Trust only successful CI for internal pull requests or main
+        id: selection
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CI_EVENT: ${{ github.event.workflow_run.event }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+
+          deploy=false
+          sha=""
+          target=""
+          ref=""
+          pr_number=""
+
+          if [[ "${CI_CONCLUSION}" == "success" && "${CI_EVENT}" == "push" && "${CI_REF}" == "main" ]]; then
+            if [[ ! "${CI_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "CI did not provide a valid full commit SHA" >&2
+              exit 1
+            fi
+            deploy=true
+            sha="${CI_SHA}"
+            target=production
+            ref=main
+          elif [[ "${CI_CONCLUSION}" == "success" && "${CI_EVENT}" == "pull_request" ]]; then
+            if [[ ! "${CI_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "CI did not provide a valid full commit SHA" >&2
+              exit 1
+            fi
+
+            pull_requests_file="${RUNNER_TEMP}/va-dispatch-pull-requests.json"
+            gh api \
+              --header "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/commits/${CI_SHA}/pulls" \
+              > "${pull_requests_file}"
+
+            mapfile -t pull_request < <(node --input-type=module -e '
+              import { readFileSync } from "node:fs";
+              const [file, sha, repository] = process.argv.slice(1);
+              const candidates = JSON.parse(readFileSync(file, "utf8"));
+              const pr = candidates.find((candidate) =>
+                candidate.head?.sha === sha &&
+                candidate.base?.repo?.full_name === repository
+              );
+              if (!pr) process.exit(0);
+              console.log(pr.number);
+              console.log(pr.head?.repo?.full_name ?? "");
+              console.log(pr.head?.ref ?? "");
+              console.log(pr.user?.login ?? "");
+            ' "${pull_requests_file}" "${CI_SHA}" "${GITHUB_REPOSITORY}")
+
+            if [[ "${#pull_request[@]}" -eq 4 && "${pull_request[1]}" == "${GITHUB_REPOSITORY}" && "${pull_request[3]}" != "dependabot[bot]" ]]; then
+              deploy=true
+              sha="${CI_SHA}"
+              target=preview
+              ref="${pull_request[2]}"
+              pr_number="${pull_request[0]}"
+            fi
+          fi
+
+          {
+            echo "deploy=${deploy}"
+            echo "sha=${sha}"
+            echo "target=${target}"
+            echo "ref=${ref}"
+            echo "pr_number=${pr_number}"
+          } >> "${GITHUB_OUTPUT}"
+
+  deploy:
+    name: Deploy Vercel ${{ needs.select.outputs.target }}
+    needs: select
+    if: needs.select.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      GITHUB_REPOSITORY_ID: ${{ vars.VERCEL_GITHUB_REPOSITORY_ID }}
+      DEPLOY_SHA: ${{ needs.select.outputs.sha }}
+      DEPLOY_TARGET: ${{ needs.select.outputs.target }}
+      DEPLOY_REF: ${{ needs.select.outputs.ref }}
+      PR_NUMBER: ${{ needs.select.outputs.pr_number }}
+    steps:
+      - name: Verify deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${VERCEL_TOKEN:?Configure the VERCEL_TOKEN GitHub Actions secret}"
+          : "${VERCEL_PROTECTION_BYPASS:?Configure the VERCEL_PROTECTION_BYPASS GitHub Actions secret}"
+          : "${VERCEL_ORG_ID:?Configure the VERCEL_ORG_ID GitHub Actions variable}"
+          : "${VERCEL_PROJECT_ID:?Configure the VERCEL_PROJECT_ID GitHub Actions variable}"
+          : "${GITHUB_REPOSITORY_ID:?Configure the VERCEL_GITHUB_REPOSITORY_ID GitHub Actions variable}"
+
+      - name: Register deployment for the validated commit
+        id: github_deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          request_file="${RUNNER_TEMP}/va-dispatch-github-deployment.json"
+          response_file="${RUNNER_TEMP}/va-dispatch-github-deployment-response.json"
+
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            const [file, ref, target] = process.argv.slice(1);
+            writeFileSync(file, JSON.stringify({
+              ref,
+              task: "deploy",
+              auto_merge: false,
+              required_contexts: [],
+              environment: target === "production" ? "Production" : "Preview",
+              description: "Deploy validated " + target + " commit",
+              transient_environment: target !== "production",
+              production_environment: target === "production",
+            }));
+          ' "${request_file}" "${DEPLOY_SHA}" "${DEPLOY_TARGET}"
+
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/deployments" \
+            --input "${request_file}" \
+            > "${response_file}"
+          deployment_id="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            if (!Number.isInteger(payload.id)) process.exit(1);
+            process.stdout.write(String(payload.id));
+          ' "${response_file}")"
+          echo "id=${deployment_id}" >> "${GITHUB_OUTPUT}"
+
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses" \
+            --raw-field state=in_progress \
+            --raw-field description="Vercel build started" \
+            --raw-field log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null
+
+      - name: Verify staged Production configuration
+        if: needs.select.outputs.target == 'production'
+        shell: bash
+        run: |
+          set -euo pipefail
+          project_file="${RUNNER_TEMP}/va-dispatch-vercel-project.json"
+
+          http_status="$(curl \
+            --silent \
+            --show-error \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --output "${project_file}" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}")"
+
+          if [[ ! "${http_status}" =~ ^2 ]]; then
+            echo "Unable to verify the Vercel project configuration" >&2
+            exit 1
+          fi
+
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const project = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            if (project.autoAssignCustomDomains !== false) {
+              console.error("Disable Auto-assign Custom Production Domains before deploying Production");
+              process.exit(1);
+            }
+          ' "${project_file}"
+
+      - name: Create deployment from the validated Git commit
+        id: vercel
+        shell: bash
+        run: |
+          set -euo pipefail
+          request_file="${RUNNER_TEMP}/va-dispatch-vercel-request.json"
+          response_file="${RUNNER_TEMP}/va-dispatch-vercel-response.json"
+
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            const [file, project, repoId, sha, ref, target, prNumber] = process.argv.slice(1);
+            const meta = {
+              githubCommitSha: sha,
+              githubCommitRef: ref,
+            };
+            if (prNumber) meta.githubPrId = prNumber;
+            const payload = {
+              name: "va-dispatcher",
+              project,
+              gitSource: {
+                type: "github",
+                repoId: Number(repoId),
+                ref,
+                sha,
+              },
+              meta,
+            };
+            // Vercel represents Preview by omitting target. The API accepts
+            // "production", "staging", or a custom environment identifier.
+            if (target === "production") payload.target = target;
+            writeFileSync(file, JSON.stringify(payload));
+          ' "${request_file}" "${VERCEL_PROJECT_ID}" "${GITHUB_REPOSITORY_ID}" "${DEPLOY_SHA}" "${DEPLOY_REF}" "${DEPLOY_TARGET}" "${PR_NUMBER}"
+
+          http_status="$(curl \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data-binary "@${request_file}" \
+            --output "${response_file}" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v13/deployments?teamId=${VERCEL_ORG_ID}&forceNew=1")"
+
+          if [[ ! "${http_status}" =~ ^2 ]]; then
+            node --input-type=module -e '
+              import { readFileSync } from "node:fs";
+              const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+              console.error(payload.error?.message ?? "Vercel deployment request failed");
+            ' "${response_file}"
+            exit 1
+          fi
+
+          deployment_url="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            if (!payload.url || typeof payload.url !== "string") process.exit(1);
+            process.stdout.write("https://" + payload.url);
+          ' "${response_file}")"
+          deployment_id="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            if (!payload.id || typeof payload.id !== "string") process.exit(1);
+            process.stdout.write(payload.id);
+          ' "${response_file}")"
+          echo "url=${deployment_url}" >> "${GITHUB_OUTPUT}"
+          echo "id=${deployment_id}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "### Vercel ${DEPLOY_TARGET} deployment"
+            echo
+            echo "- Revision: \`${DEPLOY_SHA}\`"
+            echo "- URL: ${deployment_url}"
+            echo "- Database schema: verified by \`/api/ready\`; not modified by the build"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/deployments/${{ steps.github_deployment.outputs.id }}/statuses" \
+            --raw-field state=in_progress \
+            --raw-field description="Vercel deployment created; checking readiness" \
+            --raw-field environment_url="${deployment_url}" \
+            --raw-field log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null
+
+      - name: Wait for the deployment and verify workspace readiness
+        shell: bash
+        env:
+          DEPLOYMENT_URL: ${{ steps.vercel.outputs.url }}
+        run: |
+          set -euo pipefail
+          health_file="${RUNNER_TEMP}/va-dispatch-readiness.json"
+
+          for _ in {1..80}; do
+            http_status="$(curl \
+              --silent \
+              --show-error \
+              --max-time 15 \
+              --header "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}" \
+              --output "${health_file}" \
+              --write-out '%{http_code}' \
+              "${DEPLOYMENT_URL}/api/ready" || true)"
+
+            if [[ "${http_status}" == "200" ]] && node --input-type=module -e '
+              import { readFileSync } from "node:fs";
+              const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+              if (
+                payload.ok !== true ||
+                payload.service !== "va-dispatch-api" ||
+                payload.database !== true ||
+                payload.schema !== true
+              ) process.exit(1);
+            ' "${health_file}"; then
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "Deployment did not become schema-ready within 400 seconds" >&2
+          exit 1
+
+      - name: Promote staged Production deployment
+        if: needs.select.outputs.target == 'production'
+        shell: bash
+        env:
+          VERCEL_DEPLOYMENT_ID: ${{ steps.vercel.outputs.id }}
+        run: |
+          set -euo pipefail
+          response_file="${RUNNER_TEMP}/va-dispatch-vercel-promotion-response.json"
+
+          http_status="$(curl \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --output "${response_file}" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/promote/${VERCEL_DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}")"
+
+          if [[ "${http_status}" != "201" && "${http_status}" != "202" ]]; then
+            node --input-type=module -e '
+              import { readFileSync } from "node:fs";
+              const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+              console.error(payload.error?.message ?? "Vercel promotion request failed");
+            ' "${response_file}"
+            exit 1
+          fi
+
+          echo "- Promotion: staged deployment promoted after readiness passed" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Mark deployment successful
+        shell: bash
+        env:
+          DEPLOYMENT_URL: ${{ steps.vercel.outputs.url }}
+        run: |
+          set -euo pipefail
+          description="Workspace schema and API are ready"
+          if [[ "${DEPLOY_TARGET}" == "production" ]]; then
+            description="Workspace ready and Production promoted"
+          fi
+
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/deployments/${{ steps.github_deployment.outputs.id }}/statuses" \
+            --raw-field state=success \
+            --raw-field description="${description}" \
+            --raw-field environment_url="${DEPLOYMENT_URL}" \
+            --raw-field log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null
+
+      - name: Mark failed deployment
+        if: failure() && steps.github_deployment.outputs.id != ''
+        shell: bash
+        env:
+          DEPLOYMENT_URL: ${{ steps.vercel.outputs.url }}
+        run: |
+          set -euo pipefail
+          args=(
+            --method POST
+            "repos/${GITHUB_REPOSITORY}/deployments/${{ steps.github_deployment.outputs.id }}/statuses"
+            --raw-field state=failure
+            --raw-field description="Deployment or workspace readiness failed"
+            --raw-field "log_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          )
+          if [[ -n "${DEPLOYMENT_URL}" ]]; then
+            args+=(--raw-field "environment_url=${DEPLOYMENT_URL}")
+          fi
+          gh api "${args[@]}" >/dev/null
