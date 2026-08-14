@@ -42,9 +42,6 @@ Complete this one-time repository setup:
    `Production` so deployment history stays separated by target.
 6. Keep application build/runtime secrets, including each environment's Neon
    `DATABASE_URL`, in Vercel. Do not duplicate database credentials in GitHub.
-7. In Vercel, open **Settings → Environments → Production → Branch Tracking**
-   and disable **Auto-assign Custom Production Domains**. The workflow verifies
-   this setting before creating a Production deployment.
 
 The repository values can be configured with GitHub CLI:
 
@@ -72,9 +69,11 @@ The readiness request sends the Vercel-documented
 authentication-protected Preview without making that Preview public.
 
 The Vercel deployment request omits `target` for Preview, as required by the
-API. Production uses `target: production`, remains staged while readiness is
-checked, and is promoted through Vercel's promotion API only after the check
-passes. This depends on the auto-assignment setting above remaining disabled.
+API. Production uses `target: production` with
+`autoAssignCustomDomains: false`, remains staged while readiness is checked,
+and is promoted through Vercel's promotion API only after the check passes.
+The per-deployment flag keeps this safety boundary independent of the project's
+default domain-assignment setting.
 
 For a schema change, explicitly confirm and recreate the intended empty
 database, then run `pnpm db:push` from the exact validated revision before
