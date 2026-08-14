@@ -116,6 +116,16 @@ Services private beta is unavailable, deploy `apps/web` and `apps/api` as two
 projects and set `API_ORIGIN` on the web project to the API project's public
 origin; the Next.js rewrite keeps browser calls on same-origin `/api/*`.
 
+Normal releases are automatic: CI validates an internal pull request before a
+separate credentialed workflow deploys its preview; a successful `main` CI run
+deploys Production. Builds do not modify the database; `/api/ready` must confirm
+that the selected environment already has the required tenant/membership
+schema. See
+[`docs/maintainer-setup.md`](docs/maintainer-setup.md) for the one-time GitHub
+and Vercel configuration.
+
+Initial local provisioning remains manual:
+
 ```bash
 vercel login
 vercel link
@@ -125,7 +135,6 @@ vercel integration add clerk
 vercel env pull apps/api/.env.local --yes
 # copy DATABASE_URL + CLERK_* into apps/api/.env for local
 DATABASE_URL='postgresql://...' pnpm db:push
-vercel deploy
 ```
 
 ## Scripts

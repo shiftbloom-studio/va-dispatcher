@@ -20,6 +20,69 @@ Create a branch ruleset for `main` in **Settings → Rules → Rulesets**:
 Do not enable automatic merge for dependency updates without reviewing their
 release notes, lockfile changes, licenses, and test results.
 
+## Automated preview and production delivery
+
+GitHub Actions is the sole deployment coordinator. Vercel's automatic Git
+deployments are disabled in `vercel.ts` so a commit cannot deploy before the
+repository's PostgreSQL contracts, quality checks, and integrated browser tests
+have passed.
+
+Complete this one-time repository setup:
+
+1. Create a dedicated Vercel access token scoped to the `va-dispatcher`
+   project. Do not reuse an individual's interactive CLI token. Record its
+   expiry and rotate it before that date.
+2. Add the token as the repository Actions secret `VERCEL_TOKEN`.
+3. Create a dedicated Vercel **Protection Bypass for Automation** value with a
+   note such as `GitHub Actions readiness`, then add it as the repository
+   Actions secret `VERCEL_PROTECTION_BYPASS`. Keep Vercel Authentication on.
+4. Add repository Actions variables `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, and
+   `VERCEL_GITHUB_REPOSITORY_ID`.
+5. Keep GitHub deployment environments named exactly `Preview` and
+   `Production` so deployment history stays separated by target.
+6. Keep application build/runtime secrets, including each environment's Neon
+   `DATABASE_URL`, in Vercel. Do not duplicate database credentials in GitHub.
+7. In Vercel, open **Settings → Environments → Production → Branch Tracking**
+   and disable **Auto-assign Custom Production Domains**. The workflow verifies
+   this setting before creating a Production deployment.
+
+The repository values can be configured with GitHub CLI:
+
+```bash
+gh secret set VERCEL_TOKEN
+gh secret set VERCEL_PROTECTION_BYPASS
+gh variable set VERCEL_ORG_ID --body '<vercel-team-id>'
+gh variable set VERCEL_PROJECT_ID --body '<vercel-project-id>'
+gh variable set VERCEL_GITHUB_REPOSITORY_ID --body '<github-repository-id>'
+```
+
+Use the IDs shown in Vercel Project Settings. Retrieve GitHub's numeric
+repository ID with `gh api repos/{owner}/{repository} --jq .id`.
+
+An internal pull request runs all validation, then the default-branch `Deploy`
+workflow creates one serialized preview from that exact successful CI commit.
+It never checks out or executes pull-request code while holding the Vercel
+token. The Vercel build does not change the database, and the deployment
+succeeds only after `/api/ready` confirms the already-provisioned live schema.
+A merge to `main` repeats the same flow for Production. Fork and Dependabot
+pull requests validate but do not receive deployment credentials.
+
+The readiness request sends the Vercel-documented
+`x-vercel-protection-bypass` header so the probe works against an
+authentication-protected Preview without making that Preview public.
+
+The Vercel deployment request omits `target` for Preview, as required by the
+API. Production uses `target: production`, remains staged while readiness is
+checked, and is promoted through Vercel's promotion API only after the check
+passes. This depends on the auto-assignment setting above remaining disabled.
+
+For a schema change, explicitly confirm and recreate the intended empty
+database, then run `pnpm db:push` from the exact validated revision before
+expecting readiness to pass. The deployment workflow never runs `db:push` and
+cannot mutate a database still used by the previous application revision.
+Record the Vercel token expiry in the maintainer inventory and rotate
+`VERCEL_TOKEN` before that date without changing the workflow.
+
 ## GitHub security features
 
 In **Settings → Security → Advanced Security**, enable the features available to

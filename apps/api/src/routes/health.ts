@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { hasDatabase } from "../db/client.js";
+import { hasDatabase, verifyWorkspaceDatabaseSchema } from "../db/client.js";
 import { env } from "../env.js";
 import { activeAcarsProviderName } from "../acars/factory.js";
 
@@ -13,4 +13,38 @@ healthRoutes.get("/health", (c) => {
     database: hasDatabase(),
     acarsProvider: activeAcarsProviderName(),
   });
+});
+
+healthRoutes.get("/ready", async (c) => {
+  if (!hasDatabase()) {
+    return c.json(
+      {
+        ok: false,
+        service: "va-dispatch-api",
+        database: false,
+        schema: false,
+      },
+      503,
+    );
+  }
+
+  try {
+    await verifyWorkspaceDatabaseSchema();
+    return c.json({
+      ok: true,
+      service: "va-dispatch-api",
+      database: true,
+      schema: true,
+    });
+  } catch {
+    return c.json(
+      {
+        ok: false,
+        service: "va-dispatch-api",
+        database: true,
+        schema: false,
+      },
+      503,
+    );
+  }
 });

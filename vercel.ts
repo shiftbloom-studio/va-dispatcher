@@ -3,6 +3,11 @@
  * Public /api/* → api service; everything else → web.
  */
 export const config = {
+  // GitHub Actions owns deployment ordering so validation and readiness finish
+  // before Vercel can promote the corresponding application revision.
+  git: {
+    deploymentEnabled: false,
+  },
   // Keep server rendering and API/database round trips in the same region as
   // the eu-central-1 Neon database.
   regions: ["fra1"],

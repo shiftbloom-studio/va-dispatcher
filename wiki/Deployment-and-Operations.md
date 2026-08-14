@@ -62,26 +62,42 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 ### Vercel
 
 - Configure both services and all server/public environment values.
+- Let GitHub Actions coordinate deployments; checked-in configuration disables
+  Vercel's independent Git deployment so CI and readiness finish first.
+- Disable automatic custom Production-domain assignment so the workflow can
+  promote a staged Production deployment only after readiness passes.
 - Enable Secure Backend Access with OIDC Federation for BotID server verification.
 - Use an eligible plan for Deep Analysis and the one-minute cron.
 - Configure spend notifications for Deep Analysis and other metered features.
 
 ## Deployment sequence
 
-1. Review and merge a green commit on `main`.
-2. Provision or select Neon, Clerk, and Vercel environments.
-3. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference).
-4. Create an empty Neon database or branch and run `pnpm db:push` from the exact
-   green release commit. Never target a database containing data to preserve.
-5. Deploy web and API services.
-6. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
+1. Provision or select Neon, Clerk, and Vercel environments.
+2. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference).
+3. Configure the one-time GitHub `VERCEL_TOKEN` and
+   `VERCEL_PROTECTION_BYPASS` secrets, Vercel project/team and repository
+   variables, and the `Preview` and `Production` environments described in
+   `docs/maintainer-setup.md`. The bypass is used only for readiness while
+   Vercel Authentication remains enabled on Preview deployments.
+4. For a schema change, with explicit operator approval, recreate the intended
+   empty database and run `pnpm db:push` from the exact validated revision. The
+   deployment workflow never changes the database.
+5. Open or update an internal pull request. GitHub runs the database contracts,
+   quality checks, and integrated E2E suite. A separate default-branch workflow
+   then deploys that exact successful commit without executing pull-request code
+   with deployment credentials. Vercel builds the application and exposes a
+   preview only if `/api/ready` confirms the pre-provisioned schema.
+6. Review and merge the green pull request. The deployment workflow repeats for
+   the exact successful `main` commit, verifies the staged deployment, and then
+   promotes it to Production.
+7. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
    that exact organization create or repair the trusted vSAS mapping.
-7. Sign up through `/vsas`, submit a pilot or dispatcher application, approve
+8. Sign up through `/vsas`, submit a pilot or dispatcher application, approve
    it in the tenant Admin console, select the organization, and verify routing.
-8. Load and review `/impressum` and `/privacy` before public promotion.
-9. As an Admin, configure/test Hoppie and branding; as the assigned pilot and
-   dispatcher, verify any enabled SimBrief, Navigraph, and weather integration.
-10. Verify BotID, both cron routes, headers, logs, and a synthetic end-to-end
+9. Load and review `/impressum` and `/privacy` before public promotion.
+10. As an Admin, configure/test Hoppie and branding; as the assigned pilot and
+    dispatcher, verify any enabled SimBrief, Navigraph, and weather integration.
+11. Verify BotID, both cron routes, headers, logs, and a synthetic end-to-end
     workflow.
 
 Example initial tooling flow:
@@ -96,7 +112,9 @@ vercel env pull apps/api/.env.local --yes
 
 Do not apply schema, seed, or deployment changes to a shared environment
 without explicit operator approval and a rollback plan. This project replaces
-its pre-production database rather than evolving an existing catalog.
+its pre-production database rather than evolving an existing catalog. The
+readiness gate detects a missing or incompatible workspace schema but does not
+repair it.
 
 ## Tenant bootstrap
 
@@ -126,6 +144,12 @@ environments, using either the development auth bypass or cron bearer.
 ```
 
 This is a liveness/configuration endpoint. `database: true` means `DATABASE_URL` is configured; it does not execute a database query. Use a synthetic authenticated read when verifying database readiness.
+
+`GET /ready` performs zero-row projections across the tenant and membership
+tables. It verifies database connectivity and the columns required for tenant
+bootstrap and authorization without reading or returning user records. GitHub
+Actions requires `database: true` and `schema: true` from this endpoint before
+it marks a preview or Production deployment ready.
 
 ## ACARS cron operations
 
