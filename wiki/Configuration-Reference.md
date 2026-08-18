@@ -10,9 +10,10 @@ Primary example: `apps/api/.env.example`.
 | ------------------------------------------------- | -------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | `NODE_ENV`                                        | `development`                    | Always                                                 | `development`, `test`, or `production`                                                                 |
 | `VERCEL_ENV`                                      | unset                            | Vercel supplies it                                     | `development`, `preview`, or `production`; takes precedence when selecting the production ACARS policy |
+| `VERCEL_BRANCH_URL` / `VERCEL_URL`                | unset                            | Vercel Preview redirect recovery                       | Vercel-supplied bare hostnames; Preview prefers the stable branch URL, then the exact deployment URL   |
 | `PORT`                                            | `3001`                           | Local override only                                    | Positive integer used by the local Node server                                                         |
 | `CORS_ORIGIN`                                     | `http://localhost:3000`          | Fallback cross-origin deployment                       | Comma-separated allowed web origins                                                                    |
-| `APP_ORIGIN`                                      | unset                            | Every production deployment                            | Public web origin for provider callbacks and Clerk invitations; HTTPS in production                    |
+| `APP_ORIGIN`                                      | unset                            | Production and local real-provider flows               | Canonical public origin only; explicit HTTPS value is mandatory in Production                          |
 | `DATABASE_URL`                                    | unset                            | Every authenticated or persistent workflow             | PostgreSQL connection URL, normally Neon                                                               |
 | `CLERK_SECRET_KEY`                                | unset                            | Real authentication and Clerk member sync              | Server secret; never expose as `NEXT_PUBLIC_*`                                                         |
 | `CLERK_PUBLISHABLE_KEY`                           | unset                            | Deployment integration may provide it                  | Parsed by API configuration; browser Clerk uses `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`                    |
@@ -125,11 +126,14 @@ The global Clerk application administrator must configure the instance once:
    to the public `https://<web-origin>/vsas/join` URL. Dashboard-approved
    waitlist emails use the Account Portal sign-up page by default and do not
    inherit the application's `ClerkProvider` URLs.
-9. Set `APP_ORIGIN` to the public web origin so server-created organization
-   invitations return through `/vsas/sign-in`. Confirm the Clerk allowed
-   redirect/origin settings cover that deployment, then acceptance-test the
-   Account Portal waitlist flow, tenant-branded invited sign-up, and direct
-   organization invitation separately.
+9. Set Production `APP_ORIGIN` to the canonical public web origin so
+   server-created organization invitations return through `/vsas/sign-in`.
+   Preview uses Vercel's trusted `VERCEL_BRANCH_URL`, then `VERCEL_URL`; keep
+   system environment variables enabled and allowlist the stable Preview branch
+   URL before testing direct invitations. Confirm Clerk's redirect/origin
+   settings cover the tested URL, then acceptance-test the Account Portal
+   waitlist flow, tenant-branded invited sign-up, and direct organization
+   invitation separately.
 
 Do not give tenant administrators Clerk Dashboard team access. Their Clerk
 organization role and the VA Dispatch `admin` role are tenant-scoped; global

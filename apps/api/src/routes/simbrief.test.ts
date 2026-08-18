@@ -416,4 +416,50 @@ describe("SimBrief routes", () => {
     expect(dispatchResponse.headers.get("cache-control")).toBe("no-store");
     expect(oauthResponse.headers.get("cache-control")).toBe("no-store");
   });
+
+  it("uses the Vercel branch origin for Preview callback recovery", async () => {
+    loadEnv({
+      NODE_ENV: "test",
+      VERCEL_ENV: "preview",
+      VERCEL_BRANCH_URL:
+        "va-dispatcher-git-preview-origin-shiftbloom.vercel.app",
+      VERCEL_URL: "va-dispatcher-deployment-shiftbloom.vercel.app",
+    });
+    const token = "a".repeat(43);
+    const dispatchResponse = await app.request(
+      `/simbrief/callback?dispatchId=${dispatch.id}&token=${token}`,
+    );
+    const state = `v2.${"i".repeat(16)}.${"t".repeat(22)}.${"c".repeat(58)}`;
+    const oauthResponse = await app.request(
+      `/simbrief/oauth/callback?state=${state}&code=authorization-code`,
+    );
+
+    expect(dispatchResponse.status).toBe(303);
+    expect(dispatchResponse.headers.get("location")).toBe(
+      `https://va-dispatcher-git-preview-origin-shiftbloom.vercel.app/vsas/portal/flights/${dispatch.flightId}?simbrief=ready`,
+    );
+    expect(oauthResponse.status).toBe(303);
+    expect(oauthResponse.headers.get("location")).toBe(
+      "https://va-dispatcher-git-preview-origin-shiftbloom.vercel.app/vsas/settings?simbrief=navigraph-connected",
+    );
+  });
+
+  it("keeps Preview callbacks as JSON when no trusted origin is available", async () => {
+    loadEnv({ NODE_ENV: "test", VERCEL_ENV: "preview" });
+    const token = "a".repeat(43);
+    const dispatchResponse = await app.request(
+      `/simbrief/callback?dispatchId=${dispatch.id}&token=${token}`,
+    );
+    const state = `v2.${"i".repeat(16)}.${"t".repeat(22)}.${"c".repeat(58)}`;
+    const oauthResponse = await app.request(
+      `/simbrief/oauth/callback?state=${state}&code=authorization-code`,
+    );
+
+    expect(dispatchResponse.status).toBe(200);
+    await expect(dispatchResponse.json()).resolves.toMatchObject({
+      dispatch: { id: dispatch.id, status: "ready" },
+    });
+    expect(oauthResponse.status).toBe(200);
+    await expect(oauthResponse.json()).resolves.toHaveProperty("connection");
+  });
 });
