@@ -66,7 +66,9 @@ from organization** to finish provider synchronization.
 
 - Record the visible status, message, and request ID. A provider rejection can
   indicate a missing `org:pilot`/`org:dispatcher` role or an invalid
-  `APP_ORIGIN`/invitation redirect configuration.
+  invitation redirect configuration. Verify Production's explicit `APP_ORIGIN`;
+  Preview requires Vercel system environment URLs and Clerk allowlisting for
+  the tested branch or deployment URL.
 - In local auth-bypass mode, live Clerk invitations are intentionally disabled
   and directory sync is a no-op. Set `AUTH_DEV_BYPASS=false` only in a safe
   environment configured with matching Clerk keys when testing this flow.

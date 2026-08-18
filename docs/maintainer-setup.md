@@ -37,11 +37,15 @@ Complete this one-time repository setup:
    note such as `GitHub Actions readiness`. The workflow reads the current value
    through the project-scoped Vercel token; do not duplicate it in GitHub. Keep
    Vercel Authentication on.
-4. Add repository Actions variables `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, and
+4. Keep Vercel's **Automatically expose System Environment Variables** setting
+   enabled. Preview invitation and provider-recovery redirects use the trusted
+   `VERCEL_BRANCH_URL`, falling back to the exact `VERCEL_URL`; Production never
+   uses those generated hostnames in place of its explicit `APP_ORIGIN`.
+5. Add repository Actions variables `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, and
    `VERCEL_GITHUB_REPOSITORY_ID`.
-5. Keep GitHub deployment environments named exactly `Preview` and
+6. Keep GitHub deployment environments named exactly `Preview` and
    `Production` so deployment history stays separated by target.
-6. Keep application build/runtime secrets, including each environment's Neon
+7. Keep application build/runtime secrets, including each environment's Neon
    `DATABASE_URL`, in Vercel. Do not duplicate database credentials in GitHub.
 
 The repository values can be configured with GitHub CLI:
@@ -141,8 +145,10 @@ The global Clerk administrator must keep Organizations in membership-optional
 mode, disable end-user organization creation and Verified Domain enrollment,
 and maintain `org:pilot` plus `org:dispatcher` in the tenant Role Set. Do not
 grant tenant administrators Clerk Dashboard workspace access. Verify
-`APP_ORIGIN` and invitation redirect allowlists in every environment before
-testing direct invitations.
+Production's explicit `APP_ORIGIN`. For Preview, keep Vercel system environment
+variables enabled and allowlist the stable branch URL before testing direct
+invitations; an exact deployment-URL fallback may need separate Clerk
+allowlisting.
 
 Before enabling an active retention policy or handling a verified subject
 request, follow the [privacy lifecycle runbook](privacy-operations.md). Confirm
