@@ -3,7 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { SimbriefDispatch } from "../db/schema.js";
 import { findTenantById } from "../db/repositories/tenants.js";
-import { env } from "../env.js";
+import { resolveAppOrigin } from "../env.js";
 import type { AppVariables } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
 import * as simbriefService from "../domain/simbrief/service.js";
@@ -336,13 +336,10 @@ async function callbackRedirect(
   tenantId: string,
   tenantPath: string,
 ): Promise<string | null> {
-  const origin = env().APP_ORIGIN;
+  const origin = resolveAppOrigin();
   if (!origin) return null;
   const tenant = await findTenantById(tenantId);
   if (!tenant) return null;
   const url = new URL(`/${tenant.slug}${tenantPath}`, origin);
-  if (env().NODE_ENV === "production" && url.protocol !== "https:") {
-    return null;
-  }
   return url.toString();
 }
