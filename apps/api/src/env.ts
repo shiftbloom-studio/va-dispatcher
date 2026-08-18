@@ -101,6 +101,7 @@ function validateRuntimeEnvironment(config: Env): void {
   if (config.NODE_ENV !== "production") return;
 
   const missing = [
+    ["APP_ORIGIN", config.APP_ORIGIN],
     ["DATABASE_URL", config.DATABASE_URL],
     ["CLERK_SECRET_KEY", config.CLERK_SECRET_KEY],
     ["TENANT_SECRETS_KEY", config.TENANT_SECRETS_KEY],
@@ -108,6 +109,11 @@ function validateRuntimeEnvironment(config: Env): void {
   if (missing.length) {
     throw new Error(
       `Invalid production environment: missing ${missing.join(", ")}`,
+    );
+  }
+  if (new URL(config.APP_ORIGIN!).protocol !== "https:") {
+    throw new Error(
+      "Invalid production environment: APP_ORIGIN must use HTTPS",
     );
   }
   if (config.CRON_SECRET === DEFAULT_CRON_SECRET) {

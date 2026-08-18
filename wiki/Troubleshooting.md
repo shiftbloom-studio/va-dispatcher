@@ -14,6 +14,18 @@ Start with the visible error and its `X-Request-Id`. Avoid changing credentials,
 
 ## Authentication and tenant errors
 
+### A new email is reported as unknown instead of showing sign-up
+
+In Clerk Waitlist mode, public sign-up is intentionally invitation-only. New
+users without a valid direct invitation must open `/:slug/waitlist` and submit
+their email there. Confirm that the tenant `ClerkProvider` points `waitlistUrl`
+to that route and that Clerk email delivery is enabled. After a global Clerk
+administrator invites the entry, the
+Dashboard approval email opens Clerk's Account Portal sign-up page by default;
+configure the Account Portal sign-up fallback redirect to `/:slug/join` for the
+separate pilot/dispatcher membership application. `/:slug/sign-up` is used only
+when an invitation flow explicitly redirects into the tenant application.
+
 ### Redirected to sign-in repeatedly
 
 - Confirm the Clerk publishable and secret keys belong to the same instance.
@@ -49,6 +61,24 @@ the user already has a disabled/invited local record, review it in VA Dispatch;
 do not delete application history or bypass local status. A failed removal can
 also leave a safe disabled record plus a stale Clerk membership—repeat **Remove
 from organization** to finish provider synchronization.
+
+### Invitation sends an error or sync finds no new member
+
+- Record the visible status, message, and request ID. A provider rejection can
+  indicate a missing `org:pilot`/`org:dispatcher` role or an invalid
+  `APP_ORIGIN`/invitation redirect configuration.
+- In local auth-bypass mode, live Clerk invitations are intentionally disabled
+  and directory sync is a no-op. Set `AUTH_DEV_BYPASS=false` only in a safe
+  environment configured with matching Clerk keys when testing this flow.
+- Pending invitations cannot be synchronized. The recipient must accept a
+  tenant organization invitation before first tenant access or **Sync Clerk
+  directory** can create the local row.
+- An application-wide user invitation from Clerk Dashboard is not a tenant
+  invitation. After account creation, send the user to `/:slug/join` and
+  approve their pilot/dispatcher request in VA Dispatch.
+- Treat a sync result with skipped entries as incomplete; Clerk did not return
+  the stable user ID needed for a tenant-scoped membership row, or an existing
+  pending/disabled local member requires explicit administrator review.
 
 ### Wrong role after a Clerk change
 

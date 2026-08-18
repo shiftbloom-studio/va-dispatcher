@@ -1,14 +1,14 @@
 # Project Status and Limitations
 
 This page records the implemented boundary reviewed against the integrated
-application on 13 August 2026. Re-verify it whenever behavior changes.
+application on 18 August 2026. Re-verify it whenever behavior changes.
 
 ## Implemented
 
 | Area                | Current implementation                                                                                                |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Tenant shell        | Path-based tenant routing, vSAS branding, unknown-slug rejection                                                      |
-| Authentication      | Clerk sign-in/sign-up/session tasks, pre-membership application, organization agreement, production-hard-off fixtures |
+| Authentication      | Clerk sign-in/waitlist/invited signup/tasks, tenant membership application, organization agreement, hard-off fixtures |
 | Roles               | Pilot, dispatcher, and admin authorization at API and UI boundaries                                                   |
 | Schedule demand     | Normalized UTC availability, server validation, pending-request edit with version checks                              |
 | Request fulfillment | Review, rejection, partial/final fulfillment, idempotent batches, explicit linked-flight cancellation policy          |
@@ -84,8 +84,8 @@ Before calling a deployment fully ready:
 2. Confirm `/api/ready` passed for the exact deployment commit.
 3. Verify Clerk organization roles, legal configuration, BotID, and tenant
    encryption keys.
-4. Complete deployed signup/application/approval, invitation, removal, pilot,
-   and dispatcher journeys.
+4. Complete deployed waitlist/invited-signup/application approval, direct
+   invitation, removal, pilot, and dispatcher journeys.
 5. Verify Hoppie, SimBrief, Navigraph, and the MSFS client only with operator-
    supplied credentials appropriate to that environment.
 6. Record any provider or legal prerequisite as external; do not replace it

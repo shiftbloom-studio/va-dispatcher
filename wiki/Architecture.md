@@ -60,7 +60,8 @@ flowchart TB
 The Next.js App Router uses a tenant segment at `/:slug`.
 
 - The root layout owns public privacy controls and optional telemetry.
-- The tenant layout configures Clerk's sign-in, sign-up, join fallback, and task routes inside the current slug.
+- The tenant layout configures Clerk's sign-in, waitlist, approved-user sign-up,
+  join fallback, and task routes inside the current slug.
 - The join route verifies a Clerk user without requiring organization context,
   then exposes only that user's tenant application state.
 - The protected layout rejects unknown slugs, routes users without an

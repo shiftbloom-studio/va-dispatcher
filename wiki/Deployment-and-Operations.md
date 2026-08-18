@@ -32,6 +32,12 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
 ### Clerk
 
 - Enable Organizations with optional membership and organization slugs.
+- Enable Clerk Waitlist mode and email delivery; host the configured waitlist at
+  `/vsas/waitlist`. Invite-only (`restricted`) sign-up mode and the paid
+  allowlist are not required.
+- Set the Clerk Account Portal sign-up fallback redirect to the public
+  `/vsas/join` URL; Dashboard-approved waitlist emails use the Account Portal by
+  default.
 - Disable user-created organizations, automatic first-organization creation,
   and Verified Domain enrollment/membership requests.
 - Add `org:pilot` and `org:dispatcher` to the Primary Role Set alongside
@@ -92,8 +98,12 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
    promotes it to Production.
 7. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
    that exact organization create or repair the trusted vSAS mapping.
-8. Sign up through `/vsas`, submit a pilot or dispatcher application, approve
-   it in the tenant Admin console, select the organization, and verify routing.
+8. Join `/vsas/waitlist`, invite the entry in Clerk, complete the invited
+   Clerk Account Portal sign-up flow, confirm its fallback reaches `/vsas/join`,
+   submit a pilot or dispatcher application, approve it in the tenant Admin
+   console, select the organization, and verify routing. Test the tenant-branded
+   `/vsas/sign-up` route separately with an invitation that redirects into the
+   application.
 9. Load and review `/impressum` and `/privacy` before public promotion.
 10. As an Admin, configure/test Hoppie and branding; as the assigned pilot and
     dispatcher, verify any enabled SimBrief, Navigraph, and weather integration.

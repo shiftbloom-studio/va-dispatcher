@@ -114,7 +114,7 @@ export function MembershipApplication({
           <div className="p-5">
             <a
               href={`/${slug}`}
-              className="inline-flex min-h-11 items-center bg-[var(--brand-action)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--brand-action-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              className="inline-flex min-h-11 items-center bg-[var(--brand-action)] px-4 py-2 text-sm font-semibold text-[var(--brand-on-action)] hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
               Open VA Dispatch
             </a>

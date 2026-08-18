@@ -23,6 +23,7 @@ export default async function TenantLayout({
       signUpUrl={authRoutes.signUp}
       signInFallbackRedirectUrl={authRoutes.home}
       signUpFallbackRedirectUrl={authRoutes.join}
+      waitlistUrl={authRoutes.waitlist}
       taskUrls={authRoutes.taskUrls}
     >
       {children}

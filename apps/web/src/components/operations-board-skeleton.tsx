@@ -10,7 +10,7 @@ export function OperationsBoardSkeleton() {
       <div className="border-y border-slate-300 bg-white">
         <div className="grid snap-x snap-mandatory grid-flow-col auto-cols-[85%] divide-x divide-slate-200 overflow-x-auto md:grid-flow-row md:auto-cols-auto md:grid-cols-4 md:overflow-visible">
           {Array.from({ length: 4 }, (_, index) => (
-            <div key={index} className="min-h-40 px-5 py-4 sm:px-6">
+            <div key={index} className="min-h-32 px-5 py-4 sm:px-6">
               <div className="h-2.5 w-24 bg-slate-200" />
               <div className="mt-3 h-7 w-14 bg-slate-300" />
               <div className="mt-2 h-2.5 w-32 max-w-full bg-slate-100" />

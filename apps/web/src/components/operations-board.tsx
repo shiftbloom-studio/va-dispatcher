@@ -77,19 +77,17 @@ function BoardCard({
   pilot,
   slug,
   onModify,
-  animationIndex,
 }: {
   flight: BoardFlight;
   pilot: Member | undefined;
   slug: string;
   onModify: () => void;
-  animationIndex: number;
 }) {
   const active = flight.status === "active";
   const pilotStation = pilot?.pilotCallsign;
   return (
     <article
-      className={`board-card relative border bg-white py-3.5 pl-4 pr-3 transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-slate-400 hover:shadow-[0_7px_20px_rgba(15,23,42,0.07)] ${
+      className={`board-card relative border bg-white py-3.5 pl-4 pr-3 transition-colors duration-200 ease-out hover:border-slate-400 ${
         flight.assignmentConfirmationRequired
           ? "border-amber-400 bg-amber-50/45"
           : "border-slate-200"
@@ -106,7 +104,6 @@ function BoardCard({
                   : flight.boardLane === "accepted"
                     ? "var(--brand-complement)"
                     : "var(--brand)",
-          animationDelay: `${Math.min(animationIndex, 8) * 25}ms`,
         } as React.CSSProperties
       }
     >
@@ -114,7 +111,7 @@ function BoardCard({
         <button
           type="button"
           onClick={onModify}
-          className="-ml-1 inline-flex min-h-8 items-center gap-1 border border-transparent px-1 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:border-slate-300 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
+          className="-ml-1 inline-flex min-h-11 items-center gap-1 border border-transparent px-1 text-[11px] font-black uppercase tracking-wide text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
         >
           <PencilLine aria-hidden className="size-3.5" /> Modify
         </button>
@@ -134,7 +131,7 @@ function BoardCard({
       >
         <div className="flex items-end justify-between gap-3">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">
               {flight.flightNumber}
             </p>
             <p className="mt-0.5 font-display text-[1.4rem] font-black tracking-tight text-[#17213d]">
@@ -178,7 +175,7 @@ function BoardCard({
             ...(pilotStation ? { station: pilotStation } : {}),
             flightId: flight.id,
           }).toString()}`}
-          className="mt-3 flex min-h-9 items-center justify-center gap-2 border border-[var(--brand-border)] bg-[var(--brand-faint)] px-3 text-xs font-black uppercase tracking-wider text-[var(--brand-action)] transition hover:bg-[var(--brand-soft)] focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
+          className="mt-3 flex min-h-11 items-center justify-center gap-2 border border-[var(--brand-border)] bg-[var(--brand-faint)] px-3 text-xs font-black uppercase tracking-wider text-[var(--brand-action)] transition-colors hover:bg-[var(--brand-soft)] focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
         >
           <MessageSquareText aria-hidden className="size-4" /> Open ACARS
         </Link>
@@ -252,7 +249,7 @@ export function OperationsBoard({ slug }: { slug: string }) {
         <button
           type="button"
           onClick={() => void board.refetch()}
-          className="inline-flex min-h-10 items-center gap-2 border border-slate-300 bg-white px-3 text-xs font-black uppercase tracking-wider text-slate-700 hover:border-slate-500 focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
+          className="inline-flex min-h-11 items-center gap-2 border border-slate-300 bg-white px-3 text-xs font-black uppercase tracking-wider text-slate-700 hover:border-slate-500 focus-visible:outline-2 focus-visible:outline-[var(--brand-action)]"
         >
           <RefreshCw
             aria-hidden
@@ -301,7 +298,7 @@ export function OperationsBoard({ slug }: { slug: string }) {
               </div>
               <div className="min-h-52 space-y-2 border-x border-slate-200 p-2.5 2xl:min-h-[34rem]">
                 {flights.length ? (
-                  flights.map((flight, index) => (
+                  flights.map((flight) => (
                     <BoardCard
                       key={flight.id}
                       flight={flight}
@@ -311,7 +308,6 @@ export function OperationsBoard({ slug }: { slug: string }) {
                           : undefined
                       }
                       slug={slug}
-                      animationIndex={index}
                       onModify={() => setSelectedFlightId(flight.id)}
                     />
                   ))
@@ -522,11 +518,11 @@ function Kpi({
   warning?: boolean;
 }) {
   return (
-    <div className="relative min-h-40 snap-start px-5 py-4 sm:px-6">
+    <div className="relative min-h-32 snap-start px-5 py-4 sm:px-6">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600">
         {label}
       </p>
-      <p className="mt-2 font-display text-5xl font-light tracking-tight text-[#17213d]">
+      <p className="mt-1.5 font-display text-4xl font-semibold tracking-tight text-[var(--foreground)]">
         {value}
       </p>
       <p

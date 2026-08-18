@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminControlPlane } from "@/components/admin-control-plane";
+import { ApiError } from "@/lib/api/http";
 import { TestQueryProvider } from "@/test/test-query-provider";
 
 const apiMock = vi.fn();
@@ -14,6 +15,28 @@ let organizationInvitations: {
   items: Array<Record<string, unknown>>;
   totalCount: number;
 };
+let directorySync: {
+  complete: boolean;
+  summaryAuditRecorded: boolean;
+  pages: number;
+  seen: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  failed: number;
+  failures: Array<{
+    scope: "page" | "membership";
+    offset: number;
+    code: string;
+  }>;
+  note?: string;
+};
+let invitationCreateError: Error | null;
+let invitationCreateAuditRecorded: boolean;
+let invitationRevokeAuditRecorded: boolean;
+let invitationListCalls: number;
+let failInvitationRefetch: boolean;
 
 vi.mock("@/lib/api/use-api", () => ({
   useApi: () => apiMock,
@@ -64,12 +87,39 @@ describe("admin member console", () => {
     apiMock.mockReset();
     membershipApplications = { items: [], nextCursor: null };
     organizationInvitations = { items: [], totalCount: 0 };
+    invitationCreateError = null;
+    invitationCreateAuditRecorded = true;
+    invitationRevokeAuditRecorded = true;
+    invitationListCalls = 0;
+    failInvitationRefetch = false;
+    directorySync = {
+      complete: true,
+      summaryAuditRecorded: true,
+      pages: 1,
+      seen: 2,
+      created: 0,
+      updated: 0,
+      unchanged: 2,
+      skipped: 0,
+      failed: 0,
+      failures: [],
+    };
     apiMock.mockImplementation(
       (path: string, options: { method?: string; body?: string }) => {
+        if (path === "/members/sync" && options.method === "POST") {
+          return Promise.resolve(directorySync);
+        }
         if (path.startsWith("/members/invitations?") && !options.method) {
+          invitationListCalls += 1;
+          if (failInvitationRefetch && invitationListCalls > 1) {
+            return Promise.reject(new Error("Synthetic refresh failure"));
+          }
           return Promise.resolve(organizationInvitations);
         }
         if (path === "/members/invitations" && options.method === "POST") {
+          if (invitationCreateError) {
+            return Promise.reject(invitationCreateError);
+          }
           const body = JSON.parse(options.body ?? "{}");
           return Promise.resolve({
             invitation: {
@@ -81,7 +131,25 @@ describe("admin member console", () => {
               updatedAt: "2026-08-13T00:00:00.000Z",
               expiresAt: "2026-08-27T00:00:00.000Z",
             },
-            auditRecorded: true,
+            auditRecorded: invitationCreateAuditRecorded,
+          });
+        }
+        if (
+          path.startsWith("/members/invitations/") &&
+          options.method === "DELETE"
+        ) {
+          const invitation = organizationInvitations.items[0] ?? {
+            id: path.split("/").at(-1),
+            emailAddress: "new@example.test",
+            role: "org:pilot",
+            status: "revoked",
+            createdAt: "2026-08-13T00:00:00.000Z",
+            updatedAt: "2026-08-13T00:00:00.000Z",
+            expiresAt: "2026-08-27T00:00:00.000Z",
+          };
+          return Promise.resolve({
+            invitation: { ...invitation, status: "revoked" },
+            auditRecorded: invitationRevokeAuditRecorded,
           });
         }
         if (
@@ -166,6 +234,274 @@ describe("admin member console", () => {
       emailAddress: "new@example.test",
       role: "dispatcher",
     });
+    expect(
+      await screen.findByText(/Invitation sent\. It remains pending/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/unless an Invited or Disabled record/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Pending tenant invitations are not organization members/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("/vsas/join")).toBeInTheDocument();
+  });
+
+  it("reports skipped Clerk memberships as incomplete and reviewable", async () => {
+    directorySync = {
+      complete: false,
+      summaryAuditRecorded: true,
+      pages: 1,
+      seen: 1,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      skipped: 1,
+      failed: 0,
+      failures: [
+        {
+          scope: "membership",
+          offset: 0,
+          code: "local_status_requires_review",
+        },
+      ],
+    };
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AdminControlPlane slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Sync Clerk directory" }),
+    );
+
+    const result = await screen.findByRole("alert");
+    expect(result).toHaveTextContent("Directory sync needs attention");
+    expect(result).toHaveTextContent("1 skipped");
+    expect(result).toHaveTextContent(
+      "The sample includes 1 local membership that needs explicit application or disabled-member review",
+    );
+    expect(result).toHaveTextContent(
+      "Use the Status filter to review Invited and Disabled members",
+    );
+    expect(result).not.toHaveTextContent("local_status_requires_review");
+  });
+
+  it("distinguishes aggregate skipped totals from the bounded issue sample", async () => {
+    directorySync = {
+      complete: false,
+      summaryAuditRecorded: true,
+      pages: 1,
+      seen: 30,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      skipped: 30,
+      failed: 0,
+      failures: Array.from({ length: 25 }, (_, offset) => ({
+        scope: "membership" as const,
+        offset,
+        code: "missing_user_id",
+      })),
+    };
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AdminControlPlane slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Sync Clerk directory" }),
+    );
+
+    const result = await screen.findByRole("alert");
+    expect(result).toHaveTextContent("30 skipped");
+    expect(result).toHaveTextContent("Issue details are a bounded sample");
+    expect(result).toHaveTextContent("The sample includes 25 entries");
+    expect(result).not.toHaveTextContent("25 skipped entries");
+  });
+
+  it("labels a definitive invitation submission failure separately from invitation loading", async () => {
+    invitationCreateError = new ApiError({
+      status: 422,
+      code: "UNPROCESSABLE",
+      message: "Clerk rejected the configured role",
+    });
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AdminControlPlane slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.type(
+      await screen.findByLabelText("Email address"),
+      "new@example.test",
+    );
+    await user.click(screen.getByRole("button", { name: "Send invitation" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Invitation was not sent. Clerk rejected the configured role",
+    );
+  });
+
+  it("treats an invalid success response as an unconfirmed invitation outcome", async () => {
+    invitationCreateError = new ApiError({
+      status: 200,
+      code: "INVALID_RESPONSE",
+      message: "The server response did not match the expected contract.",
+    });
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AdminControlPlane slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.type(
+      await screen.findByLabelText("Email address"),
+      "new@example.test",
+    );
+    await user.click(screen.getByRole("button", { name: "Send invitation" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not confirm whether Clerk sent the invitation",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Refresh pending invitations before retrying",
+    );
+  });
+
+  it("keeps the last known invitation list visible when a refresh fails", async () => {
+    organizationInvitations = {
+      items: [
+        {
+          id: "orginv-existing",
+          emailAddress: "existing@example.test",
+          role: "org:pilot",
+          status: "pending",
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
+          expiresAt: "2026-08-27T00:00:00.000Z",
+        },
+      ],
+      totalCount: 1,
+    };
+    failInvitationRefetch = true;
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AdminControlPlane slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText("existing@example.test"),
+    ).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Email address"), "new@example.test");
+    await user.click(screen.getByRole("button", { name: "Send invitation" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "last known list remains visible",
+    );
+    expect(screen.getByText("existing@example.test")).toBeInTheDocument();
+  });
+
+  it("gives each invitation revoke control a specific accessible name", async () => {
+    organizationInvitations = {
+      items: [
+        {
+          id: "orginv-one",
+          emailAddress: "one@example.test",
+          role: "org:pilot",
+          status: "pending",
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
+          expiresAt: "2026-08-27T00:00:00.000Z",
+        },
+        {
+          id: "orginv-two",
+          emailAddress: "two@example.test",
+          role: "org:dispatcher",
+          status: "pending",
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
+          expiresAt: "2026-08-27T00:00:00.000Z",
+        },
+      ],
+      totalCount: 2,
+    };
+
+    render(
+      <TestQueryProvider>
+        <AdminControlPlane slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Revoke invitation for one@example.test",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Revoke invitation for two@example.test",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("warns against retrying when Clerk succeeded but audit recording failed", async () => {
+    invitationCreateAuditRecorded = false;
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AdminControlPlane slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.type(
+      await screen.findByLabelText("Email address"),
+      "new@example.test",
+    );
+    await user.click(screen.getByRole("button", { name: "Send invitation" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "do not retry blindly",
+    );
+  });
+
+  it("shows auth-bypass directory sync as a no-op warning", async () => {
+    directorySync = {
+      complete: true,
+      summaryAuditRecorded: false,
+      pages: 0,
+      seen: 0,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      failures: [],
+      note: "Dev bypass — no Clerk org sync",
+    };
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider>
+        <AdminControlPlane slug="vsas" />
+      </TestQueryProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Sync Clerk directory" }),
+    );
+
+    const result = await screen.findByRole("alert");
+    expect(result).toHaveTextContent("Dev bypass — no Clerk org sync");
+    expect(result).toHaveTextContent("0 seen");
   });
 
   it("paginates every pending invitation and application queue", async () => {

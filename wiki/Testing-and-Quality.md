@@ -44,11 +44,11 @@ Web tests use Vitest, jsdom, Testing Library, and a `server-only` test shim. The
 
 - typed API response/error handling;
 - API serializer contract fixtures;
-- tenant auth routes and session tasks;
-- signup-to-application routing, role selection, tenant approval, invitations,
+- tenant auth routes, waitlist, and session tasks;
+- invited-signup-to-application routing, role selection, tenant approval, invitations,
   and organization membership settings;
 - unknown-tenant and role routing;
-- tenant-branded sign-in/sign-up;
+- tenant-branded sign-in/waitlist/sign-up;
 - schedule availability and UTC normalization;
 - partial/final idempotent offer batches and conflict recovery;
 - pilot decisions;
