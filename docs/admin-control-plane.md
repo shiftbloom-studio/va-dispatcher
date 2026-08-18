@@ -16,7 +16,14 @@ created, updated, unchanged, skipped, and failed counts. At most 25 opaque
 failure locations are returned so one invalid member does not expose provider
 error payloads or produce an unbounded response. Members absent from Clerk are
 not disabled automatically; an administrator must review and disable them
-explicitly.
+explicitly. A Clerk entry without a user ID is reported as an incomplete,
+skipped item instead of a successful no-op. Existing pending or disabled local
+memberships are also reported for explicit review and are never reactivated or
+rewritten from Clerk directory state.
+
+Only accepted Clerk organization memberships appear in this directory. Pending
+organization invitations and application-wide account invitations are not
+members and cannot be imported by sync.
 
 ## Invitations and manual applications
 
@@ -24,7 +31,17 @@ The console sends and revokes pilot/dispatcher invitations through Clerk's
 Backend API. Invitation email stays in Clerk and in the admin-only live
 response; audit metadata records role and expiry without copying the address.
 The configured 7/14/30-day lifetime and the tenant return URL come from
-organization settings and `APP_ORIGIN`.
+organization settings and `APP_ORIGIN`; invited users return to
+the public `/{slug}/sign-in` Clerk flow, which consumes the organization ticket
+for existing users or transfers new users into sign-up. After an organization
+invitation is accepted, first tenant access or directory sync creates the
+active local membership when no local record exists. An existing pending or
+disabled local record remains inactive for explicit administrator review.
+
+An application-wide invitation sent from Clerk Dashboard creates an account,
+not a tenant membership. After accepting it, the user must open
+`/{slug}/join`, request a pilot or dispatcher role, and receive administrator
+approval. This preserves tenant choice and the local approval audit trail.
 
 Self-service application is separate from Clerk organization membership:
 

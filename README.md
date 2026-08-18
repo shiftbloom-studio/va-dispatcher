@@ -58,11 +58,18 @@ not by itself certify GDPR compliance.
 Clerk Organizations must use optional membership, organization slugs must be
 enabled, end-user organization creation and Verified Domain enrollment must be
 disabled, and the Primary Role Set must contain `org:admin`, `org:dispatcher`,
-and `org:pilot`. The vSAS Clerk organization slug is `vsas`; set
-`VSAS_CLERK_ORG_ID` to its immutable ID. Tenant admins then manage invitations,
-manual pilot/dispatcher signup approval, roles, removal, and tenant membership
-settings inside VA Dispatch. See the Wiki configuration reference for the
-one-time global Clerk setup.
+and `org:pilot`. Production uses Clerk Waitlist mode with email enabled;
+self-service new users enter through `/vsas/waitlist`. Clerk Dashboard approval
+emails open the Clerk Account Portal sign-up flow; configure its sign-up
+fallback redirect to `/vsas/join`, where VA Dispatch handles tenant-role
+approval. The tenant-branded `/vsas/sign-up` route remains available for direct
+invitation flows that redirect into the application. This flow does not require
+Clerk's Invite-only (`restricted`) sign-up mode or the paid allowlist. The vSAS
+Clerk organization slug is
+`vsas`; set `VSAS_CLERK_ORG_ID` to its immutable ID. Tenant admins then manage
+the separate pilot/dispatcher application approval, roles, removal, and tenant
+membership settings inside VA Dispatch. See the Wiki configuration reference
+for the one-time global Clerk setup.
 
 ## Core flows
 
@@ -97,7 +104,7 @@ enabled in production, even if a stale production variable says `mock`.
 | Layer      | Choice                                   | Idle behavior                                  |
 | ---------- | ---------------------------------------- | ---------------------------------------------- |
 | Postgres   | **Neon Free / scale-to-zero**            | Suspends when unused → **$0 idle**             |
-| Auth       | **Clerk Free**                           | MAU-based free tier; no always-on server       |
+| Auth       | **Clerk + B2B Authentication**           | Production custom roles require the add-on     |
 | API        | **Vercel Fluid Compute**                 | Active CPU pricing; no charge when not invoked |
 | ACARS cron | Every **1 min**, configured tenants only | Required for a live Hoppie ground station      |
 

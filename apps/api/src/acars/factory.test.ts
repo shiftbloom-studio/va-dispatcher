@@ -24,6 +24,7 @@ const tenant: Tenant = {
 };
 
 const productionEnvironment = {
+  APP_ORIGIN: "https://app.example.test",
   DATABASE_URL: "postgresql://user:pass@localhost/va_dispatch",
   CLERK_SECRET_KEY: "sk_test_configured",
   TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),

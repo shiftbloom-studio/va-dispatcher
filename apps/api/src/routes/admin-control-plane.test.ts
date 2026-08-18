@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ClerkAPIResponseError } from "@clerk/backend/errors";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   listMemberships: vi.fn(),
@@ -72,6 +73,7 @@ vi.mock("../db/repositories/audit.js", () => ({
 }));
 
 import { errorHandler } from "../middleware/error.js";
+import { loadEnv, resetEnvCache } from "../env.js";
 import { membersRoutes } from "./members.js";
 import { auditRoutes } from "./audit.js";
 
@@ -83,6 +85,11 @@ app.get("/mounted-after-admin-probe", (c) => c.json({ ok: true }));
 
 describe("admin control-plane routes", () => {
   beforeEach(() => {
+    resetEnvCache();
+    loadEnv({
+      NODE_ENV: "test",
+      APP_ORIGIN: "https://app.example.test",
+    });
     vi.clearAllMocks();
     mocks.listMemberships.mockResolvedValue({ items: [], nextCursor: null });
     mocks.findMembershipById.mockResolvedValue({
@@ -148,6 +155,8 @@ describe("admin control-plane routes", () => {
       failures: [],
     });
   });
+
+  afterEach(() => resetEnvCache());
 
   it("permits dispatcher roster reads but reserves mutations for admins", async () => {
     const list = await app.request("/members?search=SAS&role=pilot&limit=10", {
@@ -394,6 +403,175 @@ describe("admin control-plane routes", () => {
     expect(approval.status).toBe(403);
     expect(mocks.getOrganizationInvitationList).not.toHaveBeenCalled();
     expect(mocks.updateMemberAsAdministrator).not.toHaveBeenCalled();
+  });
+
+  it("creates a tenant invitation that returns through the public Clerk sign-in flow", async () => {
+    const createdAt = new Date("2026-08-18T10:00:00.000Z").getTime();
+    const expiresAt = new Date("2026-09-17T10:00:00.000Z").getTime();
+    mocks.createOrganizationInvitation.mockResolvedValue({
+      id: "orginv-test",
+      emailAddress: "new-pilot@example.test",
+      role: "org:pilot",
+      status: "pending",
+      createdAt,
+      updatedAt: createdAt,
+      expiresAt,
+    });
+
+    const response = await app.request("/members/invitations", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-test-role": "admin",
+      },
+      body: JSON.stringify({
+        emailAddress: "new-pilot@example.test",
+        role: "pilot",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.createOrganizationInvitation).toHaveBeenCalledWith({
+      organizationId: "org-test",
+      inviterUserId: "user-test",
+      emailAddress: "new-pilot@example.test",
+      role: "org:pilot",
+      expiresInDays: 30,
+      redirectUrl: "https://app.example.test/vsas/sign-in",
+      publicMetadata: {
+        vaDispatchRole: "pilot",
+        tenantSlug: "vsas",
+      },
+    });
+    expect(mocks.writeAudit).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      actorMembershipId: "26000000-0000-4000-8000-000000000011",
+      action: "membership.invitation_created",
+      entityType: "organization_invitation",
+      entityId: "orginv-test",
+      meta: {
+        role: "pilot",
+        expiresAt: "2026-09-17T10:00:00.000Z",
+      },
+    });
+    await expect(response.json()).resolves.toEqual({
+      invitation: {
+        id: "orginv-test",
+        emailAddress: "new-pilot@example.test",
+        role: "org:pilot",
+        status: "pending",
+        createdAt: "2026-08-18T10:00:00.000Z",
+        updatedAt: "2026-08-18T10:00:00.000Z",
+        expiresAt: "2026-09-17T10:00:00.000Z",
+      },
+      auditRecorded: true,
+    });
+  });
+
+  it.each([
+    {
+      providerStatus: 400,
+      responseStatus: 409,
+      providerCode: "organization_invitation_not_unique",
+      code: "CONFLICT",
+      message:
+        "Clerk already has a pending invitation or organization membership for this email",
+    },
+    {
+      providerStatus: 403,
+      responseStatus: 422,
+      providerCode: "invitations_not_supported_in_organization",
+      code: "UNPROCESSABLE",
+      message:
+        "Clerk does not allow this organization invitation. Verify organization invitation support, tenant role configuration, and membership capacity",
+    },
+    {
+      providerStatus: 422,
+      responseStatus: 422,
+      providerCode: "form_param_value_invalid",
+      code: "UNPROCESSABLE",
+      message:
+        "Clerk rejected the invitation. Verify that organization invitations are enabled, the selected tenant role exists, and the invitation return URL is allowed",
+    },
+    {
+      providerStatus: 429,
+      responseStatus: 429,
+      providerCode: "rate_limit_exceeded",
+      code: "UPSTREAM",
+      message: "Clerk rate limit reached; try later",
+    },
+  ])(
+    "maps a Clerk $providerStatus invitation failure to a safe actionable response",
+    async ({ providerStatus, responseStatus, providerCode, code, message }) => {
+      mocks.createOrganizationInvitation.mockRejectedValue(
+        new ClerkAPIResponseError("raw provider response", {
+          status: providerStatus,
+          data: [
+            {
+              code: providerCode,
+              message: "sensitive upstream detail",
+            },
+          ],
+        }),
+      );
+
+      const response = await app.request("/members/invitations", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-test-role": "admin",
+        },
+        body: JSON.stringify({
+          emailAddress: "new-pilot@example.test",
+          role: "pilot",
+        }),
+      });
+
+      expect(response.status).toBe(responseStatus);
+      const body = await response.json();
+      expect(body).toEqual({ error: { code, message } });
+      expect(JSON.stringify(body)).not.toContain("sensitive upstream detail");
+      expect(JSON.stringify(body)).not.toContain(providerCode);
+    },
+  );
+
+  it("makes live Clerk invitation and sync behavior explicit in auth-bypass mode", async () => {
+    resetEnvCache();
+    loadEnv({ NODE_ENV: "test", AUTH_DEV_BYPASS: "true" });
+
+    const invitation = await app.request("/members/invitations", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-test-role": "admin",
+      },
+      body: JSON.stringify({
+        emailAddress: "new-pilot@example.test",
+        role: "pilot",
+      }),
+    });
+    const sync = await app.request("/members/sync", {
+      method: "POST",
+      headers: { "x-test-role": "admin" },
+    });
+
+    expect(invitation.status).toBe(422);
+    await expect(invitation.json()).resolves.toEqual({
+      error: {
+        code: "UNPROCESSABLE",
+        message:
+          "Clerk invitations are unavailable in development auth-bypass mode",
+      },
+    });
+    expect(sync.status).toBe(200);
+    await expect(sync.json()).resolves.toMatchObject({
+      complete: true,
+      seen: 0,
+      created: 0,
+      note: "Dev bypass — no Clerk org sync",
+    });
+    expect(mocks.createOrganizationInvitation).not.toHaveBeenCalled();
+    expect(mocks.syncMembersFromDirectory).not.toHaveBeenCalled();
   });
 
   it("marks member impact and directory sync responses private and no-store", async () => {

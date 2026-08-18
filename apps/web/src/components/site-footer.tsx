@@ -5,7 +5,7 @@ import { CookieSettingsButton } from "@/components/privacy-controls";
 
 export function SiteFooter({ className = "" }: { className?: string }) {
   return (
-    <footer className={`px-4 py-5 text-xs text-slate-500 ${className}`}>
+    <footer className={`px-4 py-5 text-xs text-slate-600 ${className}`}>
       <nav
         aria-label="Legal links"
         className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2"

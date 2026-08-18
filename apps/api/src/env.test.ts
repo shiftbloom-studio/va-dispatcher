@@ -3,6 +3,7 @@ import { loadEnv, resetEnvCache } from "./env.js";
 
 const productionEnvironment = {
   NODE_ENV: "production",
+  APP_ORIGIN: "https://app.example.test",
   DATABASE_URL: "postgresql://user:pass@localhost/va_dispatch",
   CLERK_SECRET_KEY: "sk_test_configured",
   TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
@@ -14,7 +15,7 @@ afterEach(() => resetEnvCache());
 describe("runtime environment validation", () => {
   it("requires production credentials and a non-default cron secret", () => {
     expect(() => loadEnv({ NODE_ENV: "production" })).toThrow(
-      /DATABASE_URL, CLERK_SECRET_KEY, TENANT_SECRETS_KEY/,
+      /APP_ORIGIN, DATABASE_URL, CLERK_SECRET_KEY, TENANT_SECRETS_KEY/,
     );
     expect(() =>
       loadEnv({
@@ -22,6 +23,12 @@ describe("runtime environment validation", () => {
         CRON_SECRET: "dev-cron-secret-change-me",
       }),
     ).toThrow(/CRON_SECRET must not use the development default/);
+    expect(() =>
+      loadEnv({
+        ...productionEnvironment,
+        APP_ORIGIN: "http://app.example.test",
+      }),
+    ).toThrow(/APP_ORIGIN must use HTTPS/);
   });
 
   it("forbids every authentication fixture mode in production", () => {
