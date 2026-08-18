@@ -7,6 +7,10 @@ const envSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
+  /** Vercel-managed branch URL, without a scheme. */
+  VERCEL_BRANCH_URL: z.string().optional(),
+  /** Vercel-managed deployment URL, without a scheme. */
+  VERCEL_URL: z.string().optional(),
   PORT: z.coerce.number().int().positive().default(3001),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   /** Public web origin used for provider callbacks and Clerk invitations. */
@@ -76,8 +80,15 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 }
 
 function validateRuntimeEnvironment(config: Env): void {
+  validateConfiguredAppOrigin(config.APP_ORIGIN);
+
+  const productionRuntime =
+    config.VERCEL_ENV === "production" || config.NODE_ENV === "production";
+  const productionDeployment =
+    productionRuntime && config.VERCEL_ENV !== "preview";
+
   if (config.E2E_FIXTURE_MODE) {
-    if (config.NODE_ENV === "production") {
+    if (productionRuntime) {
       throw new Error(
         "Invalid production environment: E2E fixture mode is forbidden",
       );
@@ -98,10 +109,12 @@ function validateRuntimeEnvironment(config: Env): void {
     }
   }
 
-  if (config.NODE_ENV !== "production") return;
+  if (!productionRuntime) return;
 
   const missing = [
-    ["APP_ORIGIN", config.APP_ORIGIN],
+    ...(productionDeployment
+      ? ([["APP_ORIGIN", config.APP_ORIGIN]] as const)
+      : []),
     ["DATABASE_URL", config.DATABASE_URL],
     ["CLERK_SECRET_KEY", config.CLERK_SECRET_KEY],
     ["TENANT_SECRETS_KEY", config.TENANT_SECRETS_KEY],
@@ -111,7 +124,10 @@ function validateRuntimeEnvironment(config: Env): void {
       `Invalid production environment: missing ${missing.join(", ")}`,
     );
   }
-  if (new URL(config.APP_ORIGIN!).protocol !== "https:") {
+  if (
+    productionDeployment &&
+    new URL(config.APP_ORIGIN!).protocol !== "https:"
+  ) {
     throw new Error(
       "Invalid production environment: APP_ORIGIN must use HTTPS",
     );
@@ -126,6 +142,40 @@ function validateRuntimeEnvironment(config: Env): void {
       "Invalid production environment: AUTH_DEV_BYPASS is forbidden",
     );
   }
+}
+
+function validateConfiguredAppOrigin(value: string | undefined): void {
+  if (!value) return;
+  const url = new URL(value);
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    value !== url.origin
+  ) {
+    throw new Error(
+      "Invalid environment: APP_ORIGIN must be a canonical HTTP(S) origin without credentials, path, query, or fragment",
+    );
+  }
+}
+
+const VERCEL_HOSTNAME =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+
+/**
+ * Resolve the one canonical public origin used in provider redirects.
+ * Production never trusts deployment-generated hostnames; Preview uses its
+ * Vercel branch/deployment hostname so callbacks cannot be sent to Production.
+ */
+export function resolveAppOrigin(config: Env = env()): string | null {
+  if (config.VERCEL_ENV === "preview") {
+    for (const hostname of [config.VERCEL_BRANCH_URL, config.VERCEL_URL]) {
+      if (hostname && VERCEL_HOSTNAME.test(hostname)) {
+        return new URL(`https://${hostname}`).origin;
+      }
+    }
+    return null;
+  }
+
+  return config.APP_ORIGIN ? new URL(config.APP_ORIGIN).origin : null;
 }
 
 export function env(): Env {

@@ -468,6 +468,67 @@ describe("admin control-plane routes", () => {
     });
   });
 
+  it("uses the Vercel branch origin for Preview tenant invitations", async () => {
+    resetEnvCache();
+    loadEnv({
+      NODE_ENV: "test",
+      VERCEL_ENV: "preview",
+      VERCEL_BRANCH_URL:
+        "va-dispatcher-git-preview-origin-shiftbloom.vercel.app",
+      VERCEL_URL: "va-dispatcher-deployment-shiftbloom.vercel.app",
+    });
+    const createdAt = new Date("2026-08-18T10:00:00.000Z").getTime();
+    mocks.createOrganizationInvitation.mockResolvedValue({
+      id: "orginv-preview",
+      emailAddress: "preview-pilot@example.test",
+      role: "org:pilot",
+      status: "pending",
+      createdAt,
+      updatedAt: createdAt,
+      expiresAt: new Date("2026-09-17T10:00:00.000Z").getTime(),
+    });
+
+    const response = await app.request("/members/invitations", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-test-role": "admin",
+      },
+      body: JSON.stringify({
+        emailAddress: "preview-pilot@example.test",
+        role: "pilot",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.createOrganizationInvitation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        redirectUrl:
+          "https://va-dispatcher-git-preview-origin-shiftbloom.vercel.app/vsas/sign-in",
+      }),
+    );
+  });
+
+  it("fails a Preview invitation safely when no trusted origin is available", async () => {
+    resetEnvCache();
+    loadEnv({ NODE_ENV: "test", VERCEL_ENV: "preview" });
+
+    const response = await app.request("/members/invitations", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-test-role": "admin",
+      },
+      body: JSON.stringify({
+        emailAddress: "preview-pilot@example.test",
+        role: "pilot",
+      }),
+    });
+
+    expect(response.status).toBe(503);
+    expect(mocks.createOrganizationInvitation).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       providerStatus: 400,

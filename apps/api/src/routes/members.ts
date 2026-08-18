@@ -17,7 +17,7 @@ import {
   syncMembersFromDirectory,
   updateMemberAsAdministrator,
 } from "../domain/members/service.js";
-import { env } from "../env.js";
+import { env, resolveAppOrigin } from "../env.js";
 import { acarsStationSchema } from "../domain/acars/validation.js";
 import { isUniqueViolation } from "../lib/postgres.js";
 import { AppError } from "../lib/errors.js";
@@ -139,6 +139,7 @@ membersRoutes.post(
       );
     }
     const body = c.req.valid("json");
+    const redirectUrl = invitationRedirectUrl(auth.tenant.slug);
     let invitation;
     try {
       invitation =
@@ -149,7 +150,7 @@ membersRoutes.post(
           role: clerkOrgRole(body.role),
           expiresInDays: memberAccessSettings(auth.tenant.settings)
             .invitationExpiryDays,
-          redirectUrl: invitationRedirectUrl(auth.tenant.slug),
+          redirectUrl,
           publicMetadata: {
             vaDispatchRole: body.role,
             tenantSlug: auth.tenant.slug,
@@ -611,12 +612,11 @@ function publicInvitation(invitation: {
 }
 
 function invitationRedirectUrl(slug: string): string {
-  const config = env();
-  const origin = config.APP_ORIGIN ?? config.CORS_ORIGIN.split(",")[0]?.trim();
+  const origin = resolveAppOrigin();
   if (!origin) {
     throw new AppError(
       "INTERNAL",
-      "APP_ORIGIN or CORS_ORIGIN is required for organization invitations",
+      "A public application origin is required for organization invitations",
       { status: 503 },
     );
   }
