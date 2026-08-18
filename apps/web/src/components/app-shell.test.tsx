@@ -67,11 +67,13 @@ const me: Me = {
 
 describe("AppShell", () => {
   it("uses the Clerk organization image and suppresses shell prefetches", () => {
-    render(
+    const { container } = render(
       <AppShell slug="vsas" tenant={tenant} me={me} role="admin">
         Workspace
       </AppShell>,
     );
+
+    expect(container.firstElementChild).toHaveAttribute("data-tenant", "vsas");
 
     expect(
       screen.getAllByRole("img", { name: "Virtual SAS logo" }),
@@ -79,6 +81,16 @@ describe("AppShell", () => {
     expect(
       screen.getAllByRole("img", { name: "Virtual SAS logo" })[0],
     ).toHaveAttribute("src", "https://img.clerk.com/org_vsas-logo");
+    expect(
+      screen.getAllByRole("img", { name: "Virtual SAS logo" })[0]
+        ?.parentElement,
+    ).toHaveAttribute("data-variant", "wordmark");
+
+    for (const operationsLink of screen.getAllByRole("link", {
+      name: "Operations",
+    })) {
+      expect(operationsLink).toHaveAttribute("aria-current", "page");
+    }
 
     for (const link of screen.getAllByRole("link")) {
       expect(link).toHaveAttribute("data-prefetch", "false");

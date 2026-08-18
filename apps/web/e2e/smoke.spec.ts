@@ -1319,7 +1319,9 @@ test("admin invites, approves, and removes tenant members without Clerk UI", asy
   await page.getByLabel("Email address").fill("new.dispatcher@example.test");
   await page.getByLabel("Tenant role").selectOption("dispatcher");
   await page.getByRole("button", { name: "Send invitation" }).click();
-  await expect(page.getByText("Invitation updated.")).toBeVisible();
+  await expect(
+    page.getByText(/Invitation sent\. It remains pending/),
+  ).toBeVisible();
   expect(invited).toBe(true);
 
   await expect(page.getByText("Dispatcher Applicant").first()).toBeVisible();

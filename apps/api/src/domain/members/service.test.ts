@@ -125,6 +125,131 @@ describe("member administration service", () => {
     });
   });
 
+  it("reports a Clerk membership without a stable user ID as incomplete", async () => {
+    const result = await syncMembersFromDirectory({
+      tenantId: "tenant-1",
+      actorMembershipId: "admin-1",
+      organizationId: "org-1",
+      loadPage: async () => ({
+        data: [{ role: "org:pilot", publicUserData: null }],
+        totalCount: 1,
+      }),
+    });
+
+    expect(result).toMatchObject({
+      complete: false,
+      summaryAuditRecorded: true,
+      seen: 1,
+      created: 0,
+      skipped: 1,
+      failed: 0,
+      failures: [{ scope: "membership", offset: 0, code: "missing_user_id" }],
+    });
+    expect(mocks.createDirectoryMembershipWithAudit).not.toHaveBeenCalled();
+  });
+
+  it.each(["invited", "disabled"] as const)(
+    "preserves a locally %s member for explicit administrator review",
+    async (status) => {
+      mocks.findMembership.mockResolvedValue({
+        id: "membership-1",
+        tenantId: "tenant-1",
+        clerkUserId: "user_0",
+        role: "pilot",
+        displayName: "Pilot 0",
+        pilotCallsign: null,
+        simbriefUserId: null,
+        simbriefVerifiedAt: null,
+        navigraphSubject: null,
+        navigraphUsername: null,
+        navigraphConnectedAt: null,
+        status,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await syncMembersFromDirectory({
+        tenantId: "tenant-1",
+        actorMembershipId: "admin-1",
+        organizationId: "org-1",
+        loadPage: async () => ({
+          data: [directoryMember(0)],
+          totalCount: 1,
+        }),
+      });
+
+      expect(result).toMatchObject({
+        complete: false,
+        seen: 1,
+        updated: 0,
+        skipped: 1,
+        failed: 0,
+        failures: [
+          {
+            scope: "membership",
+            offset: 0,
+            code: "local_status_requires_review",
+          },
+        ],
+      });
+      expect(mocks.administrativelyUpdateMembership).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not rewrite a member concurrently changed away from active", async () => {
+    mocks.findMembership.mockResolvedValue({
+      id: "membership-1",
+      tenantId: "tenant-1",
+      clerkUserId: "user_0",
+      role: "pilot",
+      displayName: "Old name",
+      pilotCallsign: null,
+      simbriefUserId: null,
+      simbriefVerifiedAt: null,
+      navigraphSubject: null,
+      navigraphUsername: null,
+      navigraphConnectedAt: null,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mocks.administrativelyUpdateMembership.mockResolvedValue({
+      kind: "not_found",
+    });
+
+    const result = await syncMembersFromDirectory({
+      tenantId: "tenant-1",
+      actorMembershipId: "admin-1",
+      organizationId: "org-1",
+      loadPage: async () => ({
+        data: [directoryMember(0)],
+        totalCount: 1,
+      }),
+    });
+
+    expect(mocks.administrativelyUpdateMembership).toHaveBeenCalledWith({
+      tenantId: "tenant-1",
+      actorMembershipId: "admin-1",
+      membershipId: "membership-1",
+      patch: { role: "pilot", displayName: "Pilot 0" },
+      expectedStatus: "active",
+      auditAction: "member.directory_synced",
+    });
+    expect(result).toMatchObject({
+      complete: false,
+      updated: 0,
+      skipped: 1,
+      failed: 0,
+      failures: [
+        {
+          scope: "membership",
+          offset: 0,
+          code: "local_status_requires_review",
+        },
+      ],
+    });
+  });
+
   it("does not flag an exact page-limit completion as truncated", () => {
     expect(directoryPageLimitExceeded(10_000, 1_000_000, 1_000_000)).toBe(
       false,

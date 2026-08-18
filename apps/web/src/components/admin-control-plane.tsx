@@ -71,6 +71,23 @@ export function AdminControlPlane({ slug }: { slug: string }) {
       void queryClient.invalidateQueries({ queryKey: [slug, "admin-members"] });
     },
   });
+  const syncNeedsAttention = Boolean(
+    sync.data &&
+    (!sync.data.complete || sync.data.skipped > 0 || sync.data.note),
+  );
+  const sampledMissingUserIdCount =
+    sync.data?.failures.filter((failure) => failure.code === "missing_user_id")
+      .length ?? 0;
+  const sampledLocalReviewCount =
+    sync.data?.failures.filter(
+      (failure) => failure.code === "local_status_requires_review",
+    ).length ?? 0;
+  const sampledOtherSyncIssueCount = Math.max(
+    0,
+    (sync.data?.failures.length ?? 0) -
+      sampledMissingUserIdCount -
+      sampledLocalReviewCount,
+  );
 
   return (
     <>
@@ -95,7 +112,7 @@ export function AdminControlPlane({ slug }: { slug: string }) {
       <Card className="mb-6 overflow-hidden">
         <CardHeader
           title="Directory controls"
-          description="Sync pages the complete Clerk organization directory. Partial failures are reported explicitly; absent Clerk members are never disabled automatically."
+          description="Sync pages accepted Clerk organization members. Pending invitations are excluded, partial failures require review, and absent Clerk members are never disabled automatically."
           action={
             <Button
               variant="secondary"
@@ -173,23 +190,36 @@ export function AdminControlPlane({ slug }: { slug: string }) {
         </form>
         {sync.data ? (
           <div
-            role={sync.data.complete ? "status" : "alert"}
+            role={syncNeedsAttention ? "alert" : "status"}
             className={`mx-5 mb-5 rounded-lg p-3 text-sm ${
-              sync.data.complete
-                ? "bg-emerald-50 text-emerald-900"
-                : "bg-amber-50 text-amber-950"
+              syncNeedsAttention
+                ? "bg-amber-50 text-amber-950"
+                : "bg-emerald-50 text-emerald-900"
             }`}
           >
-            {sync.data.complete
-              ? "Directory sync complete."
-              : "Directory sync completed with failures."}{" "}
+            {sync.data.note
+              ? sync.data.note
+              : syncNeedsAttention
+                ? "Directory sync needs attention."
+                : "Directory sync complete."}{" "}
             {sync.data.seen} seen, {sync.data.created} created,{" "}
             {sync.data.updated} updated, {sync.data.unchanged} unchanged,{" "}
-            {sync.data.failed} failed.
+            {sync.data.skipped} skipped, {sync.data.failed} failed.
+            {sync.data.failures.length > 0
+              ? " Issue details are a bounded sample."
+              : ""}
+            {sampledMissingUserIdCount > 0
+              ? ` The sample includes ${sampledMissingUserIdCount} ${sampledMissingUserIdCount === 1 ? "entry" : "entries"} Clerk returned without a user ID; none was written.`
+              : ""}
+            {sampledLocalReviewCount > 0
+              ? ` The sample includes ${sampledLocalReviewCount} local ${sampledLocalReviewCount === 1 ? "membership that needs explicit application or disabled-member review and was not reactivated" : "memberships that need explicit application or disabled-member review and were not reactivated"}. Use the Status filter to review Invited and Disabled members.`
+              : ""}
+            {sampledOtherSyncIssueCount > 0
+              ? ` The sample includes ${sampledOtherSyncIssueCount} additional ${sampledOtherSyncIssueCount === 1 ? "sync issue" : "sync issues"}; no failed item was written.`
+              : ""}
             {!sync.data.summaryAuditRecorded && !sync.data.note
               ? " The aggregate summary audit could not be recorded; completed member changes remain applied and individually audited."
               : ""}
-            {sync.data.note ? ` ${sync.data.note}` : ""}
           </div>
         ) : null}
         {sync.error ? (
@@ -317,19 +347,18 @@ function InvitationManager({ slug }: { slug: string }) {
         queryKey: [slug, "organization-invitations"],
       }),
   });
-  const error = create.error ?? revoke.error ?? invitations.error;
-
   return (
     <Card className="mb-6 overflow-hidden">
       <CardHeader
         title="Invite pilots and dispatchers"
-        description="Clerk sends the secure invitation email, while the assigned tenant role and audit trail are controlled here."
+        description="Clerk sends a tenant invitation. After acceptance, VA Dispatch can create a member when no local application or disabled record already exists."
         action={<MailPlus aria-hidden className="size-5 text-slate-700" />}
       />
       <form
         className="grid gap-4 border-b border-slate-200 p-5 md:grid-cols-[minmax(14rem,1fr)_12rem_auto] md:items-end"
         onSubmit={(event) => {
           event.preventDefault();
+          revoke.reset();
           create.mutate();
         }}
       >
@@ -363,9 +392,30 @@ function InvitationManager({ slug }: { slug: string }) {
         </Button>
       </form>
       <div className="p-5">
+        <p className="mb-4 text-sm leading-6 text-slate-600">
+          Pending tenant invitations are not organization members and cannot be
+          imported by directory sync. After acceptance, first tenant access or
+          directory sync creates a new local member; an existing Invited or
+          Disabled record requires explicit administrator review. An
+          account-only invitation sent from Clerk Dashboard must instead be
+          followed by a request at{" "}
+          <code className="font-semibold text-slate-800">/{slug}/join</code> and
+          administrator approval.
+        </p>
         <h3 className="text-sm font-bold text-slate-950">
           Pending invitations
         </h3>
+        {invitations.isError ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+          >
+            {invitations.data
+              ? "Pending invitations could not be refreshed; the last known list remains visible. "
+              : "Invitations could not be loaded. "}
+            {apiErrorMessage(invitations.error)}
+          </p>
+        ) : null}
         {invitations.isPending ? (
           <p className="mt-3 text-sm text-slate-600">Loading invitations…</p>
         ) : invitations.data?.items.length ? (
@@ -387,19 +437,23 @@ function InvitationManager({ slug }: { slug: string }) {
                 <Button
                   size="sm"
                   variant="ghost"
+                  aria-label={`Revoke invitation for ${invitation.emailAddress}`}
                   disabled={revoke.isPending}
-                  onClick={() => revoke.mutate(invitation.id)}
+                  onClick={() => {
+                    create.reset();
+                    revoke.mutate(invitation.id);
+                  }}
                 >
                   <Trash2 aria-hidden className="size-4" /> Revoke
                 </Button>
               </li>
             ))}
           </ul>
-        ) : (
+        ) : invitations.data ? (
           <p className="mt-3 text-sm text-slate-600">
             No invitations are waiting for acceptance.
           </p>
-        )}
+        ) : null}
         {invitations.data && invitations.data.totalCount > 0 ? (
           <div className="mt-4 flex items-center justify-between gap-3">
             <p className="text-sm text-slate-600">
@@ -439,34 +493,78 @@ function InvitationManager({ slug }: { slug: string }) {
             </div>
           </div>
         ) : null}
-        {error ? (
+        {create.error ? (
           <p
             role="alert"
             className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800"
           >
-            {apiErrorMessage(error)}
+            {invitationMutationError("send", create.error)}
           </p>
         ) : null}
-        {create.data || revoke.data ? (
+        {revoke.error ? (
           <p
-            role={
-              (create.data ?? revoke.data)?.auditRecorded ? "status" : "alert"
-            }
+            role="alert"
+            className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800"
+          >
+            {invitationMutationError("revoke", revoke.error)}
+          </p>
+        ) : null}
+        {create.data ? (
+          <p
+            role={create.data.auditRecorded ? "status" : "alert"}
             className={`mt-3 rounded-lg p-3 text-sm ${
-              (create.data ?? revoke.data)?.auditRecorded
+              create.data.auditRecorded
                 ? "bg-emerald-50 text-emerald-900"
                 : "bg-amber-50 text-amber-950"
             }`}
           >
-            Invitation updated.
-            {!(create.data ?? revoke.data)?.auditRecorded
-              ? " Clerk applied the change, but its application audit could not be recorded. Review the directory before retrying."
+            Invitation sent. It remains pending until the recipient accepts it;
+            first tenant access or directory sync then creates a new local
+            member unless an Invited or Disabled record already requires
+            administrator review.
+            {!create.data.auditRecorded
+              ? " Clerk applied the change, but its application audit could not be recorded. Refresh pending invitations and inspect Audit history; do not retry blindly."
+              : ""}
+          </p>
+        ) : null}
+        {revoke.data ? (
+          <p
+            role={revoke.data.auditRecorded ? "status" : "alert"}
+            className={`mt-3 rounded-lg p-3 text-sm ${
+              revoke.data.auditRecorded
+                ? "bg-emerald-50 text-emerald-900"
+                : "bg-amber-50 text-amber-950"
+            }`}
+          >
+            Invitation revoked.
+            {!revoke.data.auditRecorded
+              ? " Clerk applied the change, but its application audit could not be recorded. Refresh pending invitations and inspect Audit history; do not retry blindly."
               : ""}
           </p>
         ) : null}
       </div>
     </Card>
   );
+}
+
+function invitationMutationError(
+  action: "send" | "revoke",
+  error: unknown,
+): string {
+  const detail = apiErrorMessage(error);
+  const definitiveFailure =
+    error instanceof ApiError &&
+    error.code !== "INVALID_RESPONSE" &&
+    error.status >= 400 &&
+    error.status < 500;
+
+  if (definitiveFailure) {
+    return action === "send"
+      ? `Invitation was not sent. ${detail}`
+      : `Invitation was not revoked. ${detail}`;
+  }
+
+  return `Could not confirm whether Clerk ${action === "send" ? "sent" : "revoked"} the invitation. ${detail} Refresh pending invitations before retrying.`;
 }
 
 function ApplicationQueue({ slug }: { slug: string }) {

@@ -156,7 +156,20 @@ membersRoutes.post(
           },
         });
     } catch (error) {
-      throw publicClerkError(error, "Clerk could not create the invitation");
+      throw publicClerkError(error, "Clerk could not create the invitation", {
+        notFound:
+          "Clerk could not find the configured organization or selected tenant role",
+        conflict:
+          "Clerk already has a pending invitation or organization membership for this email",
+        conflictCodes: [
+          "organization_invitation_not_unique",
+          "already_a_member_in_organization",
+        ],
+        forbidden:
+          "Clerk does not allow this organization invitation. Verify organization invitation support, tenant role configuration, and membership capacity",
+        unprocessable:
+          "Clerk rejected the invitation. Verify that organization invitations are enabled, the selected tenant role exists, and the invitation return URL is allowed",
+      });
     }
     let auditRecorded = true;
     try {
@@ -607,7 +620,11 @@ function invitationRedirectUrl(slug: string): string {
       { status: 503 },
     );
   }
-  return new URL(`/${slug}`, origin).toString();
+  // Clerk appends its organization-invitation ticket and account status to
+  // this public page. The embedded SignIn component handles both existing
+  // users and the transfer to sign-up for new users; the protected tenant root
+  // cannot do that without dropping the ticket.
+  return new URL(`/${slug}/sign-in`, origin).toString();
 }
 
 function clerkBypassed(): boolean {
@@ -615,16 +632,49 @@ function clerkBypassed(): boolean {
   return config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production";
 }
 
-function publicClerkError(error: unknown, message: string): AppError {
+function publicClerkError(
+  error: unknown,
+  message: string,
+  statusMessages: {
+    notFound?: string;
+    conflict?: string;
+    conflictCodes?: readonly string[];
+    forbidden?: string;
+    unprocessable?: string;
+  } = {},
+): AppError {
   if (isClerkAPIResponseError(error)) {
+    if (
+      statusMessages.conflict &&
+      statusMessages.conflictCodes?.some((code) =>
+        error.errors.some((clerkError) => clerkError.code === code),
+      )
+    ) {
+      return new AppError("CONFLICT", statusMessages.conflict, {
+        cause: error,
+      });
+    }
     if (error.status === 404) {
-      return new AppError("NOT_FOUND", message, { cause: error });
+      return new AppError("NOT_FOUND", statusMessages.notFound ?? message, {
+        cause: error,
+      });
     }
     if (error.status === 409) {
-      return new AppError("CONFLICT", message, { cause: error });
+      return new AppError("CONFLICT", statusMessages.conflict ?? message, {
+        cause: error,
+      });
+    }
+    if (error.status === 403 && statusMessages.forbidden) {
+      return new AppError("UNPROCESSABLE", statusMessages.forbidden, {
+        cause: error,
+      });
     }
     if (error.status === 400 || error.status === 422) {
-      return new AppError("UNPROCESSABLE", message, { cause: error });
+      return new AppError(
+        "UNPROCESSABLE",
+        statusMessages.unprocessable ?? message,
+        { cause: error },
+      );
     }
     if (error.status === 429) {
       return new AppError("UPSTREAM", "Clerk rate limit reached; try later", {
