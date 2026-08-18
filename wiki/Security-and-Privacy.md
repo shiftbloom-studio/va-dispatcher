@@ -78,7 +78,7 @@ CI runs formatting, linting, type checks, coverage, build, and browser tests. Th
 - pull-request dependency review; and
 - CodeQL extended JavaScript/TypeScript analysis.
 
-Actions are pinned to full commit SHAs. Repository administrators must still enable branch rulesets, secret scanning, push protection, private vulnerability reporting, and supported GitHub security features.
+Actions are pinned to full commit SHAs. Keep `github/codeql-action/init` and `github/codeql-action/analyze` on the same SHA; CodeQL fails if those pins diverge. Repository administrators must still enable branch rulesets, secret scanning, push protection, private vulnerability reporting, and supported GitHub security features.
 
 ## Personal and linkable data inventory
 
