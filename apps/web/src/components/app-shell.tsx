@@ -80,32 +80,42 @@ export function AppShell({
     <div
       style={brandStyle(tenant.brand)}
       data-brand-presence={tenant.brand.presence}
-      className="min-h-screen bg-[#f7f7f5] text-[#17213d]"
+      data-tenant={tenant.slug}
+      className="min-h-screen bg-[var(--background)] text-[var(--foreground)]"
     >
       <div className="min-h-screen md:grid md:grid-cols-[17.5rem_minmax(0,1fr)]">
-        <aside className="brand-sidebar relative hidden min-h-screen border-r border-slate-200 bg-white md:sticky md:top-0 md:flex md:h-screen md:flex-col">
+        <aside className="brand-sidebar relative hidden min-h-screen border-r border-slate-200 bg-[#fbfcfe] md:sticky md:top-0 md:flex md:h-screen md:flex-col">
           <Link
             href={`/${slug}`}
             prefetch={false}
-            className="flex min-h-24 items-center gap-3 border-b border-slate-200 px-6 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--brand-action)]"
+            className="flex min-h-28 items-center border-b border-slate-200 px-6 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--brand-action)]"
           >
-            {bypass ? (
-              <TenantLogo tenant={tenant} className="size-13" />
-            ) : (
-              <ClerkTenantLogo tenant={tenant} className="size-13" />
-            )}
             <span className="min-w-0">
-              <span className="block truncate font-display text-lg font-black tracking-tight text-slate-950">
-                {tenant.shortName}
-              </span>
-              <span className="mt-1 block text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+              {bypass ? (
+                <TenantLogo
+                  tenant={tenant}
+                  variant="wordmark"
+                  className="h-11 w-40"
+                />
+              ) : (
+                <ClerkTenantLogo
+                  tenant={tenant}
+                  variant="wordmark"
+                  className="h-11 w-40"
+                />
+              )}
+              <span className="mt-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                <span
+                  aria-hidden
+                  className="size-1.5 bg-[var(--brand-action)]"
+                />
                 Live operations
               </span>
             </span>
           </Link>
 
           <nav aria-label="Main navigation" className="flex-1 px-4 py-7">
-            <p className="mb-3 px-3 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+            <p className="mb-3 px-3 text-[11px] font-black uppercase tracking-[0.16em] text-slate-600">
               {role === "pilot" ? "Pilot workspace" : "Dispatcher suite"}
             </p>
             <div className="space-y-1">
@@ -117,10 +127,10 @@ export function AppShell({
                     href={`/${slug}${href}`}
                     prefetch={false}
                     aria-current={active ? "page" : undefined}
-                    className={`group relative flex min-h-12 items-center gap-3 border-l-2 px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand-action)] ${
+                    className={`group relative flex min-h-12 items-center gap-3 border px-3 text-sm font-bold transition-[background-color,border-color,color] duration-200 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-action)] ${
                       active
-                        ? "border-[var(--brand)] bg-[var(--brand-faint)] text-[var(--brand-action)]"
-                        : "border-transparent text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+                        ? "border-[var(--brand-action)] bg-[var(--brand-action)] text-[var(--brand-on-action)]"
+                        : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-950"
                     }`}
                   >
                     <Icon aria-hidden className="size-[1.15rem] shrink-0" />
@@ -157,7 +167,7 @@ export function AppShell({
                 <span className="block truncate text-sm font-bold text-slate-900">
                   {memberName}
                 </span>
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                <span className="block text-[11px] font-bold uppercase tracking-wide text-slate-600">
                   {role}
                 </span>
               </span>
@@ -175,20 +185,25 @@ export function AppShell({
         </aside>
 
         <div className="min-w-0">
-          <header className="sticky top-0 z-40 flex h-16 items-center border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+          <header className="sticky top-0 z-40 flex h-16 items-center border-b border-slate-200 bg-white/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
             <Link
               href={`/${slug}`}
               prefetch={false}
-              className="flex min-w-0 items-center gap-3 md:hidden"
+              className="flex min-w-0 items-center md:hidden"
             >
               {bypass ? (
-                <TenantLogo tenant={tenant} className="size-9" />
+                <TenantLogo
+                  tenant={tenant}
+                  variant="wordmark"
+                  className="h-8 w-24"
+                />
               ) : (
-                <ClerkTenantLogo tenant={tenant} className="size-9" />
+                <ClerkTenantLogo
+                  tenant={tenant}
+                  variant="wordmark"
+                  className="h-8 w-24"
+                />
               )}
-              <span className="truncate font-display text-sm font-black text-slate-950">
-                {tenant.shortName}
-              </span>
             </Link>
             <div className="ml-auto flex items-center gap-4 sm:gap-6">
               <UtcClock />
@@ -227,7 +242,7 @@ export function AppShell({
               href={`/${slug}${href}`}
               prefetch={false}
               aria-current={active ? "page" : undefined}
-              className={`relative flex min-w-0 flex-col items-center justify-center gap-1 px-1 text-[10px] font-bold ${
+              className={`relative flex min-w-0 flex-col items-center justify-center gap-1 px-1 text-[11px] font-bold ${
                 active ? "text-[var(--brand-action)]" : "text-slate-500"
               }`}
             >
@@ -249,9 +264,11 @@ export function AppShell({
 function ClerkTenantLogo({
   tenant,
   className,
+  variant = "mark",
 }: {
   tenant: TenantConfig;
   className: string;
+  variant?: "mark" | "wordmark";
 }) {
   const { organization } = useOrganization();
 
@@ -260,6 +277,7 @@ function ClerkTenantLogo({
       tenant={tenant}
       src={organization?.imageUrl ?? tenant.logo.src}
       className={className}
+      variant={variant}
     />
   );
 }

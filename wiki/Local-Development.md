@@ -123,8 +123,11 @@ To exercise production-like authentication locally:
 5. Put the Clerk secret key in both server environments and the publishable key in the web environment.
 6. Set `APP_ORIGIN=http://localhost:3000` and `AUTH_DEV_BYPASS=false`.
 7. Seed or let the trusted configured organization repair the initial vSAS tenant on first authenticated access.
-8. Sign up at `/vsas/sign-up`, exercise `/vsas/join`, and approve or invite the
-   account from a tenant admin session.
+8. With Clerk Waitlist mode enabled, join at `/vsas/waitlist`, invite the entry,
+   complete Clerk's default Account Portal sign-up, and confirm the Account
+   Portal sign-up fallback is configured to reach `/vsas/join`. Approve the
+   application from a tenant admin session, and test `/vsas/sign-up` separately
+   with an invitation redirected into the local application.
 
 Unknown organizations are not automatically provisioned. A new member of a
 registered tenant is provisioned as pilot or dispatcher from the verified role;

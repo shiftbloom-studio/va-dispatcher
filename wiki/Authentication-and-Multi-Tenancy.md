@@ -104,10 +104,17 @@ Membership statuses are:
 - `invited`: rejected by the API until activated; and
 - `disabled`: rejected by the API.
 
-For self-service signup, `invited` means a pending application and `role`
-records the requested pilot/dispatcher role. Approval activates that role;
-rejection closes the request atomically. A returning disabled member may apply
-again, but still needs another explicit decision.
+For the tenant-level self-service application, `invited` means a pending
+application and `role` records the requested pilot/dispatcher role. Approval
+activates that role; rejection closes the request atomically. A returning
+disabled member may apply again, but still needs another explicit decision.
+
+Clerk Waitlist is the earlier, application-wide gate for self-service account
+requests. It stores an email before a Clerk user or VA Dispatch membership
+exists, and it has no tenant or role context. Inviting a waitlist entry permits
+account creation only; the new user must still request a tenant role through
+`/vsas/join`. A tenant administrator's direct organization invitation is the
+intentional alternative and skips this waitlist/application decision.
 
 ## Signup and approval sequence
 
@@ -116,10 +123,15 @@ sequenceDiagram
     participant U as Applicant
     participant W as VA Dispatch
     participant C as Clerk
+    participant G as Global Clerk Admin
     participant A as Tenant Admin
     participant D as PostgreSQL
 
-    U->>C: Create/sign in to account
+    U->>W: Open /vsas/waitlist
+    W->>C: Join application waitlist
+    G->>C: Invite approved waitlist entry
+    C-->>U: Send account invitation
+    U->>C: Create account in Account Portal (or tenant sign-up flow)
     C-->>W: Verified user session, no organization required
     U->>W: Apply for pilot or dispatcher role
     W->>D: Store invited membership + requested role + audit
@@ -132,7 +144,17 @@ sequenceDiagram
 ```
 
 Direct invitations skip the application decision: Clerk sends the invitation
-and the accepted organization role is provisioned on first tenant access.
+to the public `/:slug/sign-in` Clerk flow, which consumes the organization
+ticket for an existing user or transfers a new user into sign-up. The accepted
+organization role is provisioned on first tenant access or the next directory
+sync when no local record exists. An existing pending or disabled local record
+remains inactive for explicit administrator review. A pending invitation is not
+yet an organization membership and therefore cannot be imported by sync.
+
+An application-wide invitation created from Clerk Dashboard is different: it
+permits account creation but does not select a tenant or role. After accepting
+that invitation, the user must continue through `/:slug/join` and the normal
+tenant approval flow.
 
 ## Resource authorization
 

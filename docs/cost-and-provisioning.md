@@ -15,8 +15,12 @@ Goal: **near-zero cost when nobody is using the tool**, while staying ready for 
 
 ### Clerk (required for real auth)
 
-- **Clerk Free** is enough for a single VA (vSAS) pilot + dispatcher counts.
-- No server process of yours; cost is identity MAUs, not idle compute.
+- Clerk's development instance is sufficient for local role testing, but the
+  production `org:pilot` and `org:dispatcher` custom roles require the **B2B
+  Authentication add-on**. Verify current Clerk pricing and included allowances
+  before launch; the Free plan alone is not a complete production fit.
+- No server process of yours; cost is the hosted plan/add-on and usage rather
+  than idle compute.
 - Locally you can skip Clerk with `AUTH_DEV_BYPASS=true` (never production).
 
 ### Vercel Functions
@@ -45,7 +49,7 @@ vercel link           # create/link project (Hobby is fine)
 # Storage — pick Free / scale-to-zero plan in the prompt
 vercel integration add neon --yes
 
-# Auth — Free plan is fine for vSAS
+# Auth — production custom roles require Clerk's B2B Authentication add-on
 vercel integration add clerk --yes
 
 # Pull secrets (names only logged; never commit .env)

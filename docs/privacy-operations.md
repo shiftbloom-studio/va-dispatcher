@@ -122,9 +122,11 @@ the controller's response complete until every applicable task is closed.
 
 ## Provider and backup boundaries
 
-- **Clerk:** VA Dispatch creates tasks; an authorized operator uses Clerk's
-  supported export/correction/disable/delete process. No broad Clerk deletion
-  credential is held by the lifecycle job.
+- **Clerk:** VA Dispatch creates tasks for known membership subjects; an
+  authorized operator uses Clerk's supported export/correction/disable/delete
+  process. A waitlist-only email has no local membership subject and must be
+  handled directly in Clerk. No broad Clerk deletion credential is held by the
+  lifecycle job.
 - **Vercel:** configure log/analytics/security retention in the deployment and
   use provider support or available tools for a verified request. VA Dispatch
   cannot prove provider deletion.

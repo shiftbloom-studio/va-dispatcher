@@ -84,7 +84,7 @@ Actions are pinned to full commit SHAs. Keep `github/codeql-action/init` and `gi
 
 | System                    | Data                                                                                                                              |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Clerk                     | User/org IDs, login/invitation email, role/invitation state, name, sessions, IP/device/security events                            |
+| Clerk                     | Waitlist email/state, user/org IDs, login/invitation email, role/invitation state, name, sessions, IP/device/security events      |
 | Memberships               | Clerk ID, active or requested role (according to status), display name, callsign, SimBrief/Navigraph identity, application/status |
 | Schedule requests         | Availability, preferences, notes, status, reasons, timestamps                                                                     |
 | Flights                   | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields                                                           |

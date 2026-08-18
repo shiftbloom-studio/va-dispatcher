@@ -2751,7 +2751,8 @@ export const openApiDocument = {
         tags: ["Members"],
         operationId: "listOrganizationInvitations",
         summary: "List pending tenant invitations",
-        description: "Requires the admin role.",
+        description:
+          "Requires the admin role. Pending invitations are not organization memberships and cannot be imported into the local tenant roster until accepted.",
         "x-required-role": "admin",
         parameters: [
           queryParameter("offset", "Zero-based Clerk page offset.", {
@@ -2779,7 +2780,7 @@ export const openApiDocument = {
         operationId: "createOrganizationInvitation",
         summary: "Invite a pilot or dispatcher",
         description:
-          "Requires the admin role. Creates a Clerk organization invitation with the tenant's configured expiry.",
+          "Requires the admin role. Creates a Clerk organization invitation with the tenant's configured expiry and sends acceptance through the tenant's public Clerk sign-in flow. After acceptance, first tenant access or directory sync creates a new local membership; an existing pending or disabled local record remains inactive for explicit administrator review.",
         "x-required-role": "admin",
         requestBody: jsonRequest(
           schemaRef("CreateOrganizationInvitationInput"),
@@ -2958,7 +2959,7 @@ export const openApiDocument = {
         operationId: "syncMembers",
         summary: "Synchronize members from Clerk",
         description:
-          "Requires the admin role. Pages the complete Clerk organization directory and reports bounded per-item failures without silently truncating at 100 members. Per-member changes and audits are atomic. If the final aggregate audit fails, the response reports summaryAuditRecorded=false without incorrectly claiming prior changes rolled back. In local development bypass mode the operation returns without contacting Clerk.",
+          "Requires the admin role. Pages the complete accepted Clerk organization-membership directory; pending organization invitations and application-wide account invitations are not members and are not imported. Missing stable Clerk user IDs and locally pending or disabled memberships are reported as incomplete skipped entries; local inactive state is never reactivated or rewritten by sync. Per-member changes and audits are atomic. If the final aggregate audit fails, the response reports summaryAuditRecorded=false without incorrectly claiming prior changes rolled back. In local development bypass mode the operation returns without contacting Clerk.",
         "x-required-role": "admin",
         responses: {
           "200": jsonResponse(

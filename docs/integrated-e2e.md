@@ -76,8 +76,9 @@ accounts and configuration:
 - a freshly schema-synced production database and a healthy private API service;
 - `API_INTERNAL_URL` from the Vercel service binding, or the documented
   `API_ORIGIN` fallback, with `/api/*` rewrites reaching that API;
-- valid Clerk keys, the configured vSAS organization, and pilot, dispatcher,
-  and admin test memberships whose active organization matches `/vsas`;
+- valid Clerk keys, email-enabled Waitlist mode, the configured vSAS
+  organization, and pilot, dispatcher, and admin test memberships whose active
+  organization matches `/vsas`;
 - complete mandatory `LEGAL_*` configuration;
 - Vercel OIDC/BotID enabled for protected browser mutations; and
 - tenant Hoppie, SimBrief, and Navigraph configuration before exercising those
@@ -88,12 +89,18 @@ Check each role in a fresh browser profile and after a hard reload:
 
 1. Open `/vsas` signed out and verify the branded auth shell, logo, stylesheet,
    fonts, and scripts load without a `4xx`/`5xx` response.
-2. Sign in, navigate across the role's workspace, reload each primary page,
+2. With a synthetic unused email, join `/vsas/waitlist`, verify the confirmation
+   email, invite the entry in Clerk, complete the default Clerk Account Portal
+   sign-up flow, and confirm its configured fallback reaches `/vsas/join`. Then
+   submit and approve a tenant-role application. Separately verify that an
+   invitation redirected into the application can complete through the
+   tenant-branded `/vsas/sign-up` route.
+3. Sign in, navigate across the role's workspace, reload each primary page,
    sign out, and sign back in as the next role. There must be no repeated
    sign-in or organization-selection redirect.
-3. Exercise the pilot schedule/flight journey and dispatcher
+4. Exercise the pilot schedule/flight journey and dispatcher
    request/release/ACARS journey, then reload to prove persistence.
-4. Observe loading feedback with a slow API response and confirm a failed API
+5. Observe loading feedback with a slow API response and confirm a failed API
    response produces a stable error view whose retry recovers.
 
 If a deployed reload loses styling or assets, inspect the web build output,

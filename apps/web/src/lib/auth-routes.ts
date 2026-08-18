@@ -8,6 +8,7 @@ export function getTenantAuthRoutes(slug: string) {
     join: `${home}/join`,
     signIn,
     signUp: `${home}/sign-up`,
+    waitlist: `${home}/waitlist`,
     taskUrls: {
       "choose-organization": `${tasks}/choose-organization`,
       "reset-password": `${tasks}/reset-password`,

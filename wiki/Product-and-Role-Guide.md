@@ -13,6 +13,7 @@ A dispatcher can use dispatcher-protected API operations; an administrator can u
 The application is tenant-addressed. vSAS uses `/vsas`, including:
 
 - `/vsas/sign-in`
+- `/vsas/waitlist` for new-account access requests
 - `/vsas/sign-up`
 - `/vsas/join` for membership application and approval status
 - `/vsas/tasks/*` for Clerk session tasks
@@ -21,6 +22,15 @@ The application is tenant-addressed. vSAS uses `/vsas`, including:
 - `/vsas/settings` for every active member
 
 The active Clerk organization must have the same slug as the URL. The application also verifies that the organization maps to the same database tenant before it reads operational data. If they do not agree, the user sees an organization-mismatch screen rather than data from another tenant.
+
+With Clerk Waitlist mode enabled, a self-service new user first submits their
+email at `/vsas/waitlist`. A global Clerk administrator must invite them before
+the invitation can create an account. Dashboard-approved waitlist emails use
+Clerk's Account Portal sign-up page by default; its configured fallback returns
+the new account to `/vsas/join`. The tenant-branded `/vsas/sign-up` route remains
+available for invitation flows redirected into the application. This
+account-level gate is separate from the tenant role application; it does not
+grant pilot or dispatcher access.
 
 After account creation, a user without tenant membership is sent to
 `/vsas/join`. They can request the pilot or dispatcher role when that role is
@@ -142,6 +152,11 @@ called; if provider removal fails, the UI reports the safe local disable and
 offers a retry. The organization-settings page controls the tenant name,
 application switches per role, and invitation lifetime without exposing the
 global Clerk dashboard.
+
+Directory sync imports accepted Clerk organization members only. A pending
+tenant invitation must be accepted first. An account-only invitation sent from
+Clerk Dashboard must instead be followed by a role request at `/:slug/join`
+and tenant-administrator approval.
 
 The redacted audit viewer/export records these membership operations. Privacy
 operations cover approved retention runs, subject requests, holds, and

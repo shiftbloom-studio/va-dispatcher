@@ -1,5 +1,5 @@
-export const LEGAL_NOTICE_VERSION = "2026-08-13.1";
-export const LEGAL_NOTICE_LAST_UPDATED = "12 August 2026";
+export const LEGAL_NOTICE_VERSION = "2026-08-18.1";
+export const LEGAL_NOTICE_LAST_UPDATED = "18 August 2026";
 
 type Environment = Record<string, string | undefined>;
 

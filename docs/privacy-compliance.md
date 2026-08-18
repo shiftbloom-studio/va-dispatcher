@@ -27,7 +27,7 @@ operating procedures for the actual deployment with qualified counsel.
 
 | System                | Personal or linkable data                                                                                                                                                                                                                     |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clerk                 | User and organization identifiers, login/invitation email, invitation state, name, role, authentication/session events, IP/device data                                                                                                        |
+| Clerk                 | Waitlist email and state; user and organization identifiers; login/invitation email; invitation state; name; role; authentication/session events; IP/device data                                                                              |
 | `memberships`         | Clerk user ID, active or requested role (according to membership status), display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, application/membership status, timestamps  |
 | `schedule_requests`   | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                                                                                                         |
 | `flights`             | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                                                                                                        |
@@ -56,6 +56,12 @@ retention/export/erasure policy so later reapplication and operational history
 do not silently fork identity. The controller must state the purpose and
 retention for unsuccessful applications in its approved account policy and
 privacy notice.
+
+A Clerk waitlist entry exists before a Clerk user ID or local `memberships` row
+is created. It is therefore a separate provider-side applicant record. The
+controller must define its purpose and retention, handle access/deletion through
+Clerk's supported process, and must not claim that VA Dispatch's tenant-scoped
+privacy lifecycle job automatically finds or removes waitlist-only records.
 
 ### MSFS 2024 telemetry decision
 

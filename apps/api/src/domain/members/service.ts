@@ -218,7 +218,13 @@ export async function syncMembersFromDirectory(input: {
       result.seen += 1;
       const clerkUserId = directoryMembership.publicUserData?.userId;
       if (!clerkUserId) {
+        result.complete = false;
         result.skipped += 1;
+        recordSyncFailure(result, {
+          scope: "membership",
+          offset: itemOffset,
+          code: "missing_user_id",
+        });
         continue;
       }
 
@@ -244,6 +250,20 @@ export async function syncMembersFromDirectory(input: {
           if (!existing) throw new Error("Directory member disappeared");
         }
 
+        // Local application/disable state is authoritative. Clerk directory
+        // presence must never reactivate or rewrite a pending/disabled record;
+        // surface it for explicit administrator review instead.
+        if (existing.status !== "active") {
+          result.complete = false;
+          result.skipped += 1;
+          recordSyncFailure(result, {
+            scope: "membership",
+            offset: itemOffset,
+            code: "local_status_requires_review",
+          });
+          continue;
+        }
+
         const nextDisplayName = displayName ?? existing.displayName;
         if (
           existing.role === role &&
@@ -257,18 +277,28 @@ export async function syncMembersFromDirectory(input: {
           membershipId: existing.id,
           actorMembershipId: input.actorMembershipId,
           patch: { role, displayName: nextDisplayName },
+          expectedStatus: "active",
           auditAction: "member.directory_synced",
         });
+        if (updated.kind === "not_found") {
+          // The member was removed or changed status after the initial read.
+          // Preserve that concurrent local decision and require a later review.
+          result.complete = false;
+          result.skipped += 1;
+          recordSyncFailure(result, {
+            scope: "membership",
+            offset: itemOffset,
+            code: "local_status_requires_review",
+          });
+          continue;
+        }
         if (updated.kind !== "updated") {
           result.complete = false;
           result.failed += 1;
           recordSyncFailure(result, {
             scope: "membership",
             offset: itemOffset,
-            code:
-              updated.kind === "blocked"
-                ? updated.reason
-                : "membership_disappeared",
+            code: updated.reason,
           });
           continue;
         }
