@@ -137,7 +137,7 @@ The separate `Security` workflow runs on pull requests, `main`, Mondays, and man
 - dependency review on pull requests; and
 - CodeQL extended JavaScript/TypeScript analysis.
 
-Dependabot currently updates GitHub Actions. pnpm package updates remain a reviewed manual process until the project's configured pnpm generation is supported by the chosen automation.
+Dependabot currently updates GitHub Actions and groups `github/codeql-action/*` so init and analyze stay on one SHA. pnpm package updates remain a reviewed manual process until the project's configured pnpm generation is supported by the chosen automation.
 
 ## Toolchain notes
 
