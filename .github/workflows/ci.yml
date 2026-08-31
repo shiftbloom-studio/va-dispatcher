@@ -110,7 +110,7 @@ jobs:
             apps/api/coverage
             apps/web/coverage
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
 
       - name: Build
         run: pnpm build
