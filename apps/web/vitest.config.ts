@@ -7,27 +7,48 @@ export default defineConfig({
     noExternal: ["@swc/helpers", "next"],
   },
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "server-only": fileURLToPath(
-        new URL("./src/test/server-only.ts", import.meta.url),
-      ),
-      "next/link": fileURLToPath(
-        new URL("./src/test/stubs/next-link.tsx", import.meta.url),
-      ),
-      "next/navigation": fileURLToPath(
-        new URL("./src/test/stubs/next-navigation.ts", import.meta.url),
-      ),
-      "next/dynamic": fileURLToPath(
-        new URL("./src/test/stubs/next-dynamic.tsx", import.meta.url),
-      ),
-      "next/headers": fileURLToPath(
-        new URL("./src/test/stubs/next-headers.ts", import.meta.url),
-      ),
-      "@/components/optional-telemetry": fileURLToPath(
-        new URL("./src/test/stubs/optional-telemetry.tsx", import.meta.url),
-      ),
-    },
+    alias: [
+      {
+        find: "@/components/optional-telemetry",
+        replacement: fileURLToPath(
+          new URL("./src/test/stubs/optional-telemetry.tsx", import.meta.url),
+        ),
+      },
+      {
+        find: "next/link",
+        replacement: fileURLToPath(
+          new URL("./src/test/stubs/next-link.tsx", import.meta.url),
+        ),
+      },
+      {
+        find: "next/navigation",
+        replacement: fileURLToPath(
+          new URL("./src/test/stubs/next-navigation.ts", import.meta.url),
+        ),
+      },
+      {
+        find: "next/dynamic",
+        replacement: fileURLToPath(
+          new URL("./src/test/stubs/next-dynamic.tsx", import.meta.url),
+        ),
+      },
+      {
+        find: "next/headers",
+        replacement: fileURLToPath(
+          new URL("./src/test/stubs/next-headers.ts", import.meta.url),
+        ),
+      },
+      {
+        find: "server-only",
+        replacement: fileURLToPath(
+          new URL("./src/test/server-only.ts", import.meta.url),
+        ),
+      },
+      {
+        find: "@",
+        replacement: fileURLToPath(new URL("./src", import.meta.url)),
+      },
+    ],
   },
   test: {
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
