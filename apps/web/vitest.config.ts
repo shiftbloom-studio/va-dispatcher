@@ -16,6 +16,12 @@ export default defineConfig({
     pool: "vmThreads",
     setupFiles: ["./src/test/setup.ts"],
     css: true,
+    server: {
+      deps: {
+        // Inline ESM helpers used by Next.js to avoid CJS/ESM interop issues under Vitest
+        inline: ["@swc/helpers"],
+      },
+    },
     coverage: {
       provider: "istanbul",
       include: ["src/**/*.{ts,tsx}"],
