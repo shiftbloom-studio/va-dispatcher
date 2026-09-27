@@ -19,7 +19,10 @@ export default defineConfig({
         new URL("./src/test/stubs/next-navigation.ts", import.meta.url),
       ),
       "next/dynamic": fileURLToPath(
-        new URL("./src/test/stubs/next-dynamic.ts", import.meta.url),
+        new URL("./src/test/stubs/next-dynamic.tsx", import.meta.url),
+      ),
+      "next/headers": fileURLToPath(
+        new URL("./src/test/stubs/next-headers.ts", import.meta.url),
       ),
     },
   },
