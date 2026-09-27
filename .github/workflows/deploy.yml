@@ -18,7 +18,9 @@ concurrency:
 jobs:
   select:
     name: Select validated revision
-    runs-on: ubuntu-latest
+    runs-on:
+      group: Default
+      labels: [self-hosted, linux, x64]
     timeout-minutes: 2
     outputs:
       deploy: ${{ steps.selection.outputs.deploy }}
@@ -102,7 +104,9 @@ jobs:
     name: Deploy Vercel ${{ needs.select.outputs.target }}
     needs: select
     if: needs.select.outputs.deploy == 'true'
-    runs-on: ubuntu-latest
+    runs-on:
+      group: Default
+      labels: [self-hosted, linux, x64]
     timeout-minutes: 20
     permissions:
       contents: read
