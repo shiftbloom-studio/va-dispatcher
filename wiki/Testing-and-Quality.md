@@ -122,12 +122,18 @@ Its main jobs cover:
 3. Node 24.15.0 with pnpm cache;
 4. frozen install;
 5. canonical schema push to a fresh PostgreSQL database and real PostgreSQL
-   contracts;
+   contracts. Service containers publish a host port derived from the workflow
+   run id so concurrent jobs can share one Docker daemon. Containerized
+   runners reach that port through `.github/scripts/resolve-service-host.mjs`
+   (`127.0.0.1` when the port is in the job network namespace, otherwise the
+   Docker host gateway);
 6. format, lint, type, coverage, security audit, and production build;
 7. fast browser workflows; and
 8. isolated PostgreSQL integrated E2E with failure-only artifacts.
 
-Concurrency cancels an older run for the same ref.
+Concurrency cancels an older run for the same ref. Coverage and failure-report
+uploads continue when the account artifact quota is already exhausted; the
+test steps themselves remain the gate.
 
 ## Security automation
 
@@ -135,7 +141,9 @@ The separate `Security` workflow runs on pull requests, `main`, Mondays, and man
 
 - high-severity pnpm advisory audit;
 - dependency review on pull requests; and
-- CodeQL extended JavaScript/TypeScript analysis.
+- CodeQL extended JavaScript/TypeScript analysis. The job installs Node.js
+  24.15.0 first, because the self-hosted runner image does not put `node` on
+  `PATH` and the TypeScript extractor requires it.
 
 Dependabot currently updates GitHub Actions and groups `github/codeql-action/*` so init and analyze stay on one SHA. pnpm package updates remain a reviewed manual process until the project's configured pnpm generation is supported by the chosen automation.
 
@@ -143,7 +151,7 @@ Dependabot currently updates GitHub Actions and groups `github/codeql-action/*` 
 
 - Node engine: 24+, with `.nvmrc` at 26.7.0.
 - pnpm: 11.21.0.
-- Next.js: 16.3.0.
+- Next.js: 16.3.6.
 - API build/typecheck explicitly uses the `typescript7` alias.
 - Root also carries a TypeScript 6 alias for tool compatibility.
 - Vitest and Drizzle are pinned release-candidate versions in the current lockfile.
