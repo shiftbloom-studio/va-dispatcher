@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   ssr: {
     // Ensure problematic ESM dependencies are transpiled for Node test runtime
-    noExternal: ["@swc/helpers"],
+    noExternal: ["@swc/helpers", "next"],
   },
   resolve: {
     alias: {
