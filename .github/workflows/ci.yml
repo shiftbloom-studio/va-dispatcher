@@ -14,8 +14,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  service_ports:
+    name: Choose PostgreSQL host ports
+    runs-on:
+      group: Default
+      labels: [self-hosted, linux, x64]
+    timeout-minutes: 2
+    outputs:
+      contracts: ${{ steps.ports.outputs.contracts }}
+      e2e: ${{ steps.ports.outputs.e2e }}
+    steps:
+      - name: Derive non-overlapping host ports from the run id
+        id: ports
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Separate 20000-port windows so concurrent runs can share one Docker daemon.
+          slot=$(( GITHUB_RUN_ID % 20000 ))
+          echo "contracts=$((20000 + slot))" >> "${GITHUB_OUTPUT}"
+          echo "e2e=$((40000 + slot))" >> "${GITHUB_OUTPUT}"
+
   postgres-contracts:
     name: Fresh schema and PostgreSQL contracts
+    needs: service_ports
     runs-on:
       group: Default
       labels: [self-hosted, linux, x64]
@@ -28,16 +49,14 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: va_dispatch_fresh
         ports:
-          # Host ports stay unique on the shared Docker daemon. Integrated
-          # E2E uses run_number + 30000, which stays a valid port below run 35535.
-          - ${{ format('{0}:5432', github.run_number + 20000) }}
+          - ${{ format('{0}:5432', needs.service_ports.outputs.contracts) }}
         options: >-
           --health-cmd "pg_isready -U postgres -d va_dispatch_fresh"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      PGPORT: ${{ github.run_number + 20000 }}
+      PGPORT: ${{ needs.service_ports.outputs.contracts }}
       PGUSER: postgres
       PGPASSWORD: postgres
     steps:
@@ -147,6 +166,7 @@ jobs:
 
   integrated-e2e:
     name: Integrated web, API, and PostgreSQL E2E
+    needs: service_ports
     runs-on:
       group: Default
       labels: [self-hosted, linux, x64]
@@ -159,14 +179,14 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: va_dispatch_e2e
         ports:
-          - ${{ format('{0}:5432', github.run_number + 30000) }}
+          - ${{ format('{0}:5432', needs.service_ports.outputs.e2e) }}
         options: >-
           --health-cmd "pg_isready -U postgres -d va_dispatch_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      PGPORT: ${{ github.run_number + 30000 }}
+      PGPORT: ${{ needs.service_ports.outputs.e2e }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
