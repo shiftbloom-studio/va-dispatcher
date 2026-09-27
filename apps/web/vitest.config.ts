@@ -39,6 +39,24 @@ export default defineConfig({
         ),
       },
       {
+        find: "next/dist/shared/lib/router-context.shared-runtime.js",
+        replacement: fileURLToPath(
+          new URL(
+            "./src/test/stubs/next-router-context-shared-runtime.js",
+            import.meta.url,
+          ),
+        ),
+      },
+      {
+        find: "next/dist/client/components/navigation.js",
+        replacement: fileURLToPath(
+          new URL(
+            "./src/test/stubs/next-client-components-navigation.js",
+            import.meta.url,
+          ),
+        ),
+      },
+      {
         find: "server-only",
         replacement: fileURLToPath(
           new URL("./src/test/server-only.ts", import.meta.url),
