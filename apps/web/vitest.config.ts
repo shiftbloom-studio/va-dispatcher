@@ -12,6 +12,15 @@ export default defineConfig({
       "server-only": fileURLToPath(
         new URL("./src/test/server-only.ts", import.meta.url),
       ),
+      "next/link": fileURLToPath(
+        new URL("./src/test/stubs/next-link.tsx", import.meta.url),
+      ),
+      "next/navigation": fileURLToPath(
+        new URL("./src/test/stubs/next-navigation.ts", import.meta.url),
+      ),
+      "next/dynamic": fileURLToPath(
+        new URL("./src/test/stubs/next-dynamic.ts", import.meta.url),
+      ),
     },
   },
   test: {
