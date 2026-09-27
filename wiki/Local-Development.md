@@ -198,7 +198,7 @@ provider traffic.
 
 ## Before editing Next.js code
 
-This repository uses Next.js 16.3.0 and APIs may differ from older training material. Read the relevant guide under `apps/web/node_modules/next/dist/docs/` and follow `apps/web/AGENTS.md` before changing Next.js routes, conventions, configuration, caching, or request handling.
+This repository uses Next.js 16.3.6 and APIs may differ from older training material. Read the relevant guide under `apps/web/node_modules/next/dist/docs/` and follow `apps/web/AGENTS.md` before changing Next.js routes, conventions, configuration, caching, or request handling.
 
 ## Development safety
 
