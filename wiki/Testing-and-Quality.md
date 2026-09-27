@@ -131,7 +131,9 @@ Its main jobs cover:
 7. fast browser workflows; and
 8. isolated PostgreSQL integrated E2E with failure-only artifacts.
 
-Concurrency cancels an older run for the same ref.
+Concurrency cancels an older run for the same ref. Coverage and failure-report
+uploads continue when the account artifact quota is already exhausted; the
+test steps themselves remain the gate.
 
 ## Security automation
 

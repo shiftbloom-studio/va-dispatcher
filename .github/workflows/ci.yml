@@ -136,8 +136,10 @@ jobs:
       - name: Run tests with coverage
         run: pnpm test:coverage
 
+      # Account artifact quota must not skip the build and browser steps.
       - name: Upload coverage reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-reports-node-24.15.0
@@ -158,6 +160,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report-node-24.15.0
@@ -230,6 +233,7 @@ jobs:
 
       - name: Upload failed integrated E2E artifacts
         if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: integrated-e2e-failures-node-24.15.0
