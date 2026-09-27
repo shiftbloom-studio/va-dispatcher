@@ -21,7 +21,7 @@ jobs:
     runs-on:
       group: Default
       labels: [self-hosted, linux, x64]
-    timeout-minutes: 2
+    timeout-minutes: 5
     outputs:
       deploy: ${{ steps.selection.outputs.deploy }}
       sha: ${{ steps.selection.outputs.sha }}
@@ -29,6 +29,38 @@ jobs:
       ref: ${{ steps.selection.outputs.ref }}
       pr_number: ${{ steps.selection.outputs.pr_number }}
     steps:
+      # The self-hosted image does not put Node.js or the GitHub CLI on PATH.
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+
+      - name: Set up GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v curl >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl ca-certificates
+          fi
+          version="2.101.0"
+          archive="gh_${version}_linux_amd64.tar.gz"
+          expected="9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8"
+          tarball="${RUNNER_TEMP}/${archive}"
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --output "${tarball}" \
+            "https://github.com/cli/cli/releases/download/v${version}/${archive}"
+          echo "${expected}  ${tarball}" | sha256sum --check --status
+          tar --extract --gzip --file "${tarball}" --directory "${RUNNER_TEMP}"
+          install_dir="${RUNNER_TEMP}/gh_${version}_linux_amd64/bin"
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/gh" --version
+
       - name: Trust only successful CI for internal pull requests or main
         id: selection
         shell: bash
@@ -122,6 +154,38 @@ jobs:
       DEPLOY_REF: ${{ needs.select.outputs.ref }}
       PR_NUMBER: ${{ needs.select.outputs.pr_number }}
     steps:
+      # The self-hosted image does not put Node.js or the GitHub CLI on PATH.
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+
+      - name: Set up GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v curl >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl ca-certificates
+          fi
+          version="2.101.0"
+          archive="gh_${version}_linux_amd64.tar.gz"
+          expected="9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8"
+          tarball="${RUNNER_TEMP}/${archive}"
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --output "${tarball}" \
+            "https://github.com/cli/cli/releases/download/v${version}/${archive}"
+          echo "${expected}  ${tarball}" | sha256sum --check --status
+          tar --extract --gzip --file "${tarball}" --directory "${RUNNER_TEMP}"
+          install_dir="${RUNNER_TEMP}/gh_${version}_linux_amd64/bin"
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/gh" --version
+
       - name: Verify deployment credentials
         shell: bash
         run: |
