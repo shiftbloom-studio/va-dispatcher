@@ -24,6 +24,9 @@ export default defineConfig({
       "next/headers": fileURLToPath(
         new URL("./src/test/stubs/next-headers.ts", import.meta.url),
       ),
+      "@/components/optional-telemetry": fileURLToPath(
+        new URL("./src/test/stubs/optional-telemetry.tsx", import.meta.url),
+      ),
     },
   },
   test: {
