@@ -23,7 +23,20 @@ export default function dynamic<T extends React.ComponentType<any>>(
       if (!Comp) {
         importer().then((mod) => {
           if (cancelled) return;
-          Loaded = (mod.default || (mod as any)) as React.ComponentType<any>;
+          const maybe = (mod as any)?.default ?? (mod as any);
+          if (typeof maybe === "function") {
+            Loaded = maybe as React.ComponentType<any>;
+          } else if (
+            maybe &&
+            typeof maybe === "object" &&
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            React.isValidElement(maybe)
+          ) {
+            Loaded = (() => maybe) as unknown as React.ComponentType<any>;
+          } else {
+            // Fallback to a no-op component
+            Loaded = (() => null) as React.ComponentType<any>;
+          }
           setComp(Loaded);
         });
       }
