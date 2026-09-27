@@ -16,7 +16,9 @@ concurrency:
 jobs:
   postgres-contracts:
     name: Fresh schema and PostgreSQL contracts
-    runs-on: ubuntu-latest
+    runs-on:
+      group: Default
+      labels: [self-hosted, linux, x64]
     timeout-minutes: 15
     services:
       postgres:
@@ -68,7 +70,9 @@ jobs:
         run: pnpm --filter @va-dispatch/api test:postgres
 
   validate:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: Default
+      labels: [self-hosted, linux, x64]
     timeout-minutes: 25
     steps:
       - name: Checkout repository
@@ -131,7 +135,9 @@ jobs:
 
   integrated-e2e:
     name: Integrated web, API, and PostgreSQL E2E
-    runs-on: ubuntu-latest
+    runs-on:
+      group: Default
+      labels: [self-hosted, linux, x64]
     timeout-minutes: 20
     services:
       postgres:
