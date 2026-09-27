@@ -7,11 +7,40 @@ type DynamicOptions = {
 
 // Very small dynamic() stub for unit tests
 export default function dynamic<T extends React.ComponentType<any>>(
-  _importer: () => Promise<{ default: T }>,
+  importer: () => Promise<{ default: T }>,
   options?: DynamicOptions
 ): React.ComponentType<React.ComponentProps<T>> {
   const Loading = options?.loading;
-  const Stub = () => (Loading ? <Loading /> : null);
-  return Stub as unknown as React.ComponentType<React.ComponentProps<T>>;
+  let Loaded: React.ComponentType<any> | null = null;
+
+  function DynamicComponent(props: React.ComponentProps<T>) {
+    const [Comp, setComp] = React.useState<React.ComponentType<any> | null>(
+      Loaded,
+    );
+
+    React.useEffect(() => {
+      let cancelled = false;
+      if (!Comp) {
+        importer().then((mod) => {
+          if (cancelled) return;
+          Loaded = (mod.default || (mod as any)) as React.ComponentType<any>;
+          setComp(Loaded);
+        });
+      }
+      return () => {
+        cancelled = true;
+      };
+    }, [Comp]);
+
+    if (!Comp) {
+      return Loading ? <Loading /> : null;
+    }
+    const Component = Comp as React.ComponentType<any>;
+    return <Component {...(props as any)} />;
+  }
+
+  return DynamicComponent as unknown as React.ComponentType<
+    React.ComponentProps<T>
+  >;
 }
 
