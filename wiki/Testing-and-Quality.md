@@ -123,7 +123,7 @@ Its main jobs cover:
 4. frozen install;
 5. canonical schema push to a fresh PostgreSQL database and real PostgreSQL
    contracts. Service containers publish a host port derived from the workflow
-   run number so concurrent jobs can share one Docker daemon. Containerized
+   run id so concurrent jobs can share one Docker daemon. Containerized
    runners reach that port through `.github/scripts/resolve-service-host.mjs`
    (`127.0.0.1` when the port is in the job network namespace, otherwise the
    Docker host gateway);
