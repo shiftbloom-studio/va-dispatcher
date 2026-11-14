@@ -194,7 +194,10 @@ environment-scoped in Vercel. Configure Protection Bypass for Automation in
 Vercel; the workflow reads and masks its current value through the project-scoped
 token instead of duplicating it in GitHub. After CI succeeds, a default-branch
 workflow deploys only internal pull requests and `main` without checking out
-untrusted code while holding the Vercel token. It does not modify the database;
+untrusted code while holding the Vercel token. Each deploy job installs Node.js
+24.15.0 and a checksum-pinned GitHub CLI first, because the self-hosted runner
+image does not provide them on `PATH`. It installs `curl` only when the image
+does not already provide it. It does not modify the database;
 `/api/ready` confirms connectivity and the tenant/membership schema. Each
 Production request disables custom-domain assignment until readiness passes,
 then the workflow promotes the staged deployment.
