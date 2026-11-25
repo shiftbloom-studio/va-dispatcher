@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   recoverMembershipAsTenantAdmin: vi.fn(),
   upsertMembership: vi.fn(),
   findTenantByAuthOrgId: vi.fn(),
+  findTenantBySlug: vi.fn(),
   upsertTenantBySlug: vi.fn(),
 }));
 
@@ -21,6 +22,7 @@ vi.mock("../db/client.js", () => ({
 
 vi.mock("../db/repositories/tenants.js", () => ({
   findTenantByAuthOrgId: mocks.findTenantByAuthOrgId,
+  findTenantBySlug: mocks.findTenantBySlug,
   upsertTenantBySlug: mocks.upsertTenantBySlug,
 }));
 
@@ -52,8 +54,23 @@ describe("identity organization claims", () => {
       NODE_ENV: "test",
       CRON_SECRET: "test-cron-secret",
     });
-    mocks.findTenantByAuthOrgId.mockResolvedValue({ id: "tenant_test" });
-    mocks.upsertTenantBySlug.mockResolvedValue({ id: "tenant_vsas" });
+    mocks.findTenantByAuthOrgId.mockImplementation(async (orgId: string) =>
+      orgId === "org_test"
+        ? { id: "tenant_test", slug: "test", authOrgId: "org_test" }
+        : null,
+    );
+    mocks.findTenantBySlug.mockImplementation(async (slug: string) =>
+      slug === "test"
+        ? { id: "tenant_test", slug: "test", authOrgId: "org_test" }
+        : slug === "other"
+          ? { id: "tenant_other", slug: "other", authOrgId: "org_other" }
+          : null,
+    );
+    mocks.upsertTenantBySlug.mockResolvedValue({
+      id: "tenant_vsas",
+      slug: "vsas",
+      authOrgId: "org_vsas",
+    });
     mocks.findMembership.mockResolvedValue(null);
     mocks.recoverMembershipAsTenantAdmin.mockImplementation(
       async ({ membershipId }) => ({
@@ -82,8 +99,10 @@ describe("identity organization claims", () => {
   it("maps the organization role claim", async () => {
     mocks.verifyAccessToken.mockResolvedValue({
       userId: "user_test",
-      orgId: "org_test",
-      orgRole: "admin",
+      orgs: { org_test: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
 
     const response = await app.request("/", {
@@ -114,8 +133,10 @@ describe("identity organization claims", () => {
     });
     mocks.verifyAccessToken.mockResolvedValue({
       userId: "user_test",
-      orgId: "org_vsas",
-      orgRole: "admin",
+      orgs: { org_vsas: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
     mocks.findTenantByAuthOrgId.mockResolvedValue(null);
 
@@ -145,11 +166,11 @@ describe("identity organization claims", () => {
     });
     mocks.verifyAccessToken.mockResolvedValue({
       userId: "user_test",
-      orgId: "org_other",
-      orgRole: "admin",
+      orgs: { org_other: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
-    mocks.findTenantByAuthOrgId.mockResolvedValue(null);
-
     const response = await app.request("/", {
       headers: { Authorization: "Bearer session-token" },
     });
@@ -162,8 +183,10 @@ describe("identity organization claims", () => {
   it("recovers a verified org admin only through the no-active-admin seam", async () => {
     mocks.verifyAccessToken.mockResolvedValue({
       userId: "user_recovery",
-      orgId: "org_test",
-      orgRole: "admin",
+      orgs: { org_test: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
     mocks.findMembership.mockResolvedValue({
       id: "membership_recovery",
@@ -194,8 +217,10 @@ describe("identity organization claims", () => {
   it("keeps a newly provisioned org admin as pilot when recovery is not eligible", async () => {
     mocks.verifyAccessToken.mockResolvedValue({
       userId: "user_additional_admin",
-      orgId: "org_test",
-      orgRole: "admin",
+      orgs: { org_test: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
     mocks.recoverMembershipAsTenantAdmin.mockResolvedValue(null);
 
@@ -215,8 +240,10 @@ describe("identity organization claims", () => {
   it("provisions a dispatcher role assigned through tenant administration", async () => {
     mocks.verifyAccessToken.mockResolvedValue({
       userId: "user_new_dispatcher",
-      orgId: "org_test",
-      orgRole: "dispatcher",
+      orgs: { org_test: "dispatcher" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
 
     const response = await app.request("/", {
@@ -239,8 +266,10 @@ describe("identity organization claims", () => {
   it("verifies a signed-in applicant without requiring an organization claim", async () => {
     mocks.verifyAccessToken.mockResolvedValue({
       userId: "user_applicant",
-      orgId: null,
-      orgRole: null,
+      orgs: {},
+      email: "applicant@example.test",
+      emailVerified: true,
+      name: "Applicant",
     });
 
     const response = await userApp.request("/", {
@@ -250,8 +279,88 @@ describe("identity organization claims", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       authUserId: "user_applicant",
+      email: "applicant@example.test",
+      emailVerified: true,
+      name: "Applicant",
     });
     expect(mocks.findTenantByAuthOrgId).not.toHaveBeenCalled();
     expect(mocks.findMembership).not.toHaveBeenCalled();
+  });
+
+  it("picks the tenant from the slug header and checks the orgs claim", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_multi",
+      orgs: { org_test: "member", org_other: "dispatcher" },
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: {
+        Authorization: "Bearer session-token",
+        "X-Tenant-Slug": "Other",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      tenantId: "tenant_other",
+      authOrgId: "org_other",
+      role: "dispatcher",
+    });
+  });
+
+  it("rejects a tenant the caller does not belong to", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_test",
+      orgs: { org_test: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: {
+        Authorization: "Bearer session-token",
+        "X-Tenant-Slug": "other",
+      },
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.findMembership).not.toHaveBeenCalled();
+  });
+
+  it("asks for a tenant when the token holds several organizations", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_multi",
+      orgs: { org_test: "member", org_other: "member" },
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.findMembership).not.toHaveBeenCalled();
+  });
+
+  it("treats an organization owner as a tenant admin", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_owner",
+      orgs: { org_test: "owner" },
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(mocks.recoverMembershipAsTenantAdmin).toHaveBeenCalled();
   });
 });

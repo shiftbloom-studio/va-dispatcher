@@ -70,7 +70,7 @@ storage, logs, bot scoring) is on Cloudflare.
    | `VA_D1_DATABASE_ID`                 | API    | ID of the `va-dispatch` D1 database                                              |
    | `AUTH_ISSUER`                       | API    | OIDC issuer of the identity provider (stem)                                      |
    | `AUTH_AUDIENCE`                     | API    | Expected `aud` of access tokens for this API                                     |
-   | `AUTH_ADMIN_API_URL`                | API    | Identity provider admin API for invitations and directory sync                   |
+   | `AUTH_CLIENT_ID`                    | API    | OIDC client ID; the directory API (invitations, sync) uses it with the secret    |
    | `VSAS_AUTH_ORG_ID`                  | API    | Immutable ID of the first tenant's identity-provider organization (optional)     |
    | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | web    | Same Clerk publishable key, inlined at build                                     |
    | `NEXT_PUBLIC_SOURCE_URL`            | web    | Corresponding-source URL for hosted forks                                        |
@@ -80,7 +80,7 @@ storage, logs, bot scoring) is on Cloudflare.
    `.env.deploy` at the repository root or in the app directory.
 
 4. **Secrets** (Settings → Variables and Secrets, or `wrangler secret put`):
-   - API: `AUTH_ADMIN_TOKEN`, `TENANT_SECRETS_KEY`, `CRON_SECRET`,
+   - API: `AUTH_CLIENT_SECRET`, `TENANT_SECRETS_KEY`, `CRON_SECRET`,
      `SIMBRIEF_API_KEY`, `NAVIGRAPH_CLIENT_ID`, `NAVIGRAPH_CLIENT_SECRET`
    - Web: `CLERK_SECRET_KEY`
 

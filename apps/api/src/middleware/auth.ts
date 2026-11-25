@@ -9,12 +9,16 @@ import {
 } from "../db/repositories/memberships.js";
 import {
   findTenantByAuthOrgId,
+  findTenantBySlug,
   upsertTenantBySlug,
 } from "../db/repositories/tenants.js";
 import { mapOrgRole, roleAtLeast } from "../domain/members/roles.js";
 import type { MemberRole, Membership, Tenant } from "../db/schema.js";
 import { hasDatabase } from "../db/client.js";
 import { verifyAccessToken } from "../auth/token.js";
+
+/** Request header naming the tenant (Virtual Airline slug) a call is about. */
+export const TENANT_SLUG_HEADER = "X-Tenant-Slug";
 
 export type AuthContext = {
   authUserId: string;
@@ -28,6 +32,10 @@ export type AuthContext = {
 
 export type AuthUserContext = {
   authUserId: string;
+  /** Verified profile claims from the access token, when present. */
+  email: string | null;
+  emailVerified: boolean;
+  name: string | null;
 };
 
 export type AppVariables = {
@@ -57,6 +65,9 @@ export const requireUser = createMiddleware<{ Variables: AppVariables }>(
     if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
       context.set("authUser", {
         authUserId: context.req.header("X-Dev-User-Id") ?? "user_dev",
+        email: null,
+        emailVerified: false,
+        name: context.req.header("X-Dev-Display-Name") ?? null,
       });
       await next();
       return;
@@ -65,7 +76,12 @@ export const requireUser = createMiddleware<{ Variables: AppVariables }>(
     const token = bearerToken(context.req.header("Authorization"));
     if (!token) throw new AppError("UNAUTHORIZED", "Missing bearer token");
     const identity = await verifyAccessToken(token);
-    context.set("authUser", { authUserId: identity.userId });
+    context.set("authUser", {
+      authUserId: identity.userId,
+      email: identity.email,
+      emailVerified: identity.emailVerified,
+      name: identity.name,
+    });
     await next();
   },
 );
@@ -73,7 +89,9 @@ export const requireUser = createMiddleware<{ Variables: AppVariables }>(
 /**
  * Authenticate + resolve tenant membership.
  *
- * Production: identity-provider access token with an org claim.
+ * Production: identity-provider access token with an `orgs` claim. The
+ * tenant comes from the X-Tenant-Slug header, or from the only organization
+ * in the token when the header is absent.
  * Dev bypass: AUTH_DEV_BYPASS=true and headers:
  *   X-Dev-User-Id, X-Dev-Org-Id, X-Dev-Role, X-Dev-Display-Name (optional)
  */
@@ -135,34 +153,15 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
 
     const identity = await verifyAccessToken(token);
     const authUserId = identity.userId;
-    const authOrgId = identity.orgId;
-    if (!authOrgId) {
-      throw new AppError(
-        "FORBIDDEN",
-        "Active organization required — select your Virtual Airline",
-      );
-    }
-
-    let tenant = await findTenantByAuthOrgId(authOrgId);
-    if (!tenant && authOrgId === config.VSAS_AUTH_ORG_ID) {
-      // The configured identity organization is the source of truth for the
-      // initial vSAS tenant. This also repairs a stale org ID after the database
-      // or the provider has been reprovisioned without a secret seed call.
-      tenant = await upsertTenantBySlug({
-        slug: "vsas",
-        name: "vSAS",
-        authOrgId,
-      });
-    }
-    if (!tenant) {
-      throw new AppError(
-        "FORBIDDEN",
-        "This organization is not registered as a VA tenant",
-      );
-    }
+    const tenant = await resolveTenant(
+      context.req.header(TENANT_SLUG_HEADER),
+      identity.orgs,
+      config.VSAS_AUTH_ORG_ID,
+    );
+    const authOrgId = tenant.authOrgId;
 
     let membership = await findMembership(tenant.id, authUserId);
-    const orgRole = mapOrgRole(identity.orgRole);
+    const orgRole = mapOrgRole(identity.orgs[authOrgId]);
     if (!membership) {
       // Pilot and dispatcher authority can be provisioned from an org role
       // that tenant administration assigned. Admin still requires the narrow
@@ -205,6 +204,64 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     await next();
   },
 );
+
+/**
+ * Pick the tenant a request is about and check the caller belongs to its
+ * identity organization. Access tokens carry every organization of this app
+ * the user is in, so membership is a lookup in that map.
+ */
+async function resolveTenant(
+  slugHeader: string | undefined,
+  orgs: Record<string, string>,
+  vsasOrgId: string | undefined,
+): Promise<Tenant> {
+  // The configured identity organization is the source of truth for the
+  // initial vSAS tenant. This also repairs a stale org ID after the database
+  // or the provider has been reprovisioned without a secret seed call.
+  let vsas: Tenant | null = null;
+  if (vsasOrgId && orgs[vsasOrgId]) {
+    vsas =
+      (await findTenantByAuthOrgId(vsasOrgId)) ??
+      (await upsertTenantBySlug({
+        slug: "vsas",
+        name: "vSAS",
+        authOrgId: vsasOrgId,
+      }));
+  }
+
+  const slug = slugHeader?.trim().toLowerCase();
+  if (slug) {
+    const tenant = vsas?.slug === slug ? vsas : await findTenantBySlug(slug);
+    if (!tenant) throw new AppError("NOT_FOUND", "Virtual Airline not found");
+    if (!orgs[tenant.authOrgId]) {
+      throw new AppError(
+        "FORBIDDEN",
+        "You are not a member of this Virtual Airline",
+      );
+    }
+    return tenant;
+  }
+
+  const orgIds = Object.keys(orgs);
+  if (orgIds.length !== 1) {
+    throw new AppError(
+      "FORBIDDEN",
+      orgIds.length === 0
+        ? "Join a Virtual Airline first"
+        : "Select your Virtual Airline",
+    );
+  }
+  const orgId = orgIds[0]!;
+  const tenant =
+    vsas?.authOrgId === orgId ? vsas : await findTenantByAuthOrgId(orgId);
+  if (!tenant) {
+    throw new AppError(
+      "FORBIDDEN",
+      "This organization is not registered as a VA tenant",
+    );
+  }
+  return tenant;
+}
 
 export function requireRole(requiredRole: MemberRole) {
   return createMiddleware<{ Variables: AppVariables }>(

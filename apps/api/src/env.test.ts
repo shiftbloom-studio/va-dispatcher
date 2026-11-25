@@ -13,14 +13,14 @@ const productionEnvironment = {
 afterEach(() => resetEnvCache());
 
 describe("runtime environment validation", () => {
-  it("treats empty optional identity URLs from the deploy template as unset", () => {
+  it("treats empty optional identity settings from the deploy template as unset", () => {
     const config = loadEnv({
       NODE_ENV: "test",
       AUTH_JWKS_URL: "",
-      AUTH_ADMIN_API_URL: "",
+      AUTH_CLIENT_ID: "",
     });
     expect(config.AUTH_JWKS_URL).toBeUndefined();
-    expect(config.AUTH_ADMIN_API_URL).toBeUndefined();
+    expect(config.AUTH_CLIENT_ID).toBeUndefined();
   });
 
   it("requires production credentials and a non-default cron secret", () => {

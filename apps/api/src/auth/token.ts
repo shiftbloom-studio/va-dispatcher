@@ -11,15 +11,22 @@ import { AppError } from "../lib/errors.js";
 /** Identity facts the API trusts from a verified access token. */
 export type VerifiedIdentity = {
   userId: string;
-  /** Active organization, absent for applicants without one. */
-  orgId: string | null;
-  /** Organization role as issued, for example `admin` or `org:pilot`. */
-  orgRole: string | null;
+  /**
+   * Organization id to role for every organization of this app the user
+   * belongs to. Empty for applicants. There is no active organization: the
+   * API picks the tenant per request and looks up its role here.
+   */
+  orgs: Record<string, string>;
+  email: string | null;
+  emailVerified: boolean;
+  name: string | null;
 };
 
 type AccessTokenClaims = JWTPayload & {
-  org_id?: unknown;
-  org_role?: unknown;
+  orgs?: unknown;
+  email?: unknown;
+  email_verified?: unknown;
+  name?: unknown;
 };
 
 let cachedKeys: { url: string; keys: JWTVerifyGetKey } | null = null;
@@ -81,7 +88,11 @@ export async function verifyAccessToken(
     ({ payload } = await jwtVerify<AccessTokenClaims>(
       token,
       await signingKeys(config.AUTH_ISSUER),
-      { issuer: config.AUTH_ISSUER, audience: config.AUTH_AUDIENCE },
+      {
+        issuer: config.AUTH_ISSUER,
+        audience: config.AUTH_AUDIENCE,
+        typ: "at+jwt",
+      },
     ));
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -92,7 +103,18 @@ export async function verifyAccessToken(
   if (!userId) throw new AppError("UNAUTHORIZED", "Token missing subject");
   return {
     userId,
-    orgId: optionalString(payload.org_id),
-    orgRole: optionalString(payload.org_role),
+    orgs: orgRoles(payload.orgs),
+    email: optionalString(payload.email),
+    emailVerified: payload.email_verified === true,
+    name: optionalString(payload.name),
   };
+}
+
+function orgRoles(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const roles: Record<string, string> = {};
+  for (const [orgId, role] of Object.entries(value)) {
+    if (orgId && typeof role === "string" && role.trim()) roles[orgId] = role;
+  }
+  return roles;
 }

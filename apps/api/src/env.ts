@@ -27,9 +27,15 @@ const envSchema = z.object({
   AUTH_AUDIENCE: z.string().min(1).optional(),
   /** JWKS endpoint; defaults to the issuer's OIDC discovery document. */
   AUTH_JWKS_URL: optionalUrl,
-  /** Identity provider admin API used for invitations and directory sync. */
-  AUTH_ADMIN_API_URL: optionalUrl,
-  AUTH_ADMIN_TOKEN: z.string().min(1).optional(),
+  /**
+   * The app's confidential OIDC client. The API uses it with the client
+   * credentials grant for stem's directory API (invitations, member sync).
+   */
+  AUTH_CLIENT_ID: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  AUTH_CLIENT_SECRET: z.string().min(1).optional(),
   // Internal local/test transport selector. Production always resolves to
   // Hoppie and fails closed until the tenant credential is configured.
   ACARS_PROVIDER: z.enum(["mock", "hoppie"]).default("mock"),

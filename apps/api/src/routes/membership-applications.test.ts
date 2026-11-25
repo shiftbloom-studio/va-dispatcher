@@ -6,20 +6,23 @@ const mocks = vi.hoisted(() => ({
   submitMembershipApplicationWithAudit: vi.fn(),
   cancelMembershipApplicationWithAudit: vi.fn(),
   findTenantBySlug: vi.fn(),
-  getDirectory: vi.fn(),
+  authUser: {
+    authUserId: "user-applicant",
+    email: "applicant@example.test" as string | null,
+    emailVerified: true,
+    name: "Verified Applicant" as string | null,
+  },
 }));
 
 vi.mock("../middleware/auth.js", async () => {
   const { createMiddleware: middleware } = await import("hono/factory");
   return {
     requireUser: middleware(async (c, next) => {
-      c.set("authUser", { authUserId: "user-applicant" });
+      c.set("authUser", { ...mocks.authUser });
       await next();
     }),
   };
 });
-
-vi.mock("../auth/directory.js", () => ({ getDirectory: mocks.getDirectory }));
 
 vi.mock("../db/repositories/memberships.js", () => ({
   findMembership: mocks.findMembership,
@@ -73,13 +76,9 @@ describe("membership application routes", () => {
         : null,
     );
     mocks.findMembership.mockResolvedValue(null);
-    mocks.getDirectory.mockReturnValue({
-      getUser: vi.fn().mockResolvedValue({
-        displayName: "Verified Applicant",
-        email: "applicant@example.test",
-        emailVerified: true,
-      }),
-    });
+    mocks.authUser.email = "applicant@example.test";
+    mocks.authUser.emailVerified = true;
+    mocks.authUser.name = "Verified Applicant";
     mocks.submitMembershipApplicationWithAudit.mockResolvedValue({
       membership: pendingMembership,
       submitted: true,
@@ -156,7 +155,6 @@ describe("membership application routes", () => {
     });
 
     expect(response.status).toBe(403);
-    expect(mocks.getDirectory).not.toHaveBeenCalled();
     expect(mocks.submitMembershipApplicationWithAudit).not.toHaveBeenCalled();
   });
 
@@ -174,5 +172,33 @@ describe("membership application routes", () => {
     await expect(response.json()).resolves.toMatchObject({
       application: { state: "closed", requestedRole: "dispatcher" },
     });
+  });
+
+  it("requires a verified email claim before storing an application", async () => {
+    mocks.authUser.emailVerified = false;
+
+    const response = await app.request("/membership-application", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tenantSlug: "vsas", requestedRole: "pilot" }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(mocks.submitMembershipApplicationWithAudit).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the email when the token has no name", async () => {
+    mocks.authUser.name = null;
+
+    const response = await app.request("/membership-application", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tenantSlug: "vsas", requestedRole: "pilot" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.submitMembershipApplicationWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ displayName: "applicant@example.test" }),
+    );
   });
 });

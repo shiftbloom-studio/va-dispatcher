@@ -64,6 +64,7 @@ export function createApp() {
         "Authorization",
         "Content-Type",
         "X-Request-Id",
+        "X-Tenant-Slug",
         "X-Dev-User-Id",
         "X-Dev-Org-Id",
         "X-Dev-Role",

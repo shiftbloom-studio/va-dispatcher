@@ -12,10 +12,19 @@ let privateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
 
 async function token(
   claims: Record<string, unknown>,
-  options: { issuer?: string; audience?: string; subject?: string | null } = {},
+  options: {
+    issuer?: string;
+    audience?: string;
+    subject?: string | null;
+    typ?: string;
+  } = {},
 ) {
   const jwt = new SignJWT(claims)
-    .setProtectedHeader({ alg: "ES256", kid: "test" })
+    .setProtectedHeader({
+      alg: "ES256",
+      kid: "test",
+      typ: options.typ ?? "at+jwt",
+    })
     .setIssuer(options.issuer ?? ISSUER)
     .setAudience(options.audience ?? AUDIENCE)
     .setIssuedAt()
@@ -43,32 +52,46 @@ describe("access token verification", () => {
 
   afterEach(() => resetEnvCache());
 
-  it("returns the user, active organization, and role", async () => {
+  it("returns the user, profile claims, and organization roles", async () => {
     await expect(
       verifyAccessToken(
-        await token({ org_id: "org_1", org_role: "org:dispatcher" }),
+        await token({
+          orgs: { org_1: "dispatcher", org_2: "owner", org_3: 7 },
+          email: "pilot@example.test",
+          email_verified: true,
+          name: "Test Pilot",
+        }),
       ),
     ).resolves.toEqual({
       userId: "user_1",
-      orgId: "org_1",
-      orgRole: "org:dispatcher",
+      orgs: { org_1: "dispatcher", org_2: "owner" },
+      email: "pilot@example.test",
+      emailVerified: true,
+      name: "Test Pilot",
     });
   });
 
-  it("accepts a token without an active organization", async () => {
-    await expect(verifyAccessToken(await token({}))).resolves.toEqual({
-      userId: "user_1",
-      orgId: null,
-      orgRole: null,
-    });
+  it("accepts a token without organizations", async () => {
+    await expect(verifyAccessToken(await token({ orgs: {} }))).resolves.toEqual(
+      {
+        userId: "user_1",
+        orgs: {},
+        email: null,
+        emailVerified: false,
+        name: null,
+      },
+    );
   });
 
   it.each([
     ["a foreign issuer", { issuer: "https://evil.example.test" }],
     ["a foreign audience", { audience: "another-api" }],
     ["no subject", { subject: null }],
+    ["an ID token type", { typ: "JWT" }],
   ])("rejects a token with %s", async (_label, options) => {
-    const result = verifyAccessToken(await token({ org_id: "org_1" }, options));
+    const result = verifyAccessToken(
+      await token({ orgs: { org_1: "member" } }, options),
+    );
     await expect(result).rejects.toBeInstanceOf(AppError);
     await expect(result).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });

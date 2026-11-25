@@ -13,9 +13,12 @@ import {
   memberRoleApplicationsEnabled,
 } from "../domain/tenants/member-access.js";
 import { env } from "../env.js";
-import { requireUser, type AppVariables } from "../middleware/auth.js";
+import {
+  requireUser,
+  type AppVariables,
+  type AuthUserContext,
+} from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
-import { getDirectory, type DirectoryUser } from "../auth/directory.js";
 import type { Membership } from "../db/schema.js";
 
 export const membershipApplicationRoutes = new Hono<{
@@ -57,7 +60,8 @@ membershipApplicationRoutes.post(
   "/membership-application",
   zValidator("json", applicationInputSchema),
   async (c) => {
-    const { authUserId } = c.get("authUser");
+    const authUser = c.get("authUser");
+    const { authUserId } = authUser;
     const body = c.req.valid("json");
     const tenant = await requireTenant(body.tenantSlug);
     const access = memberAccessSettings(tenant.settings);
@@ -73,7 +77,7 @@ membershipApplicationRoutes.post(
       return c.json(applicationResponse(tenant.settings, existing));
     }
 
-    const displayName = await verifiedDisplayName(authUserId);
+    const displayName = verifiedDisplayName(authUser);
     const result = await submitMembershipApplicationWithAudit({
       tenantId: tenant.id,
       authUserId,
@@ -113,20 +117,14 @@ async function requireTenant(slug: string) {
   return tenant;
 }
 
-async function verifiedDisplayName(authUserId: string): Promise<string | null> {
+/**
+ * Applicants are not organization members yet, so the identity directory
+ * cannot describe them. The verified access token carries the profile.
+ */
+function verifiedDisplayName(user: AuthUserContext): string | null {
   const config = env();
   if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
     return "Dev Applicant";
-  }
-  let user: DirectoryUser;
-  try {
-    user = await getDirectory().getUser(authUserId);
-  } catch (error) {
-    throw new AppError(
-      "UPSTREAM",
-      "The identity provider could not verify this account; try again",
-      { cause: error },
-    );
   }
   if (!user.email || !user.emailVerified) {
     throw new AppError(
@@ -134,7 +132,7 @@ async function verifiedDisplayName(authUserId: string): Promise<string | null> {
       "Verify your primary email address before applying",
     );
   }
-  return user.displayName?.trim() || user.email;
+  return user.name?.trim() || user.email;
 }
 
 function applicationResponse(
