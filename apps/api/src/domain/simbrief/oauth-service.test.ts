@@ -242,6 +242,7 @@ describe("Navigraph OAuth service", () => {
       APP_ORIGIN: "https://app.example.test",
       AUTH_ISSUER: "https://auth.example.test",
       AUTH_AUDIENCE: "va-dispatch-api",
+      AUTH_CLIENT_ID: "va-client",
       TENANT_SECRETS_KEY: encryptionKey,
       CRON_SECRET: "production-cron-secret",
       NAVIGRAPH_CLIENT_ID: "client-id",

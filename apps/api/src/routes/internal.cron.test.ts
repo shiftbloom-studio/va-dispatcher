@@ -101,6 +101,7 @@ describe("ACARS polling cron", () => {
       APP_ORIGIN: "https://app.example.test",
       AUTH_ISSUER: "https://auth.example.test",
       AUTH_AUDIENCE: "va-dispatch-api",
+      AUTH_CLIENT_ID: "va-client",
       TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
       CRON_SECRET: "production-cron-secret",
     });

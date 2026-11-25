@@ -133,6 +133,7 @@ function validateRuntimeEnvironment(config: Env): void {
       : []),
     ["AUTH_ISSUER", config.AUTH_ISSUER],
     ["AUTH_AUDIENCE", config.AUTH_AUDIENCE],
+    ["AUTH_CLIENT_ID", config.AUTH_CLIENT_ID],
     ["TENANT_SECRETS_KEY", config.TENANT_SECRETS_KEY],
   ].flatMap(([name, value]) => (value ? [] : [name]));
   if (missing.length) {

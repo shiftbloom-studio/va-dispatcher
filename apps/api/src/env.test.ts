@@ -6,6 +6,7 @@ const productionEnvironment = {
   APP_ORIGIN: "https://app.example.test",
   AUTH_ISSUER: "https://auth.example.test",
   AUTH_AUDIENCE: "va-dispatch-api",
+  AUTH_CLIENT_ID: "va-client",
   TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
   CRON_SECRET: "production-cron-secret",
 } as const;
@@ -25,7 +26,7 @@ describe("runtime environment validation", () => {
 
   it("requires production credentials and a non-default cron secret", () => {
     expect(() => loadEnv({ NODE_ENV: "production" })).toThrow(
-      /APP_ORIGIN, AUTH_ISSUER, AUTH_AUDIENCE, TENANT_SECRETS_KEY/,
+      /APP_ORIGIN, AUTH_ISSUER, AUTH_AUDIENCE, AUTH_CLIENT_ID, TENANT_SECRETS_KEY/,
     );
     expect(() =>
       loadEnv({
