@@ -14,7 +14,8 @@ import { env } from "../env.js";
 import { writeAudit } from "../db/repositories/audit.js";
 import { activeAcarsProviderName } from "../acars/factory.js";
 import { HoppieAcarsProvider } from "../acars/hoppie-provider.js";
-import { del, put } from "@vercel/blob";
+import { getLogoBucket } from "../platform.js";
+import { tenantLogoUrl } from "../domain/tenants/logo-storage.js";
 import {
   acarsStationSchema,
   hoppieLogonSchema,
@@ -223,8 +224,8 @@ tenantRoutes.patch(
 tenantRoutes.post("/tenant/brand/logo", requireRole("admin"), async (c) => {
   const auth = c.get("auth");
   const tenant = await requireTenant(auth.tenantId);
-  const token = env().BLOB_READ_WRITE_TOKEN;
-  if (!token) {
+  const bucket = getLogoBucket();
+  if (!bucket) {
     throw new AppError(
       "UNPROCESSABLE",
       "Organization logo storage is not configured",
@@ -239,14 +240,12 @@ tenantRoutes.post("/tenant/brand/logo", requireRole("admin"), async (c) => {
   const extension = await validateTenantLogo(candidate);
   const pathname = `tenant-logos/${tenant.slug}/${crypto.randomUUID()}.${extension}`;
 
-  let uploaded: Awaited<ReturnType<typeof put>>;
   try {
-    uploaded = await put(pathname, candidate, {
-      access: "public",
-      addRandomSuffix: false,
-      contentType: candidate.type,
-      maximumSizeInBytes: TENANT_LOGO_MAX_BYTES,
-      token,
+    await bucket.put(pathname, await candidate.arrayBuffer(), {
+      httpMetadata: {
+        contentType: candidate.type,
+        cacheControl: "public, max-age=31536000, immutable",
+      },
     });
   } catch (error) {
     throw new AppError("UPSTREAM", "The logo could not be stored", {
@@ -255,11 +254,11 @@ tenantRoutes.post("/tenant/brand/logo", requireRole("admin"), async (c) => {
   }
 
   const updated = await updateTenant(auth.tenantId, {
-    brandLogoUrl: uploaded.url,
-    brandLogoPathname: uploaded.pathname,
+    brandLogoUrl: tenantLogoUrl(pathname, c.req.url),
+    brandLogoPathname: pathname,
   });
   if (!updated) {
-    await safeDeleteBlob(uploaded.pathname, token);
+    await safeDeleteLogo(pathname);
     throw new AppError("NOT_FOUND", "Tenant not found");
   }
 
@@ -269,10 +268,10 @@ tenantRoutes.post("/tenant/brand/logo", requireRole("admin"), async (c) => {
     action: "tenant.brand_logo_upload",
     entityType: "tenant",
     entityId: auth.tenantId,
-    meta: { pathname: uploaded.pathname, bytes: candidate.size },
+    meta: { pathname, bytes: candidate.size },
   });
   if (tenant.brandLogoPathname) {
-    await safeDeleteBlob(tenant.brandLogoPathname, token);
+    await safeDeleteLogo(tenant.brandLogoPathname);
   }
   return c.json({ brand: serializeBrand(updated) }, 201);
 });
@@ -294,9 +293,8 @@ tenantRoutes.delete("/tenant/brand/logo", requireRole("admin"), async (c) => {
     entityId: auth.tenantId,
     meta: {},
   });
-  const token = env().BLOB_READ_WRITE_TOKEN;
-  if (tenant.brandLogoPathname && token) {
-    await safeDeleteBlob(tenant.brandLogoPathname, token);
+  if (tenant.brandLogoPathname) {
+    await safeDeleteLogo(tenant.brandLogoPathname);
   }
   return c.json({ brand: serializeBrand(updated) });
 });
@@ -481,9 +479,9 @@ function withoutHoppieLastTestedAt(
   return { ...settings, acars: remaining };
 }
 
-async function safeDeleteBlob(pathname: string, token: string): Promise<void> {
+async function safeDeleteLogo(pathname: string): Promise<void> {
   try {
-    await del(pathname, { token });
+    await getLogoBucket()?.delete(pathname);
   } catch (error) {
     console.error(`Failed to remove replaced tenant logo ${pathname}`, error);
   }

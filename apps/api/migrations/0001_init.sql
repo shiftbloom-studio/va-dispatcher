@@ -295,7 +295,7 @@ CREATE TABLE `privacy_external_tasks` (
 	CONSTRAINT `fk_privacy_external_tasks_request_id_privacy_subject_requests_id_fk` FOREIGN KEY (`request_id`) REFERENCES `privacy_subject_requests`(`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_privacy_external_tasks_run_id_privacy_retention_runs_id_fk` FOREIGN KEY (`run_id`) REFERENCES `privacy_retention_runs`(`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_privacy_external_tasks_completed_by_membership_id_memberships_id_fk` FOREIGN KEY (`completed_by_membership_id`) REFERENCES `memberships`(`id`) ON DELETE SET NULL,
-	CONSTRAINT "privacy_external_tasks_provider_enum_check" CHECK("provider" in ('clerk', 'vercel', 'neon', 'hoppie', 'backup', 'navigraph')),
+	CONSTRAINT "privacy_external_tasks_provider_enum_check" CHECK("provider" in ('clerk', 'cloudflare', 'hoppie', 'backup', 'navigraph')),
 	CONSTRAINT "privacy_external_tasks_status_enum_check" CHECK("status" in ('pending', 'completed', 'not_applicable', 'failed')),
 	CONSTRAINT "privacy_external_tasks_parent_check" CHECK(("request_id" is not null) + ("run_id" is not null) = 1)
 );

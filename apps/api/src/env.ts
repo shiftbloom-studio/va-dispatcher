@@ -6,16 +6,15 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
-  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
-  /** Vercel-managed branch URL, without a scheme. */
-  VERCEL_BRANCH_URL: z.string().optional(),
-  /** Vercel-managed deployment URL, without a scheme. */
-  VERCEL_URL: z.string().optional(),
+  /**
+   * Deployment environment. Defaults from NODE_ENV; set `preview` on preview
+   * Workers so production-only requirements stay relaxed there.
+   */
+  APP_ENV: z.enum(["development", "preview", "production"]).optional(),
   PORT: z.coerce.number().int().positive().default(3001),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   /** Public web origin used for provider callbacks and Clerk invitations. */
   APP_ORIGIN: z.string().url().optional(),
-  DATABASE_URL: z.string().min(1).optional(),
   CLERK_SECRET_KEY: z.string().min(1).optional(),
   CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
   // Internal local/test transport selector. Production always resolves to
@@ -31,7 +30,6 @@ const envSchema = z.object({
   NAVIGRAPH_CLIENT_SECRET: z.string().min(1).optional(),
   /** Exact registered Authorization Code redirect URI. */
   NAVIGRAPH_REDIRECT_URI: z.string().url().optional(),
-  BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
   AVIATION_WEATHER_API_ORIGIN: z
     .string()
     .url()
@@ -59,7 +57,6 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true"),
   E2E_FIXTURE_SECRET: z.string().min(32).optional(),
-  E2E_CONFIRM_DATABASE: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -83,9 +80,10 @@ function validateRuntimeEnvironment(config: Env): void {
   validateConfiguredAppOrigin(config.APP_ORIGIN);
 
   const productionRuntime =
-    config.VERCEL_ENV === "production" || config.NODE_ENV === "production";
+    config.APP_ENV === "production" ||
+    (config.APP_ENV !== "preview" && config.NODE_ENV === "production");
   const productionDeployment =
-    productionRuntime && config.VERCEL_ENV !== "preview";
+    productionRuntime && config.APP_ENV !== "preview";
 
   if (config.E2E_FIXTURE_MODE) {
     if (productionRuntime) {
@@ -95,7 +93,6 @@ function validateRuntimeEnvironment(config: Env): void {
     }
     const missing = [
       ["E2E_FIXTURE_SECRET", config.E2E_FIXTURE_SECRET],
-      ["E2E_CONFIRM_DATABASE", config.E2E_CONFIRM_DATABASE],
     ].flatMap(([name, value]) => (value ? [] : [name]));
     if (missing.length) {
       throw new Error(
@@ -115,7 +112,6 @@ function validateRuntimeEnvironment(config: Env): void {
     ...(productionDeployment
       ? ([["APP_ORIGIN", config.APP_ORIGIN]] as const)
       : []),
-    ["DATABASE_URL", config.DATABASE_URL],
     ["CLERK_SECRET_KEY", config.CLERK_SECRET_KEY],
     ["TENANT_SECRETS_KEY", config.TENANT_SECRETS_KEY],
   ].flatMap(([name, value]) => (value ? [] : [name]));
@@ -157,24 +153,8 @@ function validateConfiguredAppOrigin(value: string | undefined): void {
   }
 }
 
-const VERCEL_HOSTNAME =
-  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
-
-/**
- * Resolve the one canonical public origin used in provider redirects.
- * Production never trusts deployment-generated hostnames; Preview uses its
- * Vercel branch/deployment hostname so callbacks cannot be sent to Production.
- */
+/** The one canonical public origin used in provider redirects. */
 export function resolveAppOrigin(config: Env = env()): string | null {
-  if (config.VERCEL_ENV === "preview") {
-    for (const hostname of [config.VERCEL_BRANCH_URL, config.VERCEL_URL]) {
-      if (hostname && VERCEL_HOSTNAME.test(hostname)) {
-        return new URL(`https://${hostname}`).origin;
-      }
-    }
-    return null;
-  }
-
   return config.APP_ORIGIN ? new URL(config.APP_ORIGIN).origin : null;
 }
 

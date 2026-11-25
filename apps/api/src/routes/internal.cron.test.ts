@@ -17,6 +17,7 @@ import { createApp } from "../app.js";
 import { loadEnv, resetEnvCache } from "../env.js";
 import { errorHandler } from "../middleware/error.js";
 import { internalRoutes } from "./internal.js";
+import { setDbForTests, type Db } from "../db/client.js";
 
 const app = new Hono();
 app.onError(errorHandler);
@@ -29,8 +30,9 @@ describe("ACARS polling cron", () => {
       NODE_ENV: "test",
       ACARS_PROVIDER: "mock",
       CRON_SECRET: "test-cron-secret",
-      DATABASE_URL: "postgresql://example.invalid/test",
     });
+    // The cron handlers only check that a binding exists; the work is mocked.
+    setDbForTests({} as Db);
     mocks.runPrivacyLifecycleCron.mockResolvedValue({
       scheduled: 1,
       processed: 1,
@@ -40,10 +42,11 @@ describe("ACARS polling cron", () => {
   });
 
   afterEach(() => {
+    setDbForTests(null);
     resetEnvCache();
   });
 
-  it("accepts the GET request sent by Vercel Cron through the full app", async () => {
+  it("accepts a manually triggered GET through the full app", async () => {
     const response = await createApp().request(
       "/api/v1/internal/cron/acars-poll",
       {
@@ -96,7 +99,6 @@ describe("ACARS polling cron", () => {
     loadEnv({
       NODE_ENV: "production",
       APP_ORIGIN: "https://app.example.test",
-      DATABASE_URL: "postgresql://user:pass@localhost/va_dispatch",
       CLERK_SECRET_KEY: "sk_test_configured",
       TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
       CRON_SECRET: "production-cron-secret",

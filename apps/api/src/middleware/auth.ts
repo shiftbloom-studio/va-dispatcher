@@ -48,7 +48,7 @@ export const requireClerkUser = createMiddleware<{ Variables: AppVariables }>(
     if (!hasDatabase()) {
       throw new AppError(
         "INTERNAL",
-        "DATABASE_URL is required for authenticated routes",
+        "The database binding is required for authenticated routes",
         { status: 503 },
       );
     }
@@ -98,7 +98,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     if (!hasDatabase()) {
       throw new AppError(
         "INTERNAL",
-        "DATABASE_URL is required for authenticated routes",
+        "The database binding is required for authenticated routes",
         { status: 503 },
       );
     }
@@ -184,8 +184,8 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     let tenant = await findTenantByClerkOrgId(clerkOrgId);
     if (!tenant && clerkOrgId === config.VSAS_CLERK_ORG_ID) {
       // The configured Clerk organization is the source of truth for the
-      // initial vSAS tenant. This also repairs a stale org ID after Neon or
-      // Clerk has been reprovisioned without requiring a secret seed call.
+      // initial vSAS tenant. This also repairs a stale org ID after the database
+      // or Clerk has been reprovisioned without requiring a secret seed call.
       tenant = await upsertTenantBySlug({
         slug: "vsas",
         name: "vSAS",

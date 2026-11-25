@@ -240,7 +240,6 @@ describe("Navigraph OAuth service", () => {
     loadEnv({
       NODE_ENV: "production",
       APP_ORIGIN: "https://app.example.test",
-      DATABASE_URL: "postgresql://user:pass@localhost/va_dispatch",
       CLERK_SECRET_KEY: "sk_test_configured",
       TENANT_SECRETS_KEY: encryptionKey,
       CRON_SECRET: "production-cron-secret",

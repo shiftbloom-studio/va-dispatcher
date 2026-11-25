@@ -25,7 +25,6 @@ const tenant: Tenant = {
 
 const productionEnvironment = {
   APP_ORIGIN: "https://app.example.test",
-  DATABASE_URL: "postgresql://user:pass@localhost/va_dispatch",
   CLERK_SECRET_KEY: "sk_test_configured",
   TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
   CRON_SECRET: "production-cron-secret",
@@ -70,12 +69,12 @@ describe("ACARS provider selection", () => {
     });
   });
 
-  it("allows the internal adapter in a Vercel preview", () => {
+  it("allows the internal adapter in a preview deployment", () => {
     loadEnv({
       ...process.env,
       ...productionEnvironment,
       NODE_ENV: "production",
-      VERCEL_ENV: "preview",
+      APP_ENV: "preview",
       ACARS_PROVIDER: "mock",
     });
 

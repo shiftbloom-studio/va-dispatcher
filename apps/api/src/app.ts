@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { env, loadEnv } from "./env.js";
 import { errorHandler } from "./middleware/error.js";
-import { requireHuman } from "./middleware/botid.js";
+import { requireHuman } from "./middleware/human.js";
 import { requestId } from "./middleware/request-id.js";
 import { healthRoutes } from "./routes/health.js";
 import { meRoutes } from "./routes/me.js";
@@ -74,8 +74,8 @@ export function createApp() {
 
   app.onError(errorHandler);
 
-  // Documentation is public and mounted both before and after the Vercel
-  // rewrite boundary, matching the API's dual-path deployment support.
+  // Documentation is public and mounted with and without the /api prefix, so
+  // it works both behind the web Worker and when the API runs on its own.
   app.route("/docs", docsRoutes);
   app.route("/api/docs", docsRoutes);
 
@@ -90,7 +90,7 @@ export function createApp() {
   v1.route("/", simbriefPublicRoutes);
   v1.route("/", publicRoutes);
   // Simulator clients authenticate with revocable per-device bearer tokens,
-  // not Clerk or browser BotID. Keep this narrow route before business auth.
+  // not Clerk or the browser bot check. Keep this narrow route before business auth.
   v1.route("/", telemetryClientRoutes);
   v1.use("*", requireHuman);
   // Signed-in applicants do not have an active organization yet. This narrow
@@ -127,6 +127,6 @@ export function createApp() {
   return app;
 }
 
-/** Default export for Vercel Hono detection (src/index.ts re-exports). */
+/** Shared app instance; src/worker.ts wraps it with the Cloudflare bindings. */
 const app = createApp();
 export default app;

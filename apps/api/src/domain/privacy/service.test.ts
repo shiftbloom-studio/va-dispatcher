@@ -552,8 +552,14 @@ describe("privacy lifecycle service", () => {
       requestId: REQUEST,
       tasks: expect.arrayContaining([
         expect.objectContaining({ provider: "clerk" }),
-        expect.objectContaining({ provider: "vercel" }),
-        expect.objectContaining({ provider: "neon" }),
+        expect.objectContaining({
+          provider: "cloudflare",
+          action: "export_or_assess_subject_logs",
+        }),
+        expect.objectContaining({
+          provider: "cloudflare",
+          action: "assess_d1_time_travel_scope",
+        }),
         expect.objectContaining({ provider: "backup" }),
         expect.objectContaining({ provider: "hoppie" }),
         expect.objectContaining({ provider: "navigraph" }),

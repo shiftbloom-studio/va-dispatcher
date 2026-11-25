@@ -417,13 +417,11 @@ describe("SimBrief routes", () => {
     expect(oauthResponse.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("uses the Vercel branch origin for Preview callback recovery", async () => {
+  it("uses the configured origin for preview callback recovery", async () => {
     loadEnv({
       NODE_ENV: "test",
-      VERCEL_ENV: "preview",
-      VERCEL_BRANCH_URL:
-        "va-dispatcher-git-preview-origin-shiftbloom.vercel.app",
-      VERCEL_URL: "va-dispatcher-deployment-shiftbloom.vercel.app",
+      APP_ENV: "preview",
+      APP_ORIGIN: "https://preview-origin.example.test",
     });
     const token = "a".repeat(43);
     const dispatchResponse = await app.request(
@@ -436,16 +434,16 @@ describe("SimBrief routes", () => {
 
     expect(dispatchResponse.status).toBe(303);
     expect(dispatchResponse.headers.get("location")).toBe(
-      `https://va-dispatcher-git-preview-origin-shiftbloom.vercel.app/vsas/portal/flights/${dispatch.flightId}?simbrief=ready`,
+      `https://preview-origin.example.test/vsas/portal/flights/${dispatch.flightId}?simbrief=ready`,
     );
     expect(oauthResponse.status).toBe(303);
     expect(oauthResponse.headers.get("location")).toBe(
-      "https://va-dispatcher-git-preview-origin-shiftbloom.vercel.app/vsas/settings?simbrief=navigraph-connected",
+      "https://preview-origin.example.test/vsas/settings?simbrief=navigraph-connected",
     );
   });
 
   it("keeps Preview callbacks as JSON when no trusted origin is available", async () => {
-    loadEnv({ NODE_ENV: "test", VERCEL_ENV: "preview" });
+    loadEnv({ NODE_ENV: "test", APP_ENV: "preview" });
     const token = "a".repeat(43);
     const dispatchResponse = await app.request(
       `/simbrief/callback?dispatchId=${dispatch.id}&token=${token}`,

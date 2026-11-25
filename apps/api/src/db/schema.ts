@@ -202,8 +202,7 @@ export const privacyHoldStatusEnum = sqliteEnum("privacy_hold_status", [
 
 export const privacyExternalProviderEnum = sqliteEnum("privacy_external_provider", [
   "clerk",
-  "vercel",
-  "neon",
+  "cloudflare",
   "hoppie",
   "backup",
   "navigraph",
@@ -1440,7 +1439,7 @@ export const privacyExternalTasks = sqliteTable(
   (t) => [
     check(
       "privacy_external_tasks_provider_enum_check",
-      sql`${t.provider} in ('clerk', 'vercel', 'neon', 'hoppie', 'backup', 'navigraph')`,
+      sql`${t.provider} in ('clerk', 'cloudflare', 'hoppie', 'backup', 'navigraph')`,
     ),
     check(
       "privacy_external_tasks_status_enum_check",

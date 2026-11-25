@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "845f5497-5bc0-4414-b217-586af90cca85",
+  "id": "02d92080-2cb9-4f28-ac29-b886edc9f083",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -6193,7 +6193,7 @@
       "table": "mock_acars_queue"
     },
     {
-      "value": "\"provider\" in ('clerk', 'vercel', 'neon', 'hoppie', 'backup', 'navigraph')",
+      "value": "\"provider\" in ('clerk', 'cloudflare', 'hoppie', 'backup', 'navigraph')",
       "name": "privacy_external_tasks_provider_enum_check",
       "entityType": "checks",
       "table": "privacy_external_tasks"

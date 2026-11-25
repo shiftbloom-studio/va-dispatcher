@@ -1,47 +1,25 @@
 import { serve } from "@hono/node-server";
-import { defineRelations, type SQL } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { PgDialect } from "drizzle-orm/pg-core";
-import pg from "pg";
 
 import app from "./app.js";
-import { setDbForTests, type Db } from "./db/client.js";
-import * as schema from "./db/schema.js";
 import { env } from "./env.js";
 import { isE2eFixtureAuthorized } from "./lib/e2e-fixture.js";
+import { createTestDatabase } from "./test/d1.js";
+import { memberships, tenants } from "./db/schema.js";
 
 const config = env();
 if (
   config.NODE_ENV === "production" ||
   !config.E2E_FIXTURE_MODE ||
-  !config.AUTH_DEV_BYPASS ||
-  !config.DATABASE_URL ||
-  !config.E2E_CONFIRM_DATABASE
+  !config.AUTH_DEV_BYPASS
 ) {
   throw new Error(
     "The integrated E2E server requires explicit non-production fixture configuration",
   );
 }
 
-const { Pool } = pg;
-const pool = new Pool({ connectionString: config.DATABASE_URL, max: 10 });
-const database = await pool.query<{ currentDatabase: string }>(
-  'select current_database() as "currentDatabase"',
-);
-if (database.rows[0]?.currentDatabase !== config.E2E_CONFIRM_DATABASE) {
-  await pool.end();
-  throw new Error(
-    "E2E_CONFIRM_DATABASE must match the connected PostgreSQL database",
-  );
-}
-if (!/(?:^|[_-])(?:e2e|test)(?:[_-]|$)/i.test(config.E2E_CONFIRM_DATABASE)) {
-  await pool.end();
-  throw new Error(
-    "E2E_CONFIRM_DATABASE must identify a disposable test database",
-  );
-}
-
-setDbForTests(createLocalPostgresDatabase(pool));
+// An in-memory local D1 database: disposable by construction, it exists only
+// for the lifetime of this process.
+const database = await createTestDatabase();
 installProviderNetworkBoundary();
 
 const fixtureIdentities = {
@@ -86,7 +64,7 @@ console.log(
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     server.close(() => {
-      void pool.end().finally(() => process.exit(0));
+      void database.dispose().finally(() => process.exit(0));
     });
   });
 }
@@ -164,48 +142,36 @@ function isUnauthenticatedApiPath(path: string): boolean {
 }
 
 async function resetFixtureData() {
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    await client.query(
-      "delete from tenants where clerk_org_id = any($1::text[])",
-      [["org_e2e_vsas", "org_e2e_other"]],
-    );
-    await client.query(
-      `insert into tenants (
-        id, slug, name, clerk_org_id, hoppie_station, brand_seed_color,
-        brand_presence, settings
-      ) values
-        ($1, 'vsas', 'Virtual SAS', 'org_e2e_vsas', 'VSAS', '#e64646', 'balanced', '{}'::jsonb),
-        ($2, 'other-va', 'Other Virtual Airline', 'org_e2e_other', 'OTHER', '#3159a7', 'restrained', '{}'::jsonb)`,
-      [FIXTURE_IDS.tenant, FIXTURE_IDS.otherTenant],
-    );
-    await client.query(
-      `insert into memberships (
-        id, tenant_id, clerk_user_id, role, display_name, pilot_callsign,
-        status
-      ) values
-        ($1, $5, 'user_e2e_pilot', 'pilot', 'Integrated Test Pilot', 'SAS101', 'active'),
-        ($2, $5, 'user_e2e_dispatcher', 'dispatcher', 'Integrated Test Dispatcher', 'VSASOPS', 'active'),
-        ($3, $5, 'user_e2e_admin', 'admin', 'Integrated Test Administrator', 'VSASADM', 'active'),
-        ($4, $6, 'user_e2e_outsider', 'pilot', 'Outside Test Pilot', 'OTHER01', 'active')`,
-      [
-        FIXTURE_IDS.pilot,
-        FIXTURE_IDS.dispatcher,
-        FIXTURE_IDS.admin,
-        FIXTURE_IDS.outsider,
-        FIXTURE_IDS.tenant,
-        FIXTURE_IDS.otherTenant,
-      ],
-    );
-    await client.query("commit");
-    return FIXTURE_IDS;
-  } catch (error) {
-    await client.query("rollback");
-    throw error;
-  } finally {
-    client.release();
-  }
+  await database.reset();
+  await database.db.insert(tenants).values([
+    {
+      id: FIXTURE_IDS.tenant,
+      slug: "vsas",
+      name: "Virtual SAS",
+      clerkOrgId: "org_e2e_vsas",
+      hoppieStation: "VSAS",
+      brandSeedColor: "#e64646",
+      brandPresence: "balanced",
+      settings: {},
+    },
+    {
+      id: FIXTURE_IDS.otherTenant,
+      slug: "other-va",
+      name: "Other Virtual Airline",
+      clerkOrgId: "org_e2e_other",
+      hoppieStation: "OTHER",
+      brandSeedColor: "#3159a7",
+      brandPresence: "restrained",
+      settings: {},
+    },
+  ]);
+  await database.db.insert(memberships).values([
+    { id: FIXTURE_IDS.pilot, tenantId: FIXTURE_IDS.tenant, clerkUserId: "user_e2e_pilot", role: "pilot", displayName: "Integrated Test Pilot", pilotCallsign: "SAS101", status: "active" },
+    { id: FIXTURE_IDS.dispatcher, tenantId: FIXTURE_IDS.tenant, clerkUserId: "user_e2e_dispatcher", role: "dispatcher", displayName: "Integrated Test Dispatcher", pilotCallsign: "VSASOPS", status: "active" },
+    { id: FIXTURE_IDS.admin, tenantId: FIXTURE_IDS.tenant, clerkUserId: "user_e2e_admin", role: "admin", displayName: "Integrated Test Administrator", pilotCallsign: "VSASADM", status: "active" },
+    { id: FIXTURE_IDS.outsider, tenantId: FIXTURE_IDS.otherTenant, clerkUserId: "user_e2e_outsider", role: "pilot", displayName: "Outside Test Pilot", pilotCallsign: "OTHER01", status: "active" },
+  ]);
+  return FIXTURE_IDS;
 }
 
 const FIXTURE_IDS = {
@@ -216,50 +182,6 @@ const FIXTURE_IDS = {
   admin: "29000000-0000-4000-8000-000000000013",
   outsider: "29000000-0000-4000-8000-000000000014",
 } as const;
-
-type DeferredExecution = PromiseLike<pg.QueryResult> & { query: SQL };
-
-function createLocalPostgresDatabase(databasePool: pg.Pool): Db {
-  const relations = defineRelations(schema);
-  const nodeDatabase = drizzle({ client: databasePool, relations });
-  const dialect = new PgDialect();
-  return new Proxy(nodeDatabase, {
-    get(target, property, receiver) {
-      if (property === "execute") {
-        return (query: SQL): DeferredExecution => ({
-          query,
-          then: (onFulfilled, onRejected) =>
-            (target.execute(query) as unknown as Promise<pg.QueryResult>).then(
-              onFulfilled,
-              onRejected,
-            ),
-        });
-      }
-      if (property === "batch") {
-        return async (queries: readonly DeferredExecution[]) => {
-          const client = await databasePool.connect();
-          try {
-            await client.query("begin");
-            const results: pg.QueryResult[] = [];
-            for (const item of queries) {
-              const compiled = dialect.sqlToQuery(item.query);
-              results.push(await client.query(compiled.sql, compiled.params));
-            }
-            await client.query("commit");
-            return results;
-          } catch (error) {
-            await client.query("rollback");
-            throw error;
-          } finally {
-            client.release();
-          }
-        };
-      }
-      const value = Reflect.get(target, property, receiver) as unknown;
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  }) as unknown as Db;
-}
 
 function installProviderNetworkBoundary(): void {
   const platformFetch = globalThis.fetch.bind(globalThis);
