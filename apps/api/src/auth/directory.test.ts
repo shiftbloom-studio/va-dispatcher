@@ -144,6 +144,7 @@ describe("stem directory client", () => {
       role: "dispatcher",
       inviter_id: "u1",
       redirect_to: "https://va.example.test/vsas",
+      expires_in_days: 14,
     });
     expect(invitation).toMatchObject({
       id: "inv_1",

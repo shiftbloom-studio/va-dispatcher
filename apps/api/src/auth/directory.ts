@@ -299,6 +299,7 @@ function stemDirectory(credentials: Credentials): IdentityDirectory {
       inviterUserId,
       emailAddress,
       role,
+      expiresInDays,
       redirectUrl,
     }) {
       const payload = await call<
