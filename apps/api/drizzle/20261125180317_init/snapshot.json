@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "ae3e5ca0-db48-4d67-b930-71ce341c8ead",
+  "id": "845f5497-5bc0-4414-b217-586af90cca85",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -4034,7 +4034,7 @@
         "id"
       ],
       "onUpdate": "NO ACTION",
-      "onDelete": "RESTRICT",
+      "onDelete": "NO ACTION",
       "nameExplicit": true,
       "name": "flights_tenant_replaces_fkey",
       "entityType": "fks",

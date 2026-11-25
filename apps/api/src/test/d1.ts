@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { D1Database } from "@cloudflare/workers-types";
-import { defineRelations } from "drizzle-orm";
+import { defineRelations, is } from "drizzle-orm";
+import { getTableConfig, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { drizzle } from "drizzle-orm/d1";
 import { getPlatformProxy } from "wrangler";
 
@@ -27,10 +28,38 @@ function migrationStatements(): string[] {
     );
 }
 
+/** Table names ordered so that every table precedes the tables it references. */
+function childrenFirst(): string[] {
+  const tables = Object.values(schema).filter((value): value is SQLiteTable => is(value, SQLiteTable));
+  const parents = new Map<string, Set<string>>();
+  for (const table of tables) {
+    const config = getTableConfig(table);
+    parents.set(
+      config.name,
+      new Set(
+        config.foreignKeys
+          .map((key) => getTableConfig(key.reference().foreignTable).name)
+          .filter((name) => name !== config.name),
+      ),
+    );
+  }
+  const ordered: string[] = [];
+  const visit = (name: string, trail: Set<string>) => {
+    if (ordered.includes(name) || trail.has(name)) return;
+    trail.add(name);
+    for (const [child, references] of parents) {
+      if (references.has(name)) visit(child, trail);
+    }
+    ordered.push(name);
+  };
+  for (const name of parents.keys()) visit(name, new Set());
+  return ordered;
+}
+
 export type TestDatabase = {
   db: Db;
   d1: D1Database;
-  /** Drops every table and re-applies the migrations. */
+  /** Deletes every row; the schema is kept. */
   reset(): Promise<void>;
   /** Runs raw SQL with positional parameters and returns the rows. */
   query<T = Record<string, unknown>>(
@@ -73,19 +102,13 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     await d1.batch(statements.map((statement) => d1.prepare(statement)));
   }
 
+  const deleteOrder = childrenFirst();
+
   async function reset(): Promise<void> {
-    const tables = await d1
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'",
-      )
-      .all<{ name: string }>();
     await d1.batch([
       d1.prepare("PRAGMA defer_foreign_keys = on"),
-      ...tables.results.map(({ name }) =>
-        d1.prepare(`DROP TABLE IF EXISTS "${name}"`),
-      ),
+      ...deleteOrder.map((name) => d1.prepare(`DELETE FROM "${name}"`)),
     ]);
-    await migrate();
   }
 
   await migrate();

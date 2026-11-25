@@ -223,7 +223,7 @@ CREATE TABLE `flights` (
 	CONSTRAINT `fk_flights_tenant_id_tenants_id_fk` FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_flights_schedule_request_id_schedule_requests_id_fk` FOREIGN KEY (`schedule_request_id`) REFERENCES `schedule_requests`(`id`) ON DELETE SET NULL,
 	CONSTRAINT `fk_flights_pilot_membership_id_memberships_id_fk` FOREIGN KEY (`pilot_membership_id`) REFERENCES `memberships`(`id`) ON DELETE SET NULL,
-	CONSTRAINT `flights_tenant_replaces_fkey` FOREIGN KEY (`tenant_id`,`replaces_flight_id`) REFERENCES `flights`(`tenant_id`,`id`) ON DELETE RESTRICT,
+	CONSTRAINT `flights_tenant_replaces_fkey` FOREIGN KEY (`tenant_id`,`replaces_flight_id`) REFERENCES `flights`(`tenant_id`,`id`),
 	CONSTRAINT `flights_tenant_pilot_fkey` FOREIGN KEY (`tenant_id`,`pilot_membership_id`) REFERENCES `memberships`(`tenant_id`,`id`),
 	CONSTRAINT `flights_tenant_schedule_request_fkey` FOREIGN KEY (`tenant_id`,`schedule_request_id`) REFERENCES `schedule_requests`(`tenant_id`,`id`),
 	CONSTRAINT "flights_status_enum_check" CHECK("status" in ('draft', 'offered', 'accepted', 'declined', 'briefed', 'active', 'completed', 'cancelled')),

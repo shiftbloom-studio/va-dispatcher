@@ -407,7 +407,7 @@ export const flights = sqliteTable(
       columns: [t.tenantId, t.replacesFlightId],
       foreignColumns: [t.tenantId, t.id],
       name: "flights_tenant_replaces_fkey",
-    }).onDelete("restrict"),
+    }).onDelete("no action"),
     foreignKey({
       columns: [t.tenantId, t.pilotMembershipId],
       foreignColumns: [memberships.tenantId, memberships.id],
