@@ -1,0 +1,18 @@
+# VA Dispatch
+
+> VA Dispatch is open source live dispatch, scheduling and ACARS software for Virtual Airlines (flight simulation communities). This installation runs vSAS Live Operations for Virtual SAS. Licensed AGPL-3.0-or-later. Source: https://github.com/shiftbloom-studio/va-dispatcher
+
+- Multi-tenant: one tenant is one Virtual Airline, reached under its own path (for example /vsas).
+- Pilots request and fly individual schedules built by human dispatchers; dispatchers coordinate every flight together. All operational times are in UTC.
+- ACARS messages go through Hoppie's ACARS with tenant-scoped, encrypted ground-station credentials.
+- Sign-in uses a one-time code sent by email (shiftbloom account). Everything behind sign-in is private to the airline's members and not meant to be indexed.
+
+## Pages
+
+- [Sign in to Virtual SAS](/vsas/sign-in)
+- [Imprint](/imprint) ([Impressum, German](/impressum))
+- [Privacy notice](/privacy) ([Datenschutzerklärung, German](/datenschutz))
+
+## Documentation
+
+- [Project wiki](https://github.com/shiftbloom-studio/va-dispatcher/wiki): product guide, architecture, API reference, runbooks
