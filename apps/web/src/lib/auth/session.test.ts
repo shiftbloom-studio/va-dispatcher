@@ -140,4 +140,46 @@ describe("post-sign-in destinations", () => {
   ])("%s becomes %s", (input, expected) => {
     expect(safeReturnTo(input)).toBe(expected);
   });
+
+  it("keeps a session with ten organizations under the cookie size limit", async () => {
+    const orgs = Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [
+        crypto.randomUUID(),
+        i ? "pilot" : "owner",
+      ]),
+    );
+    const jwt = (claims: object) =>
+      `${"e".repeat(36)}.${btoa(JSON.stringify(claims))}.${"s".repeat(86)}`;
+    const common = {
+      iss: config.issuer,
+      sub: crypto.randomUUID(),
+      aud: config.resource,
+      exp: now() + 600,
+      iat: now(),
+      jti: crypto.randomUUID(),
+      email: "someone.with.a.long.address@example.test",
+      name: "Someone With A Fairly Long Display Name",
+    };
+    const sealed = await sealSession(
+      session({
+        accessToken: jwt({
+          ...common,
+          client_id: "va-client",
+          azp: "va-client",
+          scope: "openid profile email offline_access orgs",
+          email_verified: true,
+          orgs,
+        }),
+        idToken: jwt({
+          ...common,
+          aud: config.clientId,
+          nonce: "n".repeat(43),
+        }),
+        refreshToken: "r".repeat(64),
+      }),
+      config,
+    );
+    // Browsers drop a Set-Cookie over 4096 bytes, name and attributes included.
+    expect(sealed.length + 100).toBeLessThan(4096);
+  });
 });

@@ -9,13 +9,19 @@ const discovery = {
   token_endpoint: `${ISSUER}/api/auth/oauth2/token`,
   jwks_uri: `${ISSUER}/api/auth/jwks`,
   end_session_endpoint: `${ISSUER}/api/auth/oauth2/end-session`,
+  revocation_endpoint: `${ISSUER}/api/auth/oauth2/revoke`,
 };
 
 import { GET as callback } from "./callback/route";
 import { GET as login } from "./login/route";
 import { POST as logout } from "./logout/route";
 import { GET as token } from "./token/route";
-import { SESSION_COOKIE, TRANSACTION_COOKIE } from "@/lib/auth/session";
+import {
+  SESSION_COOKIE,
+  TRANSACTION_COOKIE,
+  sealSession,
+} from "@/lib/auth/session";
+import { authConfig } from "@/lib/auth/config";
 
 const ORIGIN = "https://va.example.test";
 
@@ -26,7 +32,9 @@ beforeEach(() => {
     vi.fn(async (url: string) =>
       String(url).endsWith("/.well-known/openid-configuration")
         ? Response.json(discovery)
-        : new Response(null, { status: 404 }),
+        : String(url) === discovery.revocation_endpoint
+          ? new Response(null, { status: 200 })
+          : new Response(null, { status: 404 }),
     ),
   );
   vi.stubEnv("AUTH_ISSUER", ISSUER);
@@ -112,5 +120,45 @@ describe("sign-in routes", () => {
       `${ORIGIN}/`,
     );
     expect(response.cookies.get(SESSION_COOKIE)?.value).toBe("");
+  });
+
+  it("revokes the refresh token at sign-out", async () => {
+    const sealed = await sealSession(
+      {
+        sub: "user-1",
+        name: null,
+        email: null,
+        accessToken: "access",
+        accessTokenExpiresAt: Math.floor(Date.now() / 1000) + 600,
+        refreshToken: "refresh-1",
+        idToken: "id-1",
+      },
+      authConfig(),
+    );
+    await logout(
+      new NextRequest(`${ORIGIN}/auth/logout`, {
+        method: "POST",
+        headers: {
+          cookie: `${SESSION_COOKIE}=${sealed}`,
+          "sec-fetch-site": "same-origin",
+        },
+      }),
+    );
+    const revoke = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url]) => String(url) === discovery.revocation_endpoint,
+      );
+    expect(String(revoke?.[1]?.body)).toContain("token=refresh-1");
+  });
+
+  it("refuses a cross-site sign-out", async () => {
+    const response = await logout(
+      new NextRequest(`${ORIGIN}/auth/logout`, {
+        method: "POST",
+        headers: { "sec-fetch-site": "cross-site" },
+      }),
+    );
+    expect(response.status).toBe(403);
   });
 });

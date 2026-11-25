@@ -23,6 +23,8 @@ export type VerifiedIdentity = {
 };
 
 type AccessTokenClaims = JWTPayload & {
+  azp?: unknown;
+  client_id?: unknown;
   orgs?: unknown;
   email?: unknown;
   email_verified?: unknown;
@@ -92,6 +94,8 @@ export async function verifyAccessToken(
         issuer: config.AUTH_ISSUER,
         audience: config.AUTH_AUDIENCE,
         typ: "at+jwt",
+        // stem signs with Ed25519 only.
+        algorithms: ["EdDSA"],
       },
     ));
   } catch (error) {
@@ -101,6 +105,13 @@ export async function verifyAccessToken(
 
   const userId = optionalString(payload.sub);
   if (!userId) throw new AppError("UNAUTHORIZED", "Token missing subject");
+  // Another client of the same provider must not be able to call this API
+  // with its own tokens, even if it is ever granted the same resource.
+  const clientId =
+    optionalString(payload.azp) ?? optionalString(payload.client_id);
+  if (config.AUTH_CLIENT_ID && clientId !== config.AUTH_CLIENT_ID) {
+    throw new AppError("UNAUTHORIZED", "Token was issued to another client");
+  }
   return {
     userId,
     orgs: orgRoles(payload.orgs),

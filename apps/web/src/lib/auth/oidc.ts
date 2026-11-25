@@ -9,6 +9,7 @@ type Discovery = {
   token_endpoint: string;
   jwks_uri: string;
   end_session_endpoint?: string;
+  revocation_endpoint?: string;
 };
 
 export const AUTH_SCOPES = "openid profile email offline_access orgs";
@@ -176,6 +177,8 @@ export async function verifyIdToken(
   const { payload } = await jwtVerify(idToken, jwks, {
     issuer: config.issuer,
     audience: config.clientId,
+    // stem signs with Ed25519 only.
+    algorithms: ["EdDSA"],
   });
   if (payload.nonce !== nonce || typeof payload.sub !== "string") {
     throw new Error("ID token nonce or subject mismatch");
@@ -185,6 +188,30 @@ export async function verifyIdToken(
     name: typeof payload.name === "string" ? payload.name : null,
     email: typeof payload.email === "string" ? payload.email : null,
   };
+}
+
+/**
+ * Revoke a refresh token (RFC 7009) so a copied session cookie stops
+ * working at sign-out. Best effort: sign-out continues if this fails.
+ */
+export async function revokeRefreshToken(
+  config: AuthConfig,
+  refreshToken: string,
+): Promise<boolean> {
+  const { revocation_endpoint } = await discover(config.issuer);
+  if (!revocation_endpoint) return false;
+  const response = await fetch(revocation_endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: basicAuth(config),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      token: refreshToken,
+      token_type_hint: "refresh_token",
+    }),
+  });
+  return response.ok;
 }
 
 export async function endSessionUrl(

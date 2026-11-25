@@ -7,6 +7,7 @@ import { setAccessTokenKeysForTests, verifyAccessToken } from "./token.js";
 
 const ISSUER = "https://auth.example.test";
 const AUDIENCE = "va-dispatch-api";
+const CLIENT_ID = "va-client";
 
 let privateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
 
@@ -17,11 +18,12 @@ async function token(
     audience?: string;
     subject?: string | null;
     typ?: string;
+    clientId?: string;
   } = {},
 ) {
-  const jwt = new SignJWT(claims)
+  const jwt = new SignJWT({ azp: options.clientId ?? CLIENT_ID, ...claims })
     .setProtectedHeader({
-      alg: "ES256",
+      alg: "EdDSA",
       kid: "test",
       typ: options.typ ?? "at+jwt",
     })
@@ -35,19 +37,24 @@ async function token(
 
 describe("access token verification", () => {
   beforeAll(async () => {
-    const pair = await generateKeyPair("ES256");
+    const pair = await generateKeyPair("Ed25519");
     privateKey = pair.privateKey;
     const jwk = {
       ...(await exportJWK(pair.publicKey)),
       kid: "test",
-      alg: "ES256",
+      alg: "EdDSA",
     };
     setAccessTokenKeysForTests(createLocalJWKSet({ keys: [jwk] }));
   });
 
   beforeEach(() => {
     resetEnvCache();
-    loadEnv({ NODE_ENV: "test", AUTH_ISSUER: ISSUER, AUTH_AUDIENCE: AUDIENCE });
+    loadEnv({
+      NODE_ENV: "test",
+      AUTH_ISSUER: ISSUER,
+      AUTH_AUDIENCE: AUDIENCE,
+      AUTH_CLIENT_ID: CLIENT_ID,
+    });
   });
 
   afterEach(() => resetEnvCache());
@@ -88,6 +95,7 @@ describe("access token verification", () => {
     ["a foreign audience", { audience: "another-api" }],
     ["no subject", { subject: null }],
     ["an ID token type", { typ: "JWT" }],
+    ["another client", { clientId: "other-client" }],
   ])("rejects a token with %s", async (_label, options) => {
     const result = verifyAccessToken(
       await token({ orgs: { org_1: "member" } }, options),
