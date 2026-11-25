@@ -16,9 +16,7 @@ concurrency:
 jobs:
   service_ports:
     name: Choose PostgreSQL host ports
-    runs-on:
-      group: Default
-      labels: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
       contracts: ${{ steps.ports.outputs.contracts }}
@@ -37,9 +35,7 @@ jobs:
   postgres-contracts:
     name: Fresh schema and PostgreSQL contracts
     needs: service_ports
-    runs-on:
-      group: Default
-      labels: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
       postgres:
@@ -101,9 +97,7 @@ jobs:
         run: pnpm --filter @va-dispatch/api test:postgres
 
   validate:
-    runs-on:
-      group: Default
-      labels: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - name: Checkout repository
@@ -170,9 +164,7 @@ jobs:
   integrated-e2e:
     name: Integrated web, API, and PostgreSQL E2E
     needs: service_ports
-    runs-on:
-      group: Default
-      labels: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
       postgres:
