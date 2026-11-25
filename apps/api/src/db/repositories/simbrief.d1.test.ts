@@ -1,8 +1,7 @@
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { setDbForTests, type Db } from "../client.js";
+import { createTestDatabase, type TestDatabase } from "../../test/d1.js";
+import { dispatchReleases, flights, memberships, tenants } from "../schema.js";
 import { publishDispatchReleaseAtomic } from "./dispatch-releases.js";
 import {
   completeSimbriefDispatchAtomic,
@@ -12,9 +11,6 @@ import {
   type SimbriefFlightSnapshot,
 } from "./simbrief.js";
 
-const databaseUrl = process.env.TEST_DATABASE_URL;
-const confirmedDatabase = process.env.TEST_CONFIRM_DATABASE;
-const postgresDescribe = databaseUrl ? describe : describe.skip;
 const tenantId = "20000000-0000-4000-8000-000000000001";
 const otherTenantId = "20000000-0000-4000-8000-000000000099";
 const dispatcherId = "10000000-0000-4000-8000-000000000001";
@@ -24,24 +20,6 @@ const releaseId = "35000000-0000-4000-8000-000000000001";
 const dispatchA = "40000000-0000-4000-8000-000000000001";
 const dispatchB = "40000000-0000-4000-8000-000000000002";
 const now = new Date("2026-08-12T12:00:00.000Z");
-
-let sqlClient: Sql | undefined;
-
-function simbriefDb(client: Sql): Db {
-  const pgDb = drizzle({ client });
-  return new Proxy(pgDb, {
-    get(target, property, receiver) {
-      if (property === "execute") {
-        return async (query: Parameters<typeof pgDb.execute>[0]) => {
-          const rows = await pgDb.execute(query);
-          return { rows: Array.from(rows) };
-        };
-      }
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  }) as unknown as Db;
-}
 
 function snapshot(): SimbriefFlightSnapshot {
   return {
@@ -127,71 +105,65 @@ function publishRelease() {
   });
 }
 
-postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
+describe("SimBrief D1 atomicity contracts", () => {
+  let database: TestDatabase;
+  const sql = <T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ) => database.sql<T>(strings, ...values);
+
   beforeAll(async () => {
-    sqlClient = postgres(databaseUrl!, {
-      max: 10,
-      onnotice: () => undefined,
-    });
-    const [database] = await sqlClient<{ currentDatabase: string }[]>`
-      SELECT current_database() AS "currentDatabase"
-    `;
-    expect(database?.currentDatabase).toBe(confirmedDatabase);
-    setDbForTests(simbriefDb(sqlClient));
-  }, 30_000);
+    database = await createTestDatabase();
+  });
 
   afterAll(async () => {
-    setDbForTests(null);
-    await sqlClient?.end();
-  }, 30_000);
+    await database.dispose();
+  });
 
   beforeEach(async () => {
-    await sqlClient!.unsafe(
-      "ALTER TABLE audit_events DROP CONSTRAINT IF EXISTS reject_simbrief_audit",
-    );
-    await sqlClient!.unsafe(`
-      TRUNCATE simbrief_dispatches, audit_events, flights, memberships,
-        tenants CASCADE
-    `);
-    await sqlClient!`
-      INSERT INTO tenants (id, slug, name, clerk_org_id)
-      VALUES
-        (${tenantId}, 'vsas', 'Virtual SAS', 'org_test'),
-        (${otherTenantId}, 'other', 'Other VA', 'org_other')
-    `;
-    await sqlClient!`
-      INSERT INTO memberships (
-        id, tenant_id, clerk_user_id, role, display_name, pilot_callsign,
-        simbrief_user_id, status
-      ) VALUES
-        (${dispatcherId}, ${tenantId}, 'dispatcher', 'dispatcher',
-          'Trusted Dispatcher', 'DISPATCH', NULL, 'active'),
-        (${pilotId}, ${tenantId}, 'pilot', 'pilot',
-          'Synthetic Pilot', 'SAS123', '123456', 'active')
-    `;
-    await sqlClient!`
-      INSERT INTO flights (
-        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
-        etd, eta, aircraft_type, status
-      ) VALUES (
-        ${flightId}, ${tenantId}, ${pilotId}, 'SK935', 'EKCH', 'KSFO',
-        '2026-08-13T10:05:00.000Z', '2026-08-13T21:35:00.000Z',
-        'A359', 'accepted'
-      )
-    `;
-    await sqlClient!`
-      INSERT INTO dispatch_releases (
-        id, tenant_id, flight_id, revision, operational_route, cruise_level,
-        alternate_icao, fuel_unit, payload_unit, taxi_fuel, trip_fuel,
-        contingency_fuel, alternate_fuel, final_reserve_fuel, additional_fuel,
-        block_fuel, planned_payload, weather_snapshot,
-        released_by_membership_id
-      ) VALUES (
-        ${releaseId}, ${tenantId}, ${flightId}, 1, 'NIKDA DCT', 390,
-        'KORD', 'kg', 'kg', 1000, 50000, 2500, 6000, 3000, 0,
-        62500, 25000, '{}'::jsonb, ${dispatcherId}
-      )
-    `;
+    await database.reset();
+    const { db } = database;
+    await db.insert(tenants).values([
+      { id: tenantId, slug: "vsas", name: "Virtual SAS", clerkOrgId: "org_test" },
+      { id: otherTenantId, slug: "other", name: "Other VA", clerkOrgId: "org_other" },
+    ]);
+    await db.insert(memberships).values([
+      { id: dispatcherId, tenantId, clerkUserId: "dispatcher", role: "dispatcher", displayName: "Trusted Dispatcher", pilotCallsign: "DISPATCH", status: "active" },
+      { id: pilotId, tenantId, clerkUserId: "pilot", role: "pilot", displayName: "Synthetic Pilot", pilotCallsign: "SAS123", simbriefUserId: "123456", status: "active" },
+    ]);
+    await db.insert(flights).values({
+      id: flightId,
+      tenantId,
+      pilotMembershipId: pilotId,
+      flightNumber: "SK935",
+      depIcao: "EKCH",
+      arrIcao: "KSFO",
+      etd: new Date("2026-08-13T10:05:00.000Z"),
+      eta: new Date("2026-08-13T21:35:00.000Z"),
+      aircraftType: "A359",
+      status: "accepted",
+    });
+    await db.insert(dispatchReleases).values({
+      id: releaseId,
+      tenantId,
+      flightId,
+      revision: 1,
+      operationalRoute: "NIKDA DCT",
+      cruiseLevel: 390,
+      alternateIcao: "KORD",
+      fuelUnit: "kg",
+      payloadUnit: "kg",
+      taxiFuel: 1000,
+      tripFuel: 50000,
+      contingencyFuel: 2500,
+      alternateFuel: 6000,
+      finalReserveFuel: 3000,
+      additionalFuel: 0,
+      blockFuel: 62500,
+      plannedPayload: 25000,
+      weatherSnapshot: {},
+      releasedByMembershipId: dispatcherId,
+    });
   });
 
   it("atomically prepares and audits a trusted dispatcher-attributed revision", async () => {
@@ -207,31 +179,26 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
       },
       flightSnapshot: snapshot(),
     });
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'simbrief.dispatch_prepare'
             AND actor_membership_id = ${dispatcherId}) AS audit_count,
-        (SELECT meta->>'hasRemarks' FROM audit_events
+        (SELECT meta ->> '$.hasRemarks' FROM audit_events
           WHERE action = 'simbrief.dispatch_prepare') AS has_remarks
     `;
-    expect(state).toMatchObject({ audit_count: 1, has_remarks: "true" });
+    expect(state).toMatchObject({ audit_count: 1, has_remarks: 1 });
   });
 
   it("rolls preparation back when its audit insert fails", async () => {
-    await sqlClient!.unsafe(`
-      ALTER TABLE audit_events ADD CONSTRAINT reject_simbrief_audit
-      CHECK (action <> 'simbrief.dispatch_prepare')
-    `);
+    await database.failInserts("audit_events", "new.action = 'simbrief.dispatch_prepare'");
 
-    await expect(prepare(dispatchA)).rejects.toMatchObject({
-      cause: { code: "23514" },
-    });
-    const [state] = await sqlClient!`
+    await expect(prepare(dispatchA)).rejects.toThrow();
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM simbrief_dispatches) AS dispatch_count,
-        (SELECT count(*)::int FROM audit_events) AS audit_count,
-        (SELECT count(*)::int FROM simbrief_flight_heads) AS head_count
+        (SELECT count(*) FROM simbrief_dispatches) AS dispatch_count,
+        (SELECT count(*) FROM audit_events) AS audit_count,
+        (SELECT count(*) FROM simbrief_flight_heads) AS head_count
     `;
     expect(state).toMatchObject({
       dispatch_count: 0,
@@ -261,8 +228,8 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
         },
       },
     });
-    const [state] = await sqlClient!`
-      SELECT count(*)::int AS audit_count
+    const [state] = await sql`
+      SELECT count(*) AS audit_count
       FROM audit_events WHERE action = 'simbrief.dispatch_generate'
     `;
     expect(state?.audit_count).toBe(1);
@@ -270,32 +237,23 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
 
   it("serializes a notes-only version update without invalidating the prepared plan", async () => {
     await prepare(dispatchA);
-    const editor = postgres(databaseUrl!, {
-      max: 1,
-      onnotice: () => undefined,
-    });
-    let generating: ReturnType<typeof start> | undefined;
-
-    await editor.begin(async (transaction) => {
-      await transaction`
-        UPDATE flights
-        SET dispatcher_notes = 'Gate changed to C12',
-            version = version + 1
-        WHERE id = ${flightId}
-      `;
-      generating = start(dispatchA);
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    });
-    await editor.end();
+    // D1 serializes writes: the edit commits before generation starts.
+    await sql`
+      UPDATE flights
+      SET dispatcher_notes = 'Gate changed to C12',
+          version = version + 1
+      WHERE id = ${flightId}
+    `;
+    const generating = start(dispatchA);
 
     await expect(generating).resolves.toMatchObject({
       status: "started",
       latestId: dispatchA,
       dispatch: { status: "pending" },
     });
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT version, dispatcher_notes,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'simbrief.dispatch_generate') AS generation_audits
       FROM flights WHERE id = ${flightId}
     `;
@@ -308,15 +266,10 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
 
   it("rolls generation back when its audit insert fails", async () => {
     await prepare(dispatchA);
-    await sqlClient!.unsafe(`
-      ALTER TABLE audit_events ADD CONSTRAINT reject_simbrief_audit
-      CHECK (action <> 'simbrief.dispatch_generate')
-    `);
+    await database.failInserts("audit_events", "new.action = 'simbrief.dispatch_generate'");
 
-    await expect(start(dispatchA)).rejects.toMatchObject({
-      cause: { code: "23514" },
-    });
-    const [state] = await sqlClient!`
+    await expect(start(dispatchA)).rejects.toThrow();
+    const [state] = await sql`
       SELECT status, generated_by_membership_id, callback_token_mac,
              callback_expires_at,
              (SELECT revision FROM simbrief_flight_heads
@@ -339,11 +292,11 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
     ]);
 
     expect([first?.revision, second?.revision].sort()).toEqual([1, 2]);
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
         (SELECT revision FROM simbrief_flight_heads
           WHERE flight_id = ${flightId}) AS head_revision,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'simbrief.dispatch_prepare') AS prepare_audits
     `;
     expect(state).toMatchObject({ head_revision: 2, prepare_audits: 2 });
@@ -358,11 +311,11 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
       latestId: dispatchB,
       dispatch: null,
     });
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
         (SELECT status FROM simbrief_dispatches WHERE id = ${dispatchA})
           AS old_status,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'simbrief.dispatch_generate') AS generation_audits
     `;
     expect(state).toMatchObject({
@@ -373,21 +326,9 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
 
   it("serializes a concurrent prepare/generate race to the newer revision", async () => {
     await prepare(dispatchA, now);
-    const blocker = postgres(databaseUrl!, {
-      max: 1,
-      onnotice: () => undefined,
-    });
-    let preparing: ReturnType<typeof prepare> | undefined;
-    let generating: ReturnType<typeof start> | undefined;
-
-    await blocker.begin(async (transaction) => {
-      await transaction`SELECT id FROM flights WHERE id = ${flightId} FOR UPDATE`;
-      preparing = prepare(dispatchB, new Date(now.getTime() + 1_000));
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      generating = start(dispatchA);
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    });
-    await blocker.end();
+    // D1 serializes the two batches in submission order.
+    const preparing = prepare(dispatchB, new Date(now.getTime() + 1_000));
+    const generating = start(dispatchA);
 
     await expect(preparing).resolves.toMatchObject({ id: dispatchB });
     await expect(generating).resolves.toMatchObject({
@@ -399,7 +340,7 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
 
   it("rejects launch after a material flight edit", async () => {
     await prepare(dispatchA);
-    await sqlClient!`
+    await sql`
       UPDATE flights
       SET arr_icao = 'ESSA', version = version + 1
       WHERE id = ${flightId}
@@ -414,7 +355,7 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
 
   it("rejects launch after the pilot assignment revision changes", async () => {
     await prepare(dispatchA);
-    await sqlClient!`
+    await sql`
       UPDATE flights
       SET assignment_revision = assignment_revision + 1,
           version = version + 1
@@ -439,11 +380,11 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
       status: "stale",
       dispatch: null,
     });
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM dispatch_releases
+        (SELECT count(*) FROM dispatch_releases
           WHERE flight_id = ${flightId}) AS release_count,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'flight.release_publish') AS audit_count
     `;
     expect(state).toMatchObject({ release_count: 2, audit_count: 1 });
@@ -453,12 +394,12 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
     const results = await Promise.all([publishRelease(), publishRelease()]);
 
     expect(results.filter(Boolean)).toHaveLength(1);
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
         (SELECT version FROM flights WHERE id = ${flightId}) AS version,
-        (SELECT count(*)::int FROM dispatch_releases
+        (SELECT count(*) FROM dispatch_releases
           WHERE flight_id = ${flightId}) AS release_count,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'flight.release_publish') AS audit_count
     `;
     expect(state).toMatchObject({
@@ -469,21 +410,16 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
   });
 
   it("rolls flight and release publication back when its audit fails", async () => {
-    await sqlClient!.unsafe(`
-      ALTER TABLE audit_events ADD CONSTRAINT reject_simbrief_audit
-      CHECK (action <> 'flight.release_publish')
-    `);
+    await database.failInserts("audit_events", "new.action = 'flight.release_publish'");
 
-    await expect(publishRelease()).rejects.toMatchObject({
-      cause: { code: "23514" },
-    });
-    const [state] = await sqlClient!`
+    await expect(publishRelease()).rejects.toThrow();
+    const [state] = await sql`
       SELECT
         (SELECT version FROM flights WHERE id = ${flightId}) AS version,
         (SELECT status FROM flights WHERE id = ${flightId}) AS status,
-        (SELECT count(*)::int FROM dispatch_releases
+        (SELECT count(*) FROM dispatch_releases
           WHERE flight_id = ${flightId}) AS release_count,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'flight.release_publish') AS audit_count
     `;
     expect(state).toMatchObject({
@@ -502,14 +438,14 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
     await recordSimbriefSyncError(dispatchA, "OFP not ready yet");
     await recordSimbriefSyncError(dispatchA, "Still waiting for OFP");
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT callback_expires_at, updated_at, last_error
       FROM simbrief_dispatches WHERE id = ${dispatchA}
     `;
-    expect(new Date(String(state?.callback_expires_at))).toEqual(expiry);
+    expect(new Date(Number(state?.callback_expires_at))).toEqual(expiry);
     expect(state?.last_error).toBe("Still waiting for OFP");
     expect(
-      new Date(String(state?.updated_at)).getTime(),
+      Number(state?.updated_at),
     ).toBeGreaterThanOrEqual(now.getTime());
   });
 
@@ -533,24 +469,21 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
       callbackTokenMac: null,
       simbriefRequestId: "request_123",
     });
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
         (SELECT simbrief_verified_at FROM memberships WHERE id = ${pilotId})
           AS verified_at,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'simbrief.dispatch_ready') AS ready_audits
     `;
-    expect(new Date(String(state?.verified_at))).toEqual(syncedAt);
+    expect(new Date(Number(state?.verified_at))).toEqual(syncedAt);
     expect(state?.ready_audits).toBe(1);
   });
 
   it("rolls OFP state and pilot verification back when ready audit fails", async () => {
     await prepare(dispatchA);
     await start(dispatchA);
-    await sqlClient!.unsafe(`
-      ALTER TABLE audit_events ADD CONSTRAINT reject_simbrief_audit
-      CHECK (action <> 'simbrief.dispatch_ready')
-    `);
+    await database.failInserts("audit_events", "new.action = 'simbrief.dispatch_ready'");
 
     await expect(
       completeSimbriefDispatchAtomic({
@@ -563,16 +496,16 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
         generatedAt: now,
         syncedAt: new Date(now.getTime() + 5_000),
       }),
-    ).rejects.toMatchObject({ cause: { code: "23514" } });
+    ).rejects.toThrow();
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
         (SELECT status FROM simbrief_dispatches WHERE id = ${dispatchA})
           AS dispatch_status,
         (SELECT ofp FROM simbrief_dispatches WHERE id = ${dispatchA}) AS ofp,
         (SELECT simbrief_verified_at FROM memberships WHERE id = ${pilotId})
           AS verified_at,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'simbrief.dispatch_ready') AS ready_audits
     `;
     expect(state).toMatchObject({
@@ -584,12 +517,12 @@ postgresDescribe("SimBrief PostgreSQL atomicity contracts", () => {
   });
 
   it("does not prepare for an inactive dispatcher or a cross-tenant flight", async () => {
-    await sqlClient!`
+    await sql`
       UPDATE memberships SET status = 'disabled' WHERE id = ${dispatcherId}
     `;
     await expect(prepare(dispatchA)).resolves.toBeNull();
 
-    await sqlClient!`
+    await sql`
       UPDATE memberships SET status = 'active' WHERE id = ${dispatcherId}
     `;
     await expect(

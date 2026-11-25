@@ -30,7 +30,9 @@ function migrationStatements(): string[] {
 
 /** Table names ordered so that every table precedes the tables it references. */
 function childrenFirst(): string[] {
-  const tables = Object.values(schema).filter((value): value is SQLiteTable => is(value, SQLiteTable));
+  const tables = (Object.values(schema) as unknown[]).filter(
+    (value): value is SQLiteTable => is(value, SQLiteTable),
+  );
   const parents = new Map<string, Set<string>>();
   for (const table of tables) {
     const config = getTableConfig(table);
@@ -66,8 +68,29 @@ export type TestDatabase = {
     statement: string,
     ...params: unknown[]
   ): Promise<T[]>;
+  /**
+   * Tagged-template variant of `query`: interpolated values become bound
+   * parameters (dates as epoch milliseconds, objects as JSON text).
+   */
+  sql<T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<T[]>;
+  /**
+   * Makes inserts into `table` fail while `when` (a predicate over `new`)
+   * holds, to prove that a batch rolls back. `reset()` removes it again.
+   */
+  failInserts(table: string, when?: string, message?: string): Promise<void>;
   dispose(): Promise<void>;
 };
+
+function toTestParameter(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (value !== null && typeof value === "object") return JSON.stringify(value);
+  return value;
+}
 
 /**
  * Local D1 (workerd SQLite) for repository contract tests. Each call starts
@@ -105,7 +128,13 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   const deleteOrder = childrenFirst();
 
   async function reset(): Promise<void> {
+    const triggers = await d1
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'test_%'")
+      .all<{ name: string }>();
     await d1.batch([
+      ...triggers.results.map(({ name }) =>
+        d1.prepare(`DROP TRIGGER IF EXISTS "${name}"`),
+      ),
       d1.prepare("PRAGMA defer_foreign_keys = on"),
       ...deleteOrder.map((name) => d1.prepare(`DELETE FROM "${name}"`)),
     ]);
@@ -114,16 +143,31 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   await migrate();
   setDbForTests(db, d1);
 
+  async function query<T>(statement: string, ...params: unknown[]): Promise<T[]> {
+    const result = await d1
+      .prepare(statement)
+      .bind(...params.map(toTestParameter))
+      .all<T>();
+    return result.results ?? [];
+  }
+
+  let triggerCount = 0;
+
   return {
     db,
     d1,
     reset,
-    async query<T>(statement: string, ...params: unknown[]): Promise<T[]> {
-      const result = await d1
-        .prepare(statement)
-        .bind(...params)
-        .all<T>();
-      return result.results ?? [];
+    query,
+    sql<T>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]> {
+      return query<T>(strings.join("?"), ...values);
+    },
+    async failInserts(table, when = "1", message = "synthetic insert failure") {
+      triggerCount += 1;
+      await d1
+        .prepare(
+          `CREATE TRIGGER "test_reject_${table}_${triggerCount}" BEFORE INSERT ON "${table}" WHEN ${when} BEGIN SELECT RAISE(ABORT, '${message.replaceAll("'", "''")}'); END`,
+        )
+        .run();
     },
     async dispose() {
       setDbForTests(null);
