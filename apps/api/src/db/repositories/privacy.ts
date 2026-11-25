@@ -1205,9 +1205,10 @@ export async function createExternalRequestTasks(input: {
   if (input.tasks.length === 0) return;
   const db = getDb();
   const now = new Date();
-  // Ten rows stay well below the D1 bound-parameter limit.
+  // Drizzle binds every column of every row; five rows stay well below the
+  // D1 bound-parameter limit.
   await runAtomic(
-    chunk(input.tasks, 10).map((tasks) =>
+    chunk(input.tasks, 5).map((tasks) =>
       db
         .insert(privacyExternalTasks)
         .values(

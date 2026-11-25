@@ -1,4 +1,4 @@
-import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
+import { getTableConfig, type SQLiteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,7 +9,7 @@ import {
 } from "./schema.js";
 
 function expectCompositeForeignKey(
-  table: PgTable,
+  table: SQLiteTable,
   name: string,
   columns: string[],
   foreignColumns: string[],
@@ -27,7 +27,7 @@ function expectCompositeForeignKey(
 }
 
 describe("tenant-coherent operational references", () => {
-  it("exposes the composite unique targets required by PostgreSQL", () => {
+  it("exposes the composite unique targets required by composite foreign keys", () => {
     for (const [table, indexName] of [
       [memberships, "memberships_tenant_id_uidx"],
       [scheduleRequests, "schedule_requests_tenant_id_uidx"],
