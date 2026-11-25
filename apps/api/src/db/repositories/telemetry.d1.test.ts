@@ -1,9 +1,8 @@
-import { drizzle } from "drizzle-orm/postgres-js";
 import { Hono } from "hono";
-import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { setDbForTests, type Db } from "../client.js";
+import { createTestDatabase, type TestDatabase } from "../../test/d1.js";
+import { flights, memberships, simulatorDevices, tenants } from "../schema.js";
 import { loadEnv, resetEnvCache } from "../../env.js";
 import { createTokenMac } from "../../lib/crypto.js";
 import { errorHandler } from "../../middleware/error.js";
@@ -18,9 +17,6 @@ import {
   revokeSimulatorDeviceAtomic,
 } from "./telemetry.js";
 
-const databaseUrl = process.env.TEST_DATABASE_URL;
-const confirmedDatabase = process.env.TEST_CONFIRM_DATABASE;
-const postgresDescribe = databaseUrl ? describe : describe.skip;
 const tenantId = "20000000-0000-4000-8000-000000000001";
 const membershipId = "10000000-0000-4000-8000-000000000001";
 const flightA = "30000000-0000-4000-8000-000000000001";
@@ -34,26 +30,9 @@ const now = new Date("2026-08-12T12:00:00.000Z");
 const secretsKey = Buffer.alloc(32, 7).toString("base64");
 const routeDeviceSecret = "r".repeat(43);
 
-let sqlClient: Sql | undefined;
 const routeApp = new Hono();
 routeApp.onError(errorHandler);
 routeApp.route("/", telemetryClientRoutes);
-
-function telemetryDb(client: Sql): Db {
-  const pgDb = drizzle({ client });
-  return new Proxy(pgDb, {
-    get(target, property, receiver) {
-      if (property === "execute") {
-        return async (query: Parameters<typeof pgDb.execute>[0]) => {
-          const rows = await pgDb.execute(query);
-          return { rows: Array.from(rows) };
-        };
-      }
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  }) as unknown as Db;
-}
 
 function sample(input: {
   flightId?: string;
@@ -94,76 +73,61 @@ function ingest(input: {
   });
 }
 
-postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
+describe("telemetry D1 atomicity contracts", () => {
+  let database: TestDatabase;
+  const sql = <T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ) => database.sql<T>(strings, ...values);
+
   beforeAll(async () => {
     resetEnvCache();
     loadEnv({ NODE_ENV: "test", TENANT_SECRETS_KEY: secretsKey });
-    sqlClient = postgres(databaseUrl!, {
-      max: 1,
-      onnotice: () => undefined,
-    });
-    const [database] = await sqlClient<{ currentDatabase: string }[]>`
-      SELECT current_database() AS "currentDatabase"
-    `;
-    expect(database?.currentDatabase).toBe(confirmedDatabase);
-    setDbForTests(telemetryDb(sqlClient));
-  }, 30_000);
+    database = await createTestDatabase();
+  });
 
   afterAll(async () => {
-    setDbForTests(null);
     resetEnvCache();
-    await sqlClient?.end();
-  }, 30_000);
+    await database.dispose();
+  });
 
   beforeEach(async () => {
-    await sqlClient!.unsafe(
-      "ALTER TABLE audit_events DROP CONSTRAINT IF EXISTS reject_telemetry_audit",
-    );
-    await sqlClient!.unsafe(`
-      TRUNCATE flight_oooi_events, flight_telemetry_track,
-        flight_telemetry_current, flight_telemetry_leases, audit_events,
-        simulator_devices, flights, memberships, tenants CASCADE
-    `);
-    await sqlClient!`
-      INSERT INTO tenants (id, slug, name, clerk_org_id)
-      VALUES (${tenantId}, 'vsas', 'Virtual SAS', 'org_test')
-    `;
-    await sqlClient!`
-      INSERT INTO memberships (id, tenant_id, clerk_user_id)
-      VALUES (${membershipId}, ${tenantId}, 'user_test')
-    `;
-    await sqlClient!`
-      INSERT INTO flights (
-        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
-        etd, eta, aircraft_type, status
-      ) VALUES
-        (
-          ${flightA}, ${tenantId}, ${membershipId}, 'SK901', 'EKCH', 'ENGM',
-          '2026-08-12T12:00:00.000Z', '2026-08-12T14:00:00.000Z', 'A320',
-          'briefed'
-        ),
-        (
-          ${flightB}, ${tenantId}, ${membershipId}, 'SK902', 'ENGM', 'EKCH',
-          '2026-08-12T15:00:00.000Z', '2026-08-12T17:00:00.000Z', 'A320',
-          'briefed'
-        )
-    `;
-    await sqlClient!`
-      INSERT INTO simulator_devices (
-        id, tenant_id, membership_id, name, token_mac
-      ) VALUES
-        (${deviceA}, ${tenantId}, ${membershipId}, 'Device A', 'mac-a'),
-        (${deviceB}, ${tenantId}, ${membershipId}, 'Device B', 'mac-b')
-    `;
+    await database.reset();
+    const { db } = database;
+    await db.insert(tenants).values({
+      id: tenantId,
+      slug: "vsas",
+      name: "Virtual SAS",
+      clerkOrgId: "org_test",
+    });
+    await db.insert(memberships).values({
+      id: membershipId,
+      tenantId,
+      clerkUserId: "user_test",
+    });
+    for (const flight of [
+      { id: flightA, flightNumber: "SK901", depIcao: "EKCH", arrIcao: "ENGM", etd: "2026-08-12T12:00:00.000Z", eta: "2026-08-12T14:00:00.000Z" },
+      { id: flightB, flightNumber: "SK902", depIcao: "ENGM", arrIcao: "EKCH", etd: "2026-08-12T15:00:00.000Z", eta: "2026-08-12T17:00:00.000Z" },
+    ]) {
+      await db.insert(flights).values({
+        ...flight,
+        tenantId,
+        pilotMembershipId: membershipId,
+        etd: new Date(flight.etd),
+        eta: new Date(flight.eta),
+        aircraftType: "A320",
+        status: "briefed",
+      });
+    }
+    await db.insert(simulatorDevices).values([
+      { id: deviceA, tenantId, membershipId, name: "Device A", tokenMac: "mac-a" },
+      { id: deviceB, tenantId, membershipId, name: "Device B", tokenMac: "mac-b" },
+    ]);
   });
 
   it("rolls back device issuance when its audit record cannot be written", async () => {
     const issuedDevice = "60000000-0000-4000-8000-000000000003";
-    await sqlClient!.unsafe(`
-      ALTER TABLE audit_events
-      ADD CONSTRAINT reject_telemetry_audit
-      CHECK (action <> 'telemetry.device_create')
-    `);
+    await database.failInserts("audit_events", "new.action = 'telemetry.device_create'");
 
     await expect(
       createSimulatorDeviceAtomic({
@@ -173,13 +137,13 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
         name: "Audit failure test",
         tokenMac: "never-stored",
       }),
-    ).rejects.toMatchObject({ cause: { code: "23514" } });
+    ).rejects.toThrow();
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM simulator_devices
+        (SELECT count(*) FROM simulator_devices
           WHERE id = ${issuedDevice}) AS device_count,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE entity_id = ${issuedDevice}) AS audit_count
     `;
     expect(state).toMatchObject({ device_count: 0, audit_count: 0 });
@@ -214,19 +178,19 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       oooiEvent: { eventType: "out", source: "telemetry" },
     });
 
-    const [flight] = await sqlClient!`
+    const [flight] = await sql`
       SELECT out_at, version FROM flights WHERE id = ${flightA}
     `;
-    const [counts] = await sqlClient!`
+    const [counts] = await sql`
       SELECT
-        (SELECT count(*)::int FROM flight_telemetry_track) AS track_count,
-        (SELECT count(*)::int FROM flight_oooi_events) AS event_count,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM flight_telemetry_track) AS track_count,
+        (SELECT count(*) FROM flight_oooi_events) AS event_count,
+        (SELECT count(*) FROM audit_events
           WHERE action = 'flight.oooi_automatic') AS audit_count,
         (SELECT sequence FROM flight_telemetry_current
           WHERE flight_id = ${flightA}) AS current_sequence
     `;
-    expect(new Date(String(flight?.out_at))).toEqual(transitionAt);
+    expect(new Date(Number(flight?.out_at))).toEqual(transitionAt);
     expect(flight?.version).toBe(2);
     expect(counts).toMatchObject({
       track_count: 2,
@@ -234,12 +198,12 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       audit_count: 1,
       current_sequence: 2,
     });
-    const [automaticAudit] = await sqlClient!`
+    const [automaticAudit] = await sql`
       SELECT meta
       FROM audit_events
       WHERE action = 'flight.oooi_automatic'
     `;
-    expect(automaticAudit?.meta).toMatchObject({
+    expect(JSON.parse(String(automaticAudit?.meta))).toMatchObject({
       fromVersion: 1,
       toVersion: 2,
     });
@@ -266,15 +230,15 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       expect(result.oooiEvent?.eventType ?? null).toBe(eventType);
     }
 
-    const [flight] = await sqlClient!`
+    const [flight] = await sql`
       SELECT out_at, off_at, on_at, in_at FROM flights WHERE id = ${flightA}
     `;
     expect(
       [flight?.out_at, flight?.off_at, flight?.on_at, flight?.in_at].map(
-        (value) => new Date(String(value)).toISOString(),
+        (value) => new Date(Number(value)).toISOString(),
       ),
     ).toEqual(receipts.slice(1).map((value) => value.toISOString()));
-    const events = await sqlClient!`
+    const events = await sql`
       SELECT event_type, occurred_at, source
       FROM flight_oooi_events
       ORDER BY created_at, event_type
@@ -312,9 +276,9 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       }),
     ).toMatchObject({ oooiEvent: null });
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT out_at, off_at, on_at, in_at,
-        (SELECT count(*)::int FROM flight_oooi_events) AS event_count
+        (SELECT count(*) FROM flight_oooi_events) AS event_count
       FROM flights WHERE id = ${flightA}
     `;
     expect(state).toMatchObject({
@@ -328,11 +292,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
 
   it("rolls back every automatic OOOI and telemetry write when audit fails", async () => {
     await ingest({ phase: "preflight", sequence: 1, sampleAt: now });
-    await sqlClient!.unsafe(`
-      ALTER TABLE audit_events
-      ADD CONSTRAINT reject_telemetry_audit
-      CHECK (action <> 'flight.oooi_automatic')
-    `);
+    await database.failInserts("audit_events", "new.action = 'flight.oooi_automatic'");
 
     await expect(
       ingest({
@@ -340,17 +300,17 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
         sequence: 2,
         sampleAt: new Date(now.getTime() + 2_000),
       }),
-    ).rejects.toMatchObject({ cause: { code: "23514" } });
+    ).rejects.toThrow();
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
         (SELECT out_at FROM flights WHERE id = ${flightA}) AS out_at,
         (SELECT sequence FROM flight_telemetry_current
           WHERE flight_id = ${flightA}) AS current_sequence,
         (SELECT last_sequence FROM simulator_devices
           WHERE id = ${deviceA}) AS device_sequence,
-        (SELECT count(*)::int FROM flight_telemetry_track) AS track_count,
-        (SELECT count(*)::int FROM flight_oooi_events) AS event_count
+        (SELECT count(*) FROM flight_telemetry_track) AS track_count,
+        (SELECT count(*) FROM flight_oooi_events) AS event_count
     `;
     expect(state).toMatchObject({
       out_at: null,
@@ -381,11 +341,11 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       "lease_conflict",
     ]);
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM flight_telemetry_current) AS current_count,
-        (SELECT count(*)::int FROM flight_telemetry_track) AS track_count,
-        (SELECT count(*)::int FROM simulator_devices
+        (SELECT count(*) FROM flight_telemetry_current) AS current_count,
+        (SELECT count(*) FROM flight_telemetry_track) AS track_count,
+        (SELECT count(*) FROM simulator_devices
           WHERE last_sequence = 1) AS claimed_devices,
         (SELECT device_id FROM flight_telemetry_leases
           WHERE flight_id = ${flightA}) AS lease_device,
@@ -420,11 +380,11 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       }),
     ).toMatchObject({ status: "lease_conflict" });
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM flight_telemetry_leases
+        (SELECT count(*) FROM flight_telemetry_leases
           WHERE device_id = ${deviceA}) AS lease_count,
-        (SELECT count(*)::int FROM flight_telemetry_current
+        (SELECT count(*) FROM flight_telemetry_current
           WHERE flight_id = ${flightB}) AS second_flight_current,
         (SELECT last_sequence FROM simulator_devices
           WHERE id = ${deviceA}) AS device_sequence
@@ -437,24 +397,24 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   });
 
   it("rechecks flight and pilot eligibility inside the locked ingest statement", async () => {
-    await sqlClient!`
+    await sql`
       UPDATE flights SET status = 'completed' WHERE id = ${flightA}
     `;
     expect(
       await ingest({ phase: "preflight", sequence: 1, sampleAt: now }),
     ).toMatchObject({ status: "ineligible", current: null });
 
-    await sqlClient!`
+    await sql`
       UPDATE flights SET status = 'briefed' WHERE id = ${flightA}
     `;
-    await sqlClient!`
+    await sql`
       UPDATE memberships SET status = 'disabled' WHERE id = ${membershipId}
     `;
     expect(
       await ingest({ phase: "preflight", sequence: 1, sampleAt: now }),
     ).toMatchObject({ status: "ineligible", current: null });
 
-    await sqlClient!`
+    await sql`
       UPDATE memberships SET status = 'active', role = 'dispatcher'
       WHERE id = ${membershipId}
     `;
@@ -462,9 +422,9 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       await ingest({ phase: "preflight", sequence: 1, sampleAt: now }),
     ).toMatchObject({ status: "ineligible", current: null });
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM flight_telemetry_track) AS track_count,
+        (SELECT count(*) FROM flight_telemetry_track) AS track_count,
         (SELECT last_sequence FROM simulator_devices
           WHERE id = ${deviceA}) AS device_sequence
     `;
@@ -472,23 +432,15 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   });
 
   it("observes a concurrently committed terminal transition before accepting a sample", async () => {
-    const blocker = postgres(databaseUrl!, {
-      max: 1,
-      onnotice: () => undefined,
+    // D1 serializes writes: the terminal transition commits first.
+    await sql`
+      UPDATE flights SET status = 'completed' WHERE id = ${flightA}
+    `;
+    const pendingIngest = ingest({
+      phase: "preflight",
+      sequence: 1,
+      sampleAt: now,
     });
-    let pendingIngest: ReturnType<typeof ingest> | undefined;
-    await blocker.begin(async (transaction) => {
-      await transaction`
-        UPDATE flights SET status = 'completed' WHERE id = ${flightA}
-      `;
-      pendingIngest = ingest({
-        phase: "preflight",
-        sequence: 1,
-        sampleAt: now,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    });
-    await blocker.end();
 
     await expect(pendingIngest).resolves.toMatchObject({
       status: "ineligible",
@@ -507,11 +459,11 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     });
 
     expect(revoked).toMatchObject({ id: deviceA, status: "revoked" });
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM flight_telemetry_leases
+        (SELECT count(*) FROM flight_telemetry_leases
           WHERE device_id = ${deviceA}) AS lease_count,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'telemetry.device_revoke'
             AND entity_id = ${deviceA}) AS audit_count
     `;
@@ -531,11 +483,11 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   it("does not present an old pilot's current sample after reassignment", async () => {
     const replacementMembershipId = "10000000-0000-4000-8000-000000000002";
     await ingest({ phase: "preflight", sequence: 1, sampleAt: now });
-    await sqlClient!`
+    await sql`
       INSERT INTO memberships (id, tenant_id, clerk_user_id)
       VALUES (${replacementMembershipId}, ${tenantId}, 'replacement_user')
     `;
-    await sqlClient!`
+    await sql`
       UPDATE flights SET pilot_membership_id = ${replacementMembershipId}
       WHERE id = ${flightA}
     `;
@@ -547,15 +499,15 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   });
 
   it("rejects cross-tenant and wrong-member device resources without writes", async () => {
-    await sqlClient!`
+    await sql`
       INSERT INTO tenants (id, slug, name, clerk_org_id)
       VALUES (${otherTenantId}, 'other', 'Other VA', 'org_other')
     `;
-    await sqlClient!`
+    await sql`
       INSERT INTO memberships (id, tenant_id, clerk_user_id)
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
-    await sqlClient!`
+    await sql`
       INSERT INTO flights (
         id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
         etd, eta, aircraft_type, status
@@ -591,11 +543,11 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       }),
     ).toBeNull();
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM flight_telemetry_track) AS track_count,
+        (SELECT count(*) FROM flight_telemetry_track) AS track_count,
         (SELECT status FROM simulator_devices WHERE id = ${deviceA}) AS status,
-        (SELECT count(*)::int FROM audit_events) AS audit_count
+        (SELECT count(*) FROM audit_events) AS audit_count
     `;
     expect(state).toMatchObject({
       track_count: 0,
@@ -606,15 +558,15 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
 
   it("enforces tenant coherence for device, flight, member, and provenance edges", async () => {
     const otherDeviceId = "60000000-0000-4000-8000-000000000099";
-    await sqlClient!`
+    await sql`
       INSERT INTO tenants (id, slug, name, clerk_org_id)
       VALUES (${otherTenantId}, 'other', 'Other VA', 'org_other')
     `;
-    await sqlClient!`
+    await sql`
       INSERT INTO memberships (id, tenant_id, clerk_user_id)
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
-    await sqlClient!`
+    await sql`
       INSERT INTO flights (
         id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
         etd, eta, aircraft_type, status
@@ -624,7 +576,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
         '2026-08-12T14:00:00.000Z', 'A320', 'briefed'
       )
     `;
-    await sqlClient!`
+    await sql`
       INSERT INTO simulator_devices (
         id, tenant_id, membership_id, name, token_mac
       ) VALUES (
@@ -634,7 +586,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     `;
 
     await expect(
-      sqlClient!`
+      sql`
         INSERT INTO simulator_devices (
           id, tenant_id, membership_id, name, token_mac
         ) VALUES (
@@ -642,10 +594,10 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
           ${otherMembershipId}, 'Mixed tenant', 'invalid'
         )
       `,
-    ).rejects.toMatchObject({ code: "23503" });
+    ).rejects.toThrow(/FOREIGN KEY/);
 
     await expect(
-      sqlClient!`
+      sql`
         INSERT INTO flight_telemetry_current (
           flight_id, tenant_id, membership_id, device_id, phase, latitude,
           longitude, altitude_feet, ground_speed_knots, heading_degrees,
@@ -656,10 +608,10 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
           ${now.toISOString()}, 1
         )
       `,
-    ).rejects.toMatchObject({ code: "23503" });
+    ).rejects.toThrow(/FOREIGN KEY/);
 
     await expect(
-      sqlClient!`
+      sql`
         INSERT INTO flight_telemetry_track (
           tenant_id, flight_id, membership_id, device_id, phase, latitude,
           longitude, altitude_feet, ground_speed_knots, heading_degrees,
@@ -670,10 +622,10 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
           ${now.toISOString()}, 1
         )
       `,
-    ).rejects.toMatchObject({ code: "23503" });
+    ).rejects.toThrow(/FOREIGN KEY/);
 
     await expect(
-      sqlClient!`
+      sql`
         INSERT INTO flight_oooi_events (
           tenant_id, flight_id, event_type, occurred_at, source,
           actor_membership_id
@@ -682,11 +634,11 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
           ${otherMembershipId}
         )
       `,
-    ).rejects.toMatchObject({ code: "23503" });
+    ).rejects.toThrow(/FOREIGN KEY/);
   });
 
   it("preserves OOOI provenance until actor and device references are explicitly anonymized", async () => {
-    await sqlClient!`
+    await sql`
       INSERT INTO flight_oooi_events (
         tenant_id, flight_id, event_type, occurred_at, source,
         actor_membership_id, device_id, reason
@@ -697,25 +649,25 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     `;
 
     await expect(
-      sqlClient!`DELETE FROM simulator_devices WHERE id = ${deviceA}`,
-    ).rejects.toMatchObject({ code: "23503" });
+      sql`DELETE FROM simulator_devices WHERE id = ${deviceA}`,
+    ).rejects.toThrow(/FOREIGN KEY/);
     await expect(
-      sqlClient!`DELETE FROM memberships WHERE id = ${membershipId}`,
-    ).rejects.toMatchObject({ code: "23503" });
+      sql`DELETE FROM memberships WHERE id = ${membershipId}`,
+    ).rejects.toThrow(/FOREIGN KEY/);
 
-    await sqlClient!`
+    await sql`
       UPDATE flight_oooi_events
       SET actor_membership_id = NULL, device_id = NULL
       WHERE flight_id = ${flightA}
     `;
-    await sqlClient!`DELETE FROM simulator_devices WHERE id = ${deviceA}`;
-    await sqlClient!`DELETE FROM memberships WHERE id = ${membershipId}`;
+    await sql`DELETE FROM simulator_devices WHERE id = ${deviceA}`;
+    await sql`DELETE FROM memberships WHERE id = ${membershipId}`;
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT actor_membership_id, device_id,
-        (SELECT count(*)::int FROM memberships
+        (SELECT count(*) FROM memberships
           WHERE id = ${membershipId}) AS member_count,
-        (SELECT count(*)::int FROM simulator_devices
+        (SELECT count(*) FROM simulator_devices
           WHERE id = ${deviceA}) AS device_count
       FROM flight_oooi_events
       WHERE reason = 'Privacy lifecycle contract'
@@ -729,7 +681,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   });
 
   it("returns 404 at the real ingest route for a cross-tenant device-flight pair", async () => {
-    await sqlClient!`
+    await sql`
       UPDATE simulator_devices
       SET token_mac = ${createTokenMac(
         routeDeviceSecret,
@@ -738,15 +690,15 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       )}
       WHERE id = ${deviceA}
     `;
-    await sqlClient!`
+    await sql`
       INSERT INTO tenants (id, slug, name, clerk_org_id)
       VALUES (${otherTenantId}, 'other', 'Other VA', 'org_other')
     `;
-    await sqlClient!`
+    await sql`
       INSERT INTO memberships (id, tenant_id, clerk_user_id)
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
-    await sqlClient!`
+    await sql`
       INSERT INTO flights (
         id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
         etd, eta, aircraft_type, status
@@ -781,9 +733,9 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "NOT_FOUND", message: "Assigned flight not found" },
     });
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
-        (SELECT count(*)::int FROM flight_telemetry_track) AS track_count,
+        (SELECT count(*) FROM flight_telemetry_track) AS track_count,
         (SELECT last_sequence FROM simulator_devices
           WHERE id = ${deviceA}) AS sequence
     `;
@@ -809,27 +761,23 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       }),
     ).toMatchObject({ status: "replay_or_rate" });
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
         (SELECT last_sequence FROM simulator_devices
           WHERE id = ${deviceA}) AS device_sequence,
-        (SELECT count(*)::int FROM flight_telemetry_track) AS track_count
+        (SELECT count(*) FROM flight_telemetry_track) AS track_count
     `;
     expect(state).toMatchObject({ device_sequence: 1, track_count: 1 });
   });
 
   it("rolls back a manual correction and its provenance when audit fails", async () => {
-    await sqlClient!`
+    await sql`
       UPDATE flights
       SET out_at = ${now.toISOString()},
           off_at = ${new Date(now.getTime() + 10_000).toISOString()}
       WHERE id = ${flightA}
     `;
-    await sqlClient!.unsafe(`
-      ALTER TABLE audit_events
-      ADD CONSTRAINT reject_telemetry_audit
-      CHECK (action <> 'flight.oooi_correct')
-    `);
+    await database.failInserts("audit_events", "new.action = 'flight.oooi_correct'");
 
     await expect(
       correctOooiAtomic({
@@ -841,13 +789,13 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
         onAt: new Date(now.getTime() + 20_000),
         operationAt: new Date(now.getTime() + 30_000),
       }),
-    ).rejects.toMatchObject({ cause: { code: "23514" } });
+    ).rejects.toThrow();
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT
         (SELECT on_at FROM flights WHERE id = ${flightA}) AS on_at,
-        (SELECT count(*)::int FROM flight_oooi_events) AS event_count,
-        (SELECT count(*)::int FROM audit_events) AS audit_count
+        (SELECT count(*) FROM flight_oooi_events) AS event_count,
+        (SELECT count(*) FROM audit_events) AS audit_count
     `;
     expect(state).toMatchObject({
       on_at: null,
@@ -875,15 +823,15 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
     ]);
 
     expect(automatic.status).toBe("accepted");
-    const [flight] = await sqlClient!`
+    const [flight] = await sql`
       SELECT out_at, out_manual_override, version FROM flights WHERE id = ${flightA}
     `;
     expect(flight?.version).toBe(2);
-    expect(new Date(String(flight?.out_at))).toEqual(
+    expect(new Date(Number(flight?.out_at))).toEqual(
       manual ? manualAt : automaticAt,
     );
-    expect(flight?.out_manual_override).toBe(manual);
-    const events = await sqlClient!`
+    expect(Boolean(flight?.out_manual_override)).toBe(manual);
+    const events = await sql`
       SELECT event_type, source, occurred_at
       FROM flight_oooi_events
       WHERE flight_id = ${flightA}
@@ -893,7 +841,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       1,
     );
     expect(events[0]?.source).toBe(manual ? "manual" : "telemetry");
-    expect(new Date(String(events[0]?.occurred_at))).toEqual(
+    expect(new Date(Number(events[0]?.occurred_at))).toEqual(
       manual ? manualAt : automaticAt,
     );
   });
@@ -901,57 +849,48 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   it("observes a concurrently committed versioned dispatcher edit before automatic OOOI", async () => {
     await ingest({ phase: "preflight", sequence: 1, sampleAt: now });
     const automaticAt = new Date(now.getTime() + 2_000);
-    const blocker = postgres(databaseUrl!, {
-      max: 1,
-      onnotice: () => undefined,
+    // D1 serializes writes: the dispatcher edit commits first.
+    await sql`
+      UPDATE flights
+      SET dispatcher_notes = 'Gate change confirmed',
+          version = version + 1,
+          updated_at = ${new Date(now.getTime() + 1_000)}
+      WHERE id = ${flightA}
+        AND tenant_id = ${tenantId}
+        AND version = 1
+    `;
+    await sql`
+      INSERT INTO audit_events (
+        tenant_id, actor_membership_id, action, entity_type, entity_id, meta
+      ) VALUES (
+        ${tenantId}, ${membershipId}, 'flight.update', 'flight', ${flightA},
+        json_object('fromVersion', 1, 'toVersion', 2)
+      )
+    `;
+    const pendingAutomatic = ingest({
+      phase: "taxi_out",
+      sequence: 2,
+      sampleAt: automaticAt,
     });
-    let pendingAutomatic: ReturnType<typeof ingest> | undefined;
-
-    await blocker.begin(async (transaction) => {
-      await transaction`
-        UPDATE flights
-        SET dispatcher_notes = 'Gate change confirmed',
-            version = version + 1,
-            updated_at = ${new Date(now.getTime() + 1_000).toISOString()}
-        WHERE id = ${flightA}
-          AND tenant_id = ${tenantId}
-          AND version = 1
-      `;
-      await transaction`
-        INSERT INTO audit_events (
-          tenant_id, actor_membership_id, action, entity_type, entity_id, meta
-        ) VALUES (
-          ${tenantId}, ${membershipId}, 'flight.update', 'flight', ${flightA},
-          jsonb_build_object('fromVersion', 1, 'toVersion', 2)
-        )
-      `;
-      pendingAutomatic = ingest({
-        phase: "taxi_out",
-        sequence: 2,
-        sampleAt: automaticAt,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    });
-    await blocker.end();
 
     await expect(pendingAutomatic).resolves.toMatchObject({
       status: "accepted",
       oooiEvent: { eventType: "out", source: "telemetry" },
     });
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT version, dispatcher_notes, out_at,
         (SELECT meta FROM audit_events
           WHERE action = 'flight.oooi_automatic') AS automatic_meta,
-        (SELECT count(*)::int FROM audit_events
+        (SELECT count(*) FROM audit_events
           WHERE action = 'flight.update') AS edit_audit_count
       FROM flights
       WHERE id = ${flightA}
     `;
-    expect(new Date(String(state?.out_at))).toEqual(automaticAt);
+    expect(new Date(Number(state?.out_at))).toEqual(automaticAt);
     expect(state?.version).toBe(3);
     expect(state?.dispatcher_notes).toBe("Gate change confirmed");
     expect(state?.edit_audit_count).toBe(1);
-    expect(state?.automatic_meta).toMatchObject({
+    expect(JSON.parse(String(state?.automatic_meta))).toMatchObject({
       fromVersion: 2,
       toVersion: 3,
     });
@@ -978,19 +917,22 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       }),
     ).toMatchObject({ status: "accepted", oooiEvent: null });
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT out_at, out_manual_override, version,
-        (SELECT count(*)::int FROM flight_oooi_events
+        (SELECT count(*) FROM flight_oooi_events
           WHERE event_type = 'out' AND source = 'manual') AS manual_events,
-        (SELECT count(*)::int FROM flight_oooi_events
+        (SELECT count(*) FROM flight_oooi_events
           WHERE event_type = 'out' AND source = 'telemetry') AS auto_events,
         (SELECT meta FROM audit_events
           WHERE action = 'flight.oooi_correct') AS correction_meta
       FROM flights WHERE id = ${flightA}
     `;
-    expect(state).toMatchObject({
+    expect({
+      ...state,
+      correction_meta: JSON.parse(String(state?.correction_meta)),
+    }).toMatchObject({
       out_at: null,
-      out_manual_override: true,
+      out_manual_override: 1,
       version: 2,
       manual_events: 1,
       auto_events: 0,
@@ -999,7 +941,7 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   });
 
   it("rejects a stale manual OOOI correction without partial writes", async () => {
-    await sqlClient!`
+    await sql`
       UPDATE flights
       SET dispatcher_notes = 'Newer dispatcher edit', version = 2
       WHERE id = ${flightA}
@@ -1017,10 +959,10 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
       }),
     ).toBe(false);
 
-    const [state] = await sqlClient!`
+    const [state] = await sql`
       SELECT version, dispatcher_notes, out_at,
-        (SELECT count(*)::int FROM flight_oooi_events) AS event_count,
-        (SELECT count(*)::int FROM audit_events) AS audit_count
+        (SELECT count(*) FROM flight_oooi_events) AS event_count,
+        (SELECT count(*) FROM audit_events) AS audit_count
       FROM flights
       WHERE id = ${flightA}
     `;
@@ -1036,19 +978,21 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   it("never exposes retained track samples outside the 24-hour read window", async () => {
     const recentAt = new Date(now.getTime() - 60_000);
     const expiredAt = new Date(now.getTime() - 24 * 60 * 60_000 - 1);
-    await sqlClient!.unsafe(`
-      INSERT INTO flight_telemetry_track (
-        tenant_id, flight_id, membership_id, device_id, phase, latitude,
-        longitude, altitude_feet, ground_speed_knots, heading_degrees,
-        simulator_time, sample_at, sequence
-      ) VALUES
-        ('${tenantId}', '${flightA}', '${membershipId}', '${deviceA}',
-          'airborne', 55, 12, 10000, 280, 274,
-          '${recentAt.toISOString()}', '${recentAt.toISOString()}', 2),
-        ('${tenantId}', '${flightA}', '${membershipId}', '${deviceA}',
-          'airborne', 54, 11, 9000, 270, 270,
-          '${expiredAt.toISOString()}', '${expiredAt.toISOString()}', 1)
-    `);
+    for (const [sampleAt, latitude, sequence] of [
+      [recentAt, 55, 2],
+      [expiredAt, 54, 1],
+    ] as const) {
+      await sql`
+        INSERT INTO flight_telemetry_track (
+          tenant_id, flight_id, membership_id, device_id, phase, latitude,
+          longitude, altitude_feet, ground_speed_knots, heading_degrees,
+          simulator_time, sample_at, sequence
+        ) VALUES (
+          ${tenantId}, ${flightA}, ${membershipId}, ${deviceA}, 'airborne',
+          ${latitude}, 12, 10000, 280, 274, ${sampleAt}, ${sampleAt}, ${sequence}
+        )
+      `;
+    }
 
     const rows = await listFlightTrack({
       tenantId,
@@ -1061,36 +1005,25 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
   });
 
   it("prunes expired rows and keeps the physical active-flight cap at exactly 5,000", async () => {
-    await sqlClient!.unsafe(`
+    const insertSeries = (count: number, offsetMs: number, sign: 1 | -1) => sql`
+      WITH RECURSIVE series(value) AS (
+        SELECT 1 UNION ALL SELECT value + 1 FROM series WHERE value < ${count}
+      )
       INSERT INTO flight_telemetry_track (
         tenant_id, flight_id, membership_id, device_id, phase, latitude,
         longitude, altitude_feet, ground_speed_knots, heading_degrees,
         simulator_time, sample_at, sequence
       )
       SELECT
-        '${tenantId}', '${flightA}', '${membershipId}', '${deviceA}',
-        'airborne', 55, 12, 10000, 280, 274,
-        '${now.toISOString()}'::timestamptz - make_interval(secs => series),
-        '${now.toISOString()}'::timestamptz - make_interval(secs => series),
-        series
-      FROM generate_series(1, 5000) AS series
-    `);
-    await sqlClient!.unsafe(`
-      INSERT INTO flight_telemetry_track (
-        tenant_id, flight_id, membership_id, device_id, phase, latitude,
-        longitude, altitude_feet, ground_speed_knots, heading_degrees,
-        simulator_time, sample_at, sequence
-      )
-      SELECT
-        '${tenantId}', '${flightA}', '${membershipId}', '${deviceA}',
-        'airborne', 55, 12, 10000, 280, 274,
-        '${now.toISOString()}'::timestamptz - interval '25 hours'
-          - make_interval(secs => series),
-        '${now.toISOString()}'::timestamptz - interval '25 hours'
-          - make_interval(secs => series),
-        -series
-      FROM generate_series(1, 10) AS series
-    `);
+        ${tenantId}, ${flightA}, ${membershipId}, ${deviceA}, 'airborne',
+        55, 12, 10000, 280, 274,
+        ${now.getTime() - offsetMs} - value * 1000,
+        ${now.getTime() - offsetMs} - value * 1000,
+        ${sign} * value
+      FROM series
+    `;
+    await insertSeries(5000, 0, 1);
+    await insertSeries(10, 25 * 60 * 60_000, -1);
 
     expect(
       await ingest({
@@ -1099,11 +1032,11 @@ postgresDescribe("telemetry PostgreSQL atomicity contracts", () => {
         sampleAt: new Date(now.getTime() + 2_000),
       }),
     ).toMatchObject({ status: "accepted" });
-    const [state] = await sqlClient!`
-      SELECT count(*)::int AS track_count,
+    const [state] = await sql`
+      SELECT count(*) AS track_count,
         count(*) FILTER (
-          WHERE sample_at < ${new Date(now.getTime() - 24 * 60 * 60_000).toISOString()}
-        )::int AS expired_count
+          WHERE sample_at < ${new Date(now.getTime() - 24 * 60 * 60_000)}
+        ) AS expired_count
       FROM flight_telemetry_track
       WHERE flight_id = ${flightA}
     `;

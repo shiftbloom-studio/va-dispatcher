@@ -65,7 +65,8 @@ export async function createSimulatorDeviceAtomic(input: {
     }),
   ]);
   const created = await findSimulatorDeviceById(input.id);
-  if (!created) throw new Error("Atomic simulator-device creation returned no row");
+  if (!created)
+    throw new Error("Atomic simulator-device creation returned no row");
   return created;
 }
 
@@ -296,7 +297,10 @@ async function readIngestState(input: {
   flightId: string;
 }): Promise<IngestState | null> {
   const db = getDb();
-  const [assigned, deviceLeases, flightLeases, previous] = await db.batch([
+  // Joined selections run outside `db.batch`: batched D1 results are keyed by
+  // column name, so same-named columns of joined tables would collide. The
+  // write batch re-asserts everything read here, so separate reads are safe.
+  const [assigned, [deviceLeases, flightLeases, previous]] = await Promise.all([
     db
       .select({
         device: simulatorDevices,
@@ -329,25 +333,27 @@ async function readIngestState(input: {
         ),
       )
       .limit(1),
-    db
-      .select()
-      .from(flightTelemetryLeases)
-      .where(eq(flightTelemetryLeases.deviceId, input.deviceId)),
-    db
-      .select()
-      .from(flightTelemetryLeases)
-      .where(eq(flightTelemetryLeases.flightId, input.flightId))
-      .limit(1),
-    db
-      .select({ phase: flightTelemetryCurrent.phase })
-      .from(flightTelemetryCurrent)
-      .where(
-        and(
-          eq(flightTelemetryCurrent.flightId, input.flightId),
-          eq(flightTelemetryCurrent.tenantId, input.tenantId),
-        ),
-      )
-      .limit(1),
+    db.batch([
+      db
+        .select()
+        .from(flightTelemetryLeases)
+        .where(eq(flightTelemetryLeases.deviceId, input.deviceId)),
+      db
+        .select()
+        .from(flightTelemetryLeases)
+        .where(eq(flightTelemetryLeases.flightId, input.flightId))
+        .limit(1),
+      db
+        .select({ phase: flightTelemetryCurrent.phase })
+        .from(flightTelemetryCurrent)
+        .where(
+          and(
+            eq(flightTelemetryCurrent.flightId, input.flightId),
+            eq(flightTelemetryCurrent.tenantId, input.tenantId),
+          ),
+        )
+        .limit(1),
+    ]),
   ]);
   const row = assigned[0];
   if (!row) return null;
@@ -368,7 +374,8 @@ function detectOooiTransition(
   sampleAt: Date,
 ): "out" | "off" | "on" | "in" | null {
   const at = sampleAt.getTime();
-  const notAfter = (value: Date | null) => value === null || at <= value.getTime();
+  const notAfter = (value: Date | null) =>
+    value === null || at <= value.getTime();
   const notBefore = (value: Date | null) =>
     value === null || value.getTime() <= at;
   if (
