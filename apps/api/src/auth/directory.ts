@@ -309,6 +309,8 @@ function stemDirectory(credentials: Credentials): IdentityDirectory {
         role,
         inviter_id: inviterUserId,
         redirect_to: redirectUrl,
+        // stem accepts whole days from 1 to 30.
+        expires_in_days: Math.min(Math.max(Math.round(expiresInDays), 1), 30),
       });
       return toInvitation(
         "invitation" in payload ? payload.invitation : payload,
