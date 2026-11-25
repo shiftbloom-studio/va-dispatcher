@@ -13,7 +13,7 @@ export function LegalNotice({ className = "" }: { className?: string }) {
       </a>
       <span aria-hidden="true"> · </span>
       <a
-        className="underline hover:no-underline"
+        className="whitespace-nowrap underline hover:no-underline"
         href={`${repositoryUrl}/blob/main/LICENSE`}
       >
         AGPL-3.0-or-later

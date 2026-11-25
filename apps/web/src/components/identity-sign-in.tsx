@@ -30,7 +30,7 @@ export function IdentitySignIn({
       >
         {mode === "sign-in" ? "Sign in" : "Create your account"}
       </h2>
-      <p className="mt-3 text-sm leading-6 text-slate-600">
+      <p className="mt-3 text-pretty text-sm leading-6 text-slate-600">
         {mode === "sign-in"
           ? "Continue with your shiftbloom account. We send a one-time code to your email address, no password needed."
           : "Your shiftbloom account works for every Virtual Airline on VA Dispatch. Enter your email address and confirm it with the code we send you. Then apply to join."}
