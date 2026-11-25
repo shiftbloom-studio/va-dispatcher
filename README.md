@@ -26,7 +26,7 @@ apps/web   — Next.js frontend (path tenancy at /vsas)
 
 - Node.js 26+
 - pnpm 11.21+
-- A Clerk application (optional locally: `AUTH_DEV_BYPASS=true`)
+- A stem OIDC client for sign-in (optional locally: `AUTH_DEV_BYPASS=true`)
 - A Cloudflare account for deployment; local development needs none
 
 ## Quick start
@@ -55,21 +55,7 @@ Guarded retention, export, legal-hold, and verified request procedures are in
 [`docs/privacy-operations.md`](docs/privacy-operations.md); the software does
 not by itself certify GDPR compliance.
 
-Clerk Organizations must use optional membership, organization slugs must be
-enabled, end-user organization creation and Verified Domain enrollment must be
-disabled, and the Primary Role Set must contain `org:admin`, `org:dispatcher`,
-and `org:pilot`. Production uses Clerk Waitlist mode with email enabled;
-self-service new users enter through `/vsas/waitlist`. Clerk Dashboard approval
-emails open the Clerk Account Portal sign-up flow; configure its sign-up
-fallback redirect to `/vsas/join`, where VA Dispatch handles tenant-role
-approval. The tenant-branded `/vsas/sign-up` route remains available for direct
-invitation flows that redirect into the application. This flow does not require
-Clerk's Invite-only (`restricted`) sign-up mode or the paid allowlist. The vSAS
-Clerk organization slug is
-`vsas`; set `VSAS_AUTH_ORG_ID` to its immutable ID. Tenant admins then manage
-the separate pilot/dispatcher application approval, roles, removal, and tenant
-membership settings inside VA Dispatch. See the Wiki configuration reference
-for the one-time global Clerk setup.
+Sign-in runs through stem, the shiftbloom OpenID Connect account service. People sign in with a one-time email code; a first sign-in creates the account. Each Virtual Airline is a stem organization with the roles `owner`, `admin`, `dispatcher`, `pilot`, or `member`. The vSAS organization slug is `vsas`; set `VSAS_AUTH_ORG_ID` to its ID. Tenant admins then manage the pilot/dispatcher application approval, invitations, roles, removal, and tenant membership settings inside VA Dispatch. See the Wiki configuration reference for the one-time stem registration.
 
 ## Core flows
 
@@ -101,13 +87,13 @@ enabled in production, even if a stale production variable says `mock`.
 
 ## Cost model
 
-| Layer      | Choice                                   | Idle behavior                              |
-| ---------- | ---------------------------------------- | ------------------------------------------ |
-| Database   | **Cloudflare D1**                        | Billed per row read/written and storage    |
-| Logos      | **Cloudflare R2**                        | Storage only; no egress fees               |
-| Auth       | **Clerk + B2B Authentication**           | Production custom roles require the add-on |
-| Compute    | **Cloudflare Workers**                   | Billed per request and CPU time            |
-| ACARS cron | Every **1 min**, configured tenants only | Required for a live Hoppie ground station  |
+| Layer      | Choice                                   | Idle behavior                             |
+| ---------- | ---------------------------------------- | ----------------------------------------- |
+| Database   | **Cloudflare D1**                        | Billed per row read/written and storage   |
+| Logos      | **Cloudflare R2**                        | Storage only; no egress fees              |
+| Auth       | **stem** (shiftbloom OIDC, on Workers)   | No separate auth vendor or per-user fee   |
+| Compute    | **Cloudflare Workers**                   | Billed per request and CPU time           |
+| ACARS cron | Every **1 min**, configured tenants only | Required for a live Hoppie ground station |
 
 The poll cron selects only tenants with an encrypted Hoppie logon. Set
 `ACARS_PROVIDER=hoppie` in production for an explicit, self-documenting

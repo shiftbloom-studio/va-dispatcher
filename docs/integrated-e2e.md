@@ -31,7 +31,7 @@ Install Chromium once if Playwright reports that it is missing:
 pnpm --filter @va-dispatch/web exec playwright install chromium
 ```
 
-The API harness seeds only tenants with the fixed synthetic Clerk organization
+The API harness seeds only tenants with the fixed synthetic identity organization
 IDs `org_e2e_vsas` and `org_e2e_other`.
 
 ## Isolation and provider boundaries
@@ -46,7 +46,7 @@ high-entropy `E2E_FIXTURE_SECRET`, and cannot be enabled by
 `AUTH_DEV_BYPASS` alone. The normal `/internal/seed/vsas` convenience route is
 also absent in production, even when a caller knows the cron secret.
 
-Automated tests never call Clerk, Hoppie, SimBrief, Navigraph, or Aviation
+Automated tests never call stem, Hoppie, SimBrief, Navigraph, or Aviation
 Weather. The harness:
 
 - uses the database-backed ACARS mock and exercises its inbound polling queue;
@@ -66,9 +66,9 @@ accounts and configuration:
 
 - D1 migrations applied and a healthy API Worker, with the `<host>/api/*` zone
   route and the web Worker's `API` service binding in place;
-- valid Clerk keys, email-enabled Waitlist mode, the configured vSAS
-  organization, and pilot, dispatcher, and admin test memberships whose active
-  organization matches `/vsas`;
+- a registered stem client for the deployed host, the configured vSAS
+  organization, and pilot, dispatcher, and admin test accounts that belong to
+  it;
 - complete mandatory `LEGAL_*` configuration;
 - Bot Management scores present on API requests (Security → Analytics); and
 - tenant Hoppie, SimBrief, and Navigraph configuration before exercising those
@@ -79,15 +79,13 @@ Check each role in a fresh browser profile and after a hard reload:
 
 1. Open `/vsas` signed out and verify the branded auth shell, logo, stylesheet,
    fonts, and scripts load without a `4xx`/`5xx` response.
-2. With a synthetic unused email, join `/vsas/waitlist`, verify the confirmation
-   email, invite the entry in Clerk, complete the default Clerk Account Portal
-   sign-up flow, and confirm its configured fallback reaches `/vsas/join`. Then
-   submit and approve a tenant-role application. Separately verify that an
-   invitation redirected into the application can complete through the
-   tenant-branded `/vsas/sign-up` route.
+2. With a synthetic unused email, sign up at `/vsas/sign-up`, confirm the
+   one-time code, and confirm the flow reaches `/vsas/join`. Then submit and
+   approve a tenant-role application. Separately verify that a direct
+   invitation returns to `/vsas` and grants access.
 3. Sign in, navigate across the role's workspace, reload each primary page,
    sign out, and sign back in as the next role. There must be no repeated
-   sign-in or organization-selection redirect.
+   sign-in redirect.
 4. Exercise the pilot schedule/flight journey and dispatcher
    request/release/ACARS journey, then reload to prove persistence.
 5. Observe loading feedback with a slow API response and confirm a failed API
@@ -97,5 +95,5 @@ If a deployed reload loses styling or assets, inspect the web build output,
 Worker routing, and CDN responses for `/_next/*` before changing components.
 If the tenant logo fails while other assets load, verify its stored public URL
 and that the object exists in the R2 logo bucket. Repeated auth redirects normally indicate a
-mismatch between the URL slug, active Clerk organization, API-resolved tenant,
+mismatch between the URL slug, the token's organization roles, API-resolved tenant,
 or local membership; inspect those identities rather than bypassing the shell.

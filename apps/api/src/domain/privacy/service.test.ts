@@ -317,7 +317,7 @@ describe("privacy lifecycle service", () => {
     ).resolves.toMatchObject({ status: "approved" });
   });
 
-  it("corrects local identity data and waits for the requested Clerk follow-up", async () => {
+  it("corrects local identity data and waits for the requested identity-provider follow-up", async () => {
     mocks.findPrivacySubjectRequest.mockResolvedValue(
       exportRequest({
         kind: "correction",

@@ -208,7 +208,7 @@ describe("admin member console", () => {
     );
   });
 
-  it("sends a tenant-role invitation without exposing Clerk administration", async () => {
+  it("sends a tenant-role invitation without exposing identity administration", async () => {
     const user = userEvent.setup();
     render(
       <TestQueryProvider>
@@ -248,7 +248,7 @@ describe("admin member console", () => {
     expect(screen.getByText("/vsas/join")).toBeInTheDocument();
   });
 
-  it("reports skipped Clerk memberships as incomplete and reviewable", async () => {
+  it("reports skipped directory memberships as incomplete and reviewable", async () => {
     directorySync = {
       complete: false,
       summaryAuditRecorded: true,
@@ -275,7 +275,7 @@ describe("admin member console", () => {
     );
 
     await user.click(
-      await screen.findByRole("button", { name: "Sync Clerk directory" }),
+      await screen.findByRole("button", { name: "Sync account directory" }),
     );
 
     const result = await screen.findByRole("alert");
@@ -315,7 +315,7 @@ describe("admin member console", () => {
     );
 
     await user.click(
-      await screen.findByRole("button", { name: "Sync Clerk directory" }),
+      await screen.findByRole("button", { name: "Sync account directory" }),
     );
 
     const result = await screen.findByRole("alert");
@@ -329,7 +329,7 @@ describe("admin member console", () => {
     invitationCreateError = new ApiError({
       status: 422,
       code: "UNPROCESSABLE",
-      message: "Clerk rejected the configured role",
+      message: "The identity provider rejected the configured role",
     });
     const user = userEvent.setup();
     render(
@@ -345,7 +345,7 @@ describe("admin member console", () => {
     await user.click(screen.getByRole("button", { name: "Send invitation" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Invitation was not sent. Clerk rejected the configured role",
+      "Invitation was not sent. The identity provider rejected the configured role",
     );
   });
 
@@ -369,7 +369,7 @@ describe("admin member console", () => {
     await user.click(screen.getByRole("button", { name: "Send invitation" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Could not confirm whether Clerk sent the invitation",
+      "Could not confirm whether the account service sent the invitation",
     );
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Refresh pending invitations before retrying",
@@ -454,7 +454,7 @@ describe("admin member console", () => {
     ).toBeInTheDocument();
   });
 
-  it("warns against retrying when Clerk succeeded but audit recording failed", async () => {
+  it("warns against retrying when the directory succeeded but audit recording failed", async () => {
     invitationCreateAuditRecorded = false;
     const user = userEvent.setup();
     render(
@@ -486,7 +486,7 @@ describe("admin member console", () => {
       skipped: 0,
       failed: 0,
       failures: [],
-      note: "Dev bypass — no Clerk org sync",
+      note: "Dev bypass — no directory sync",
     };
     const user = userEvent.setup();
     render(
@@ -496,11 +496,11 @@ describe("admin member console", () => {
     );
 
     await user.click(
-      await screen.findByRole("button", { name: "Sync Clerk directory" }),
+      await screen.findByRole("button", { name: "Sync account directory" }),
     );
 
     const result = await screen.findByRole("alert");
-    expect(result).toHaveTextContent("Dev bypass — no Clerk org sync");
+    expect(result).toHaveTextContent("Dev bypass — no directory sync");
     expect(result).toHaveTextContent("0 seen");
   });
 

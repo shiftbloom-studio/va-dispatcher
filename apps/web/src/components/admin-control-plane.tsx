@@ -94,7 +94,7 @@ export function AdminControlPlane({ slug }: { slug: string }) {
       <PageHeading
         eyebrow="Administration"
         title="Members"
-        description="Search the tenant roster, reconcile it with Clerk, and manage application roles, status, ACARS callsigns, and outstanding work safely."
+        description="Search the tenant roster, reconcile it with the account directory, and manage application roles, status, ACARS callsigns, and outstanding work safely."
         action={
           <Link
             href={`/${slug}/admin/audit`}
@@ -112,7 +112,7 @@ export function AdminControlPlane({ slug }: { slug: string }) {
       <Card className="mb-6 overflow-hidden">
         <CardHeader
           title="Directory controls"
-          description="Sync pages accepted Clerk organization members. Pending invitations are excluded, partial failures require review, and absent Clerk members are never disabled automatically."
+          description="Sync reads accepted organization members from the account directory. Pending invitations are excluded, partial failures require review, and members missing from the directory are never disabled automatically."
           action={
             <Button
               variant="secondary"
@@ -123,7 +123,7 @@ export function AdminControlPlane({ slug }: { slug: string }) {
                 aria-hidden
                 className={`size-4 ${sync.isPending ? "animate-spin" : ""}`}
               />
-              {sync.isPending ? "Syncing…" : "Sync Clerk directory"}
+              {sync.isPending ? "Syncing…" : "Sync account directory"}
             </Button>
           }
         />
@@ -146,7 +146,7 @@ export function AdminControlPlane({ slug }: { slug: string }) {
                   search: event.target.value,
                 }))
               }
-              placeholder="Name, callsign, or Clerk user ID"
+              placeholder="Name, callsign, or account ID"
               maxLength={120}
             />
           </div>
@@ -209,7 +209,7 @@ export function AdminControlPlane({ slug }: { slug: string }) {
               ? " Issue details are a bounded sample."
               : ""}
             {sampledMissingUserIdCount > 0
-              ? ` The sample includes ${sampledMissingUserIdCount} ${sampledMissingUserIdCount === 1 ? "entry" : "entries"} Clerk returned without a user ID; none was written.`
+              ? ` The sample includes ${sampledMissingUserIdCount} ${sampledMissingUserIdCount === 1 ? "entry" : "entries"} the directory returned without a user ID; none was written.`
               : ""}
             {sampledLocalReviewCount > 0
               ? ` The sample includes ${sampledLocalReviewCount} local ${sampledLocalReviewCount === 1 ? "membership that needs explicit application or disabled-member review and was not reactivated" : "memberships that need explicit application or disabled-member review and were not reactivated"}. Use the Status filter to review Invited and Disabled members.`
@@ -351,7 +351,7 @@ function InvitationManager({ slug }: { slug: string }) {
     <Card className="mb-6 overflow-hidden">
       <CardHeader
         title="Invite pilots and dispatchers"
-        description="Clerk sends a tenant invitation. After acceptance, VA Dispatch can create a member when no local application or disabled record already exists."
+        description="The account service emails a tenant invitation. After acceptance, VA Dispatch can create a member when no local application or disabled record already exists."
         action={<MailPlus aria-hidden className="size-5 text-slate-700" />}
       />
       <form
@@ -396,11 +396,10 @@ function InvitationManager({ slug }: { slug: string }) {
           Pending tenant invitations are not organization members and cannot be
           imported by directory sync. After acceptance, first tenant access or
           directory sync creates a new local member; an existing Invited or
-          Disabled record requires explicit administrator review. An
-          account-only invitation sent from Clerk Dashboard must instead be
-          followed by a request at{" "}
-          <code className="font-semibold text-slate-800">/{slug}/join</code> and
-          administrator approval.
+          Disabled record requires explicit administrator review. Someone who
+          created an account without an invitation must instead send a request
+          at <code className="font-semibold text-slate-800">/{slug}/join</code>{" "}
+          and administrator approval.
         </p>
         <h3 className="text-sm font-bold text-slate-950">
           Pending invitations
@@ -523,7 +522,7 @@ function InvitationManager({ slug }: { slug: string }) {
             member unless an Invited or Disabled record already requires
             administrator review.
             {!create.data.auditRecorded
-              ? " Clerk applied the change, but its application audit could not be recorded. Refresh pending invitations and inspect Audit history; do not retry blindly."
+              ? " The account directory applied the change, but its application audit could not be recorded. Refresh pending invitations and inspect Audit history; do not retry blindly."
               : ""}
           </p>
         ) : null}
@@ -538,7 +537,7 @@ function InvitationManager({ slug }: { slug: string }) {
           >
             Invitation revoked.
             {!revoke.data.auditRecorded
-              ? " Clerk applied the change, but its application audit could not be recorded. Refresh pending invitations and inspect Audit history; do not retry blindly."
+              ? " The account directory applied the change, but its application audit could not be recorded. Refresh pending invitations and inspect Audit history; do not retry blindly."
               : ""}
           </p>
         ) : null}
@@ -564,7 +563,7 @@ function invitationMutationError(
       : `Invitation was not revoked. ${detail}`;
   }
 
-  return `Could not confirm whether Clerk ${action === "send" ? "sent" : "revoked"} the invitation. ${detail} Refresh pending invitations before retrying.`;
+  return `Could not confirm whether the account service ${action === "send" ? "sent" : "revoked"} the invitation. ${detail} Refresh pending invitations before retrying.`;
 }
 
 function ApplicationQueue({ slug }: { slug: string }) {
@@ -694,7 +693,7 @@ function ApplicationDecision({
             {member.displayName ?? "Unnamed applicant"}
           </p>
           <p className="break-all text-sm text-slate-600">
-            Clerk user {member.authUserId}
+            Account {member.authUserId}
           </p>
         </div>
         <div className="w-full lg:w-48">
@@ -830,7 +829,7 @@ function MemberEditor({
     <Card className="overflow-hidden">
       <CardHeader
         title={member.displayName ?? member.pilotCallsign ?? "Unnamed member"}
-        description={`Clerk user ${member.authUserId}`}
+        description={`Account ${member.authUserId}`}
         action={
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
             {member.status}
@@ -947,7 +946,7 @@ function MemberEditor({
             {mutation.data.reassignedScheduleRequestCount} request(s)
             reassigned.
             {!mutation.data.directorySynchronized
-              ? " Clerk synchronization is still required."
+              ? " Account directory synchronization is still required."
               : ""}
           </p>
         ) : null}
@@ -973,7 +972,7 @@ function MemberEditor({
             onClick={() => {
               if (
                 window.confirm(
-                  "Remove this person from the Clerk organization and disable their VA Dispatch membership?",
+                  "Remove this person from the organization in the account directory and disable their VA Dispatch membership?",
                 )
               ) {
                 kick.mutate();
@@ -994,7 +993,7 @@ function MemberEditor({
             >
               {kick.data.directorySynchronized
                 ? "Member removed from the organization and disabled locally."
-                : "VA Dispatch access is disabled, but Clerk removal failed. Retry this action to finish synchronization."}
+                : "VA Dispatch access is disabled, but removal from the account directory failed. Retry this action to finish synchronization."}
             </p>
           ) : null}
           {kick.error ? (

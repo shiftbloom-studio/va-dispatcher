@@ -28,20 +28,20 @@ flowchart LR
     U["Pilot / Dispatcher / Admin"] --> W["Next.js web Worker<br/>apps/web"]
     U -->|"same-origin /api/*"| A
     W -->|"service binding"| A["Hono API Worker<br/>apps/api"]
-    W --> C["Clerk authentication<br/>and organizations"]
+    W --> C["stem accounts<br/>and organizations"]
     A --> C
     A --> N["Cloudflare D1 and R2"]
     A --> H["Hoppie's ACARS"]
     V["Cron trigger<br/>every minute"] --> A
 ```
 
-Production runs as two Cloudflare Workers on one hostname. The Next.js web Worker (built with vinext) handles tenant-branded pages, Clerk sessions, and typed client interactions. The Hono API Worker owns authorization, tenant isolation, state transitions, persistence, Hoppie traffic, and the public OpenAPI reference. D1 stores the data, R2 stores tenant logos, and nothing runs while idle.
+Production runs as two Cloudflare Workers on one hostname. The Next.js web Worker (built with vinext) handles tenant-branded pages, the sign-in session with stem, and typed client interactions. The Hono API Worker owns authorization, tenant isolation, state transitions, persistence, Hoppie traffic, and the public OpenAPI reference. D1 stores the data, R2 stores tenant logos, and nothing runs while idle.
 
 ## Current capability snapshot
 
 ### Pilot
 
-- Sign in or create an account inside the tenant-branded Clerk shell.
+- Sign in or create an account with a one-time email code through stem, starting from the tenant-branded shell.
 - Apply for pilot/dispatcher membership and wait for tenant-admin approval.
 - Save a display name, simulator devices, personal aircraft ACARS callsign,
   SimBrief identity, and Navigraph connection.
@@ -65,7 +65,7 @@ Production runs as two Cloudflare Workers on one hostname. The Next.js web Worke
 
 - Use every dispatcher capability.
 - Configure, test, replace, or remove the tenant's encrypted Hoppie ground-station credential.
-- Manage member roles/status, safe work reassignment, Clerk directory sync,
+- Manage member roles/status, safe work reassignment, stem directory sync,
   direct invitations, manual applications, safe removal, tenant membership
   policy, privacy operations, and tenant audit events through the web control
   plane.

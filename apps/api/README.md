@@ -28,8 +28,9 @@ public CDNs; the OpenAPI JSON endpoint has no external runtime dependency.
 
 ## Auth
 
-**Production:** `Authorization: Bearer <Clerk session JWT>` with an active
-Organization (VA tenant). The narrow membership-application route verifies the
+**Production:** `Authorization: Bearer <stem access token>` plus
+`X-Tenant-Slug: <slug>`. The token's `orgs` claim must contain the tenant's
+stem organization. The narrow membership-application route verifies the
 user subject without requiring organization membership and exposes no
 operational data.
 
@@ -43,13 +44,12 @@ X-Dev-Role: admin   # pilot | dispatcher | admin
 
 ## Bootstrap vSAS
 
-1. Configure Clerk for optional organization membership, disable end-user
-   organization creation and Verified Domain enrollment, add `org:pilot` and
-   `org:dispatcher`, create vSAS, and copy its org id to
+1. Register the app with stem (client, resource, `dispatcher` and `pilot` in
+   `ORG_ROLES`), create the vSAS organization, and copy its id to
    `VSAS_AUTH_ORG_ID`.
 2. Deploy the API Worker; its deploy applies the D1 migrations in
    `migrations/`. Locally, run `pnpm db:migrate:local`.
-3. In production, sign in as a verified administrator of the configured Clerk
+3. In production, sign in as a verified owner or admin of the configured stem
    organization. The audited first-login and no-active-admin recovery path
    creates the initial local tenant, membership, and administrator without a
    secret seed request.
@@ -152,7 +152,7 @@ with an authenticated request:
 
 ```http
 POST /api/v1/simbrief/oauth/start
-Authorization: Bearer <Clerk session JWT>
+Authorization: Bearer <stem access token>
 ```
 
 The response contains `authorizationUrl`, `redirectUri`, and `expiresAt`. Open

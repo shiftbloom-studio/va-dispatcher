@@ -393,7 +393,7 @@ describe("admin control-plane routes", () => {
     expect(mocks.updateMemberAsAdministrator).not.toHaveBeenCalled();
   });
 
-  it("creates a tenant invitation that returns through the public sign-in flow", async () => {
+  it("creates a tenant invitation that returns through a fresh sign-in", async () => {
     const createdAt = new Date("2026-08-18T10:00:00.000Z").getTime();
     const expiresAt = new Date("2026-09-17T10:00:00.000Z").getTime();
     mocks.createInvitation.mockResolvedValue({
@@ -425,7 +425,7 @@ describe("admin control-plane routes", () => {
       emailAddress: "new-pilot@example.test",
       role: "pilot",
       expiresInDays: 30,
-      redirectUrl: "https://app.example.test/vsas/sign-in",
+      redirectUrl: "https://app.example.test/auth/login?returnTo=%2Fvsas",
       metadata: {
         vaDispatchRole: "pilot",
         tenantSlug: "vsas",
@@ -489,7 +489,8 @@ describe("admin control-plane routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.createInvitation).toHaveBeenCalledWith(
       expect.objectContaining({
-        redirectUrl: "https://preview-origin.example.test/vsas/sign-in",
+        redirectUrl:
+          "https://preview-origin.example.test/auth/login?returnTo=%2Fvsas",
       }),
     );
   });

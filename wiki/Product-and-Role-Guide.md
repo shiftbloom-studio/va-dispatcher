@@ -16,28 +16,22 @@ The application is tenant-addressed. vSAS uses `/vsas`, including:
 - `/vsas/waitlist` for new-account access requests
 - `/vsas/sign-up`
 - `/vsas/join` for membership application and approval status
-- `/vsas/tasks/*` for Clerk session tasks
 - `/vsas/portal` for pilots
 - `/vsas/dispatch` for dispatchers and administrators
 - `/vsas/settings` for every active member
 
-The active Clerk organization must have the same slug as the URL. The application also verifies that the organization maps to the same database tenant before it reads operational data. If they do not agree, the user sees an organization-mismatch screen rather than data from another tenant.
+The URL names the tenant. The API checks that the signed-in account belongs to that tenant's organization and that the organization maps to the same database tenant before it returns operational data. Someone who is not a member is sent to the join page; nobody sees data from another tenant.
 
-With Clerk Waitlist mode enabled, a self-service new user first submits their
-email at `/vsas/waitlist`. A global Clerk administrator must invite them before
-the invitation can create an account. Dashboard-approved waitlist emails use
-Clerk's Account Portal sign-up page by default; its configured fallback returns
-the new account to `/vsas/join`. The tenant-branded `/vsas/sign-up` route remains
-available for invitation flows redirected into the application. This
-account-level gate is separate from the tenant role application; it does not
-grant pilot or dispatcher access.
+A new user creates an account from `/vsas/sign-up`. stem asks for an email
+address and sends a one-time code; there is no password. The account alone
+does not grant pilot or dispatcher access.
 
 After account creation, a user without tenant membership is sent to
 `/vsas/join`. They can request the pilot or dispatcher role when that role is
 open. The request does not expose operational data and does not add the user to
-the Clerk organization. A tenant administrator must approve it in VA Dispatch;
-the applicant can return to the join page, cancel a pending request, or select
-the organization after approval. An administrator can instead send a direct
+the stem organization. A tenant administrator must approve it in VA Dispatch;
+the applicant can return to the join page, cancel a pending request, or open
+VA Dispatch after approval. An administrator can instead send a direct
 pilot/dispatcher invitation from the member console.
 
 ## Pilot workflow
@@ -144,19 +138,19 @@ An administrator has every dispatcher capability and can open **Organization set
 The logon is encrypted before storage and is never returned to the browser. Removing it leaves ACARS unconfigured; production never falls back to the mock adapter.
 
 The admin control plane is also the complete tenant-level membership console.
-Administrators can send and revoke Clerk invitations, review and approve or
+Administrators can send and revoke tenant invitations, review and approve or
 reject pilot/dispatcher applications, promote or demote active members, remove
-members from the tenant, synchronize the complete Clerk directory, and safely
-reassign eligible work. Removal disables VA Dispatch access before Clerk is
+members from the tenant, synchronize the complete stem directory, and safely
+reassign eligible work. Removal disables VA Dispatch access before stem is
 called; if provider removal fails, the UI reports the safe local disable and
 offers a retry. The organization-settings page controls the tenant name,
-application switches per role, and invitation lifetime without exposing the
-global Clerk dashboard.
+application switches per role, and invitation lifetime without exposing stem's
+operator settings.
 
-Directory sync imports accepted Clerk organization members only. A pending
-tenant invitation must be accepted first. An account-only invitation sent from
-Clerk Dashboard must instead be followed by a role request at `/:slug/join`
-and tenant-administrator approval.
+Directory sync imports accepted stem organization members only. A pending
+tenant invitation must be accepted first. Someone who created an account
+without an invitation must instead send a role request at `/:slug/join` and
+wait for tenant-administrator approval.
 
 The redacted audit viewer/export records these membership operations. Privacy
 operations cover approved retention runs, subject requests, holds, and
@@ -177,7 +171,7 @@ external-provider tasks.
 | Use dispatcher ACARS workspace                   |   —   |    Yes     |  Yes  |
 | List tenant members                              |   —   |    Yes     |  Yes  |
 | Apply for pilot/dispatcher tenant membership     |  Yes  |    Yes     |  Yes  |
-| Synchronize Clerk members                        |   —   |     —      |  Yes  |
+| Synchronize stem members                         |   —   |     —      |  Yes  |
 | Invite, approve, reject, or remove members       |   —   |     —      |  Yes  |
 | Change member roles/status and audit access      |   —   |     —      |  Yes  |
 | Configure tenant membership policy/name          |   —   |     —      |  Yes  |
@@ -186,14 +180,14 @@ external-provider tasks.
 
 ## Operational language
 
-| Term              | Meaning in this application                                                            |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| Tenant            | One Virtual Airline and its isolated records                                           |
-| Membership        | A Clerk user within one tenant, with role, status, display name, and optional callsign |
-| Schedule request  | A pilot's requested count, UTC availability, preferences, and review status            |
-| Flight            | The canonical offered or operational flight record                                     |
-| Ground station    | The tenant-level Hoppie sender and polling callsign                                    |
-| Personal callsign | A member's aircraft/simulator callsign, not a stored personal Hoppie credential        |
-| ACARS acceptance  | Hoppie accepted a message for store-and-forward; not proof of delivery or reading      |
+| Term              | Meaning in this application                                                           |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| Tenant            | One Virtual Airline and its isolated records                                          |
+| Membership        | A stem user within one tenant, with role, status, display name, and optional callsign |
+| Schedule request  | A pilot's requested count, UTC availability, preferences, and review status           |
+| Flight            | The canonical offered or operational flight record                                    |
+| Ground station    | The tenant-level Hoppie sender and polling callsign                                   |
+| Personal callsign | A member's aircraft/simulator callsign, not a stored personal Hoppie credential       |
+| ACARS acceptance  | Hoppie accepted a message for store-and-forward; not proof of delivery or reading     |
 
 Next: [Scheduling and Dispatch](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Scheduling-and-Dispatch), [Flights and State Machines](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Flights-and-State-Machines), and [ACARS and Hoppie](https://github.com/shiftbloom-studio/va-dispatcher/wiki/ACARS-and-Hoppie).

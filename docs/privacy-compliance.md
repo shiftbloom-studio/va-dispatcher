@@ -25,43 +25,43 @@ operating procedures for the actual deployment with qualified counsel.
 
 ## Data inventory in this application
 
-| System                | Personal or linkable data                                                                                                                                                                                                                     |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clerk                 | Waitlist email and state; user and organization identifiers; login/invitation email; invitation state; name; role; authentication/session events; IP/device data                                                                              |
-| `memberships`         | Clerk user ID, active or requested role (according to membership status), display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, application/membership status, timestamps  |
-| `schedule_requests`   | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                                                                                                         |
-| `flights`             | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                                                                                                        |
-| `dispatch_releases`   | Immutable dispatcher release revisions, operational route/weather, release notes/remarks, dispatcher link                                                                                                                                     |
-| Operational events    | Flight progress source, actor/message links, occurrence time, and event metadata                                                                                                                                                              |
-| OAuth transactions    | Short-lived random state lookup ID, encrypted PKCE verifier, member/tenant link, expiry and consumption times                                                                                                                                 |
-| `simbrief_dispatches` | Flight/material/release snapshot and canonical revision, preparing dispatcher and generating pilot links, trusted dispatcher-name snapshot and remarks, SimBrief Pilot/static/request IDs, planning inputs, generated OFP, errors, timestamps |
-| Simulator devices     | Tenant/member/device link, user-chosen device name, keyed token authenticator, revocation, sequence, and last-seen timestamps                                                                                                                 |
-| Flight telemetry      | Assigned flight/member/device link, precise latitude/longitude, altitude, speed, heading, simulator clock, phase, heartbeat, current position, and bounded track history                                                                      |
-| OOOI provenance       | Out/off/on/in value, automatic or manual source, correcting actor or simulator device, reason, and timestamp                                                                                                                                  |
-| `acars_messages`      | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                                                                                                                 |
-| `audit_events`        | Actor, action, entity identifiers, metadata, timestamp                                                                                                                                                                                        |
-| Privacy workflows     | Policy versions, aggregate reports, verified request state, restrictions/objections, legal holds, and provider follow-up tasks                                                                                                                |
-| Infrastructure        | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                                                                                                                   |
-| Bot scoring           | Cloudflare bot score of each request and the `__cf_bm` bot-management cookie; used only to block automated abuse                                                                                                                              |
+| System                 | Personal or linkable data                                                                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| stem (account service) | User and organization identifiers; email; name; role; invitation state; one-time sign-in codes; sessions                                                                                                                                      |
+| `memberships`          | stem user ID, active or requested role (according to membership status), display name, pilot callsign, optional SimBrief Pilot ID, Navigraph subject/username, connection and verification times, application/membership status, timestamps   |
+| `schedule_requests`    | Availability windows, preferences, titles/notes, status, rejection reason, timestamps                                                                                                                                                         |
+| `flights`              | Pilot assignment, route and schedule, dispatcher notes, state/reasons, OOOI timestamps                                                                                                                                                        |
+| `dispatch_releases`    | Immutable dispatcher release revisions, operational route/weather, release notes/remarks, dispatcher link                                                                                                                                     |
+| Operational events     | Flight progress source, actor/message links, occurrence time, and event metadata                                                                                                                                                              |
+| OAuth transactions     | Short-lived random state lookup ID, encrypted PKCE verifier, member/tenant link, expiry and consumption times                                                                                                                                 |
+| `simbrief_dispatches`  | Flight/material/release snapshot and canonical revision, preparing dispatcher and generating pilot links, trusted dispatcher-name snapshot and remarks, SimBrief Pilot/static/request IDs, planning inputs, generated OFP, errors, timestamps |
+| Simulator devices      | Tenant/member/device link, user-chosen device name, keyed token authenticator, revocation, sequence, and last-seen timestamps                                                                                                                 |
+| Flight telemetry       | Assigned flight/member/device link, precise latitude/longitude, altitude, speed, heading, simulator clock, phase, heartbeat, current position, and bounded track history                                                                      |
+| OOOI provenance        | Out/off/on/in value, automatic or manual source, correcting actor or simulator device, reason, and timestamp                                                                                                                                  |
+| `acars_messages`       | Station identifiers, free-text messages, provider metadata, actor, timestamps                                                                                                                                                                 |
+| `audit_events`         | Actor, action, entity identifiers, metadata, timestamp                                                                                                                                                                                        |
+| Privacy workflows      | Policy versions, aggregate reports, verified request state, restrictions/objections, legal holds, and provider follow-up tasks                                                                                                                |
+| Infrastructure         | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                                                                                                                   |
+| Bot scoring            | Cloudflare bot score of each request and the `__cf_bm` bot-management cookie; used only to block automated abuse                                                                                                                              |
 
 Free-text fields can contain personal data even when the schema does not ask
 for it. Train dispatchers and members not to enter sensitive or unrelated data.
 
 Membership applications reuse the existing tenant membership subject rather
 than creating a second applicant profile. The server obtains the display name
-or verified primary email from Clerk; invitation email is handled by Clerk and
-is deliberately omitted from application audit metadata. Pending, rejected,
+or verified email from the stem access token; invitation email is sent by stem
+and is deliberately omitted from application audit metadata. Pending, rejected,
 cancelled, and removed membership rows remain within the existing membership
 retention/export/erasure policy so later reapplication and operational history
 do not silently fork identity. The controller must state the purpose and
 retention for unsuccessful applications in its approved account policy and
 privacy notice.
 
-A Clerk waitlist entry exists before a Clerk user ID or local `memberships` row
-is created. It is therefore a separate provider-side applicant record. The
-controller must define its purpose and retention, handle access/deletion through
-Clerk's supported process, and must not claim that VA Dispatch's tenant-scoped
-privacy lifecycle job automatically finds or removes waitlist-only records.
+A stem account exists before a local `memberships` row is created, and it is
+shared by every shiftbloom app. The controller must define its purpose and
+retention, handle access and deletion through stem, and must not claim that
+VA Dispatch's tenant-scoped privacy lifecycle job finds or removes accounts
+that never applied to a tenant.
 
 ### MSFS 2024 telemetry decision
 
@@ -104,8 +104,8 @@ this feature must not be presented as optional analytics consent.
 
 ## Processor and transfer controls
 
-- Execute and retain the current data-processing agreements for Clerk and
-  Cloudflare. Record their subprocessors, processing locations, deletion terms,
+- Execute and retain the current data-processing agreement for Cloudflare,
+  which hosts both VA Dispatch and stem. Record their subprocessors, processing locations, deletion terms,
   and incident-notification channels.
 - Select EEA deployment/database regions where the contracted product supports
   them. Document any transfer outside the EEA, its adequacy decision or
@@ -156,14 +156,15 @@ Use and test the verified workflow in
 - export the records listed in the inventory above;
 - correct member identity and callsign data;
 - restrict, object to, or erase processing where the GDPR conditions apply;
-- propagate deletion/correction to Clerk and other processors and backups;
+- propagate deletion/correction to stem and other processors and backups;
 - preserve only records subject to a documented legal obligation or claim; and
 - respond within the applicable deadline and record the outcome.
 
 ## Cookies and browser storage
 
-The current build uses only strictly necessary storage: Clerk session cookies
-and Cloudflare's `__cf_bm` and `_cfuvid` security cookies. It has no analytics,
+The current build uses only strictly necessary storage: the encrypted
+`__Host-va-session` and `__Host-va-auth` cookies, stem's session cookie on its
+own host, and Cloudflare's `__cf_bm` and `_cfuvid` security cookies. It has no analytics,
 advertising, marketing, social-media plugin, remote font, map, or embedded-media
 service, so it shows no consent banner (Section 25(2) no. 2 TDDDG).
 

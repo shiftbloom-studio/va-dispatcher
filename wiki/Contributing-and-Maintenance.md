@@ -44,7 +44,7 @@ Use concise imperative commit subjects, for example `Document Hoppie polling ope
 | Environment variable           | parser, example env, Configuration Reference, deployment docs          |
 | Hoppie/provider behavior       | provider/service, ACARS page, error UX, privacy inventory, tests       |
 | External browser service       | consent implementation, legal notice version, data inventory, tests    |
-| Tenant/branding                | static tenant registry, assets, Clerk mapping, isolation tests, Wiki   |
+| Tenant/branding                | static tenant registry, assets, stem mapping, isolation tests, Wiki    |
 | Dependency/toolchain           | manifests/lockfile, CI, setup docs, compatibility evidence             |
 
 ## Wiki maintenance model
@@ -116,4 +116,4 @@ See [`docs/maintainer-setup.md`](https://github.com/shiftbloom-studio/va-dispatc
 
 ## Getting help
 
-Use [`SUPPORT.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/SUPPORT.md) and the support-question issue form. Third-party service issues may need Clerk, Cloudflare, or Hoppie support after the application request path has been isolated.
+Use [`SUPPORT.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/SUPPORT.md) and the support-question issue form. Third-party service issues may need stem, Cloudflare, or Hoppie support after the application request path has been isolated.

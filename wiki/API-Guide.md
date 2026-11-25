@@ -23,23 +23,25 @@ The OpenAPI renderer assets are version-pinned external CDN resources. The JSON 
 
 ## Authentication
 
-Normal requests use a Clerk session JWT:
+Normal requests use a stem access token and name the tenant by slug:
 
 ```http
 Authorization: Bearer <token>
+X-Tenant-Slug: vsas
 ```
 
-The token must contain a user subject and active organization. The organization
-is resolved to a tenant; clients never submit `tenantId`.
+The token must contain a user subject and, in its `orgs` claim, the tenant's
+stem organization. Without the header, the API uses the only organization in
+the token. Clients never submit `tenantId`.
 
 `/membership-application` is a deliberate pre-membership exception: it
-requires a verified Clerk user subject but not an active organization. It
+requires a verified user subject but no organization membership. It
 accepts only the registered tenant slug and requested role, resolves both the
 tenant and caller identity server-side, and returns no operational data.
 
 Non-production development bypass accepts `X-Dev-User-Id`, `X-Dev-Org-Id`, and
 `X-Dev-Role` when `AUTH_DEV_BYPASS=true`. Narrow exceptions use their own
-credentials instead of Clerk:
+credentials instead of stem tokens:
 
 - SimBrief and Navigraph callbacks validate one-time state or callback tokens;
 - MSFS telemetry ingestion uses a revocable per-device bearer token; and
@@ -72,9 +74,9 @@ Every other authenticated `POST`, `PUT`, `PATCH`, or `DELETE` mounted after the
 business middleware.
 
 GET requests and `/api/v1/internal/*` are excluded. Public provider callbacks
-and device-bearer telemetry ingestion are mounted before Clerk and the bot check and
+and device-bearer telemetry ingestion are mounted before token verification and the bot check and
 validate their own narrow credentials. A scripted production mutation that
-Cloudflare scores as automated receives `403`, even with a valid Clerk token. Read-only API clients remain possible; any other non-browser mutation
+Cloudflare scores as automated receives `403`, even with a valid access token. Read-only API clients remain possible; any other non-browser mutation
 requires an explicitly designed trusted-client authentication path rather than
 weakening the bot check globally.
 
@@ -154,16 +156,16 @@ Do not parse, modify, or synthesize cursors in a client.
 | `GET`    | `/members`                          | Dispatcher     | Search/filter tenant memberships                       |
 | `GET`    | `/members/{id}/impact`              | Admin          | Preview assigned work affected by a member change      |
 | `PATCH`  | `/members/{id}`                     | Admin          | Change/reassign role, profile, callsign, or status     |
-| `DELETE` | `/members/{id}`                     | Admin          | Disable locally, reassign work, then remove from Clerk |
-| `GET`    | `/members/invitations`              | Admin          | List pending Clerk tenant invitations                  |
+| `DELETE` | `/members/{id}`                     | Admin          | Disable locally, reassign work, then remove from stem  |
+| `GET`    | `/members/invitations`              | Admin          | List pending stem tenant invitations                   |
 | `POST`   | `/members/invitations`              | Admin          | Invite a pilot or dispatcher                           |
 | `DELETE` | `/members/invitations/{id}`         | Admin          | Revoke a pending invitation                            |
 | `GET`    | `/membership-application`           | Signed-in user | Read own application state for a tenant slug           |
 | `POST`   | `/membership-application`           | Signed-in user | Submit pilot/dispatcher application                    |
 | `DELETE` | `/membership-application`           | Signed-in user | Cancel own pending application                         |
-| `POST`   | `/members/{id}/application/approve` | Admin          | Synchronize Clerk and activate application             |
+| `POST`   | `/members/{id}/application/approve` | Admin          | Synchronize stem and activate application              |
 | `POST`   | `/members/{id}/application/reject`  | Admin          | Reject and close pending application                   |
-| `POST`   | `/members/sync`                     | Admin          | Reconcile the paged Clerk organization directory       |
+| `POST`   | `/members/sync`                     | Admin          | Reconcile the paged stem organization directory        |
 
 ### Schedule requests
 

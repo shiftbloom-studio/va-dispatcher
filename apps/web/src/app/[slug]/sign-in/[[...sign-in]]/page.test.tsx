@@ -7,23 +7,6 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("@clerk/nextjs", () => ({
-  SignIn: (props: {
-    fallbackRedirectUrl: string;
-    path: string;
-    signUpFallbackRedirectUrl: string;
-    signUpUrl: string;
-  }) => (
-    <div
-      data-fallback-url={props.fallbackRedirectUrl}
-      data-path={props.path}
-      data-sign-up-fallback-url={props.signUpFallbackRedirectUrl}
-      data-sign-up-url={props.signUpUrl}
-      data-testid="clerk-sign-in"
-    />
-  ),
-}));
-
 vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
 }));
@@ -57,18 +40,12 @@ describe("tenant sign-in", () => {
       screen.getByRole("link", { name: "AGPL-3.0-or-later" }),
     ).toBeInTheDocument();
     expect(screen.getByText("No warranty")).toBeInTheDocument();
-    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
-      "data-sign-up-url",
-      "/vsas/sign-up",
-    );
-    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
-      "data-fallback-url",
-      "/vsas",
-    );
-    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
-      "data-sign-up-fallback-url",
-      "/vsas",
-    );
+    expect(
+      screen.getByRole("link", { name: "Continue to sign in" }),
+    ).toHaveAttribute("href", "/auth/login?returnTo=%2Fvsas");
+    expect(
+      screen.getByRole("link", { name: "Create an account" }),
+    ).toHaveAttribute("href", "/vsas/sign-up");
     expect(screen.getByRole("link", { name: "Imprint" })).toHaveAttribute(
       "href",
       "/imprint",

@@ -393,7 +393,7 @@ export async function provisionMembershipWithAudit(input: {
       entityId: id,
       meta: {
         after: { role: input.role, status: "active" },
-        authority: "verified_clerk_membership",
+        authority: "verified_identity_membership",
       },
       createdAt,
     }),
@@ -461,7 +461,7 @@ export async function submitMembershipApplicationWithAudit(input: {
       entityId: sql`id`,
       meta: {
         requestedRole: input.requestedRole,
-        authority: "verified_clerk_user",
+        authority: "verified_identity_user",
       },
       createdAt: submittedAt,
       from: sql`memberships WHERE ${applicant}`,
@@ -491,7 +491,7 @@ export async function cancelMembershipApplicationWithAudit(input: {
       action: "membership.application_cancelled",
       entityType: "membership",
       entityId: sql`id`,
-      meta: { authority: "verified_clerk_user" },
+      meta: { authority: "verified_identity_user" },
       createdAt: cancelledAt,
       from: sql`memberships WHERE ${invited}`,
     }),
@@ -1032,7 +1032,7 @@ export async function recoverMembershipAsTenantAdmin(input: {
       action: "member.admin_recovered",
       entityType: "membership",
       entityId: input.membershipId,
-      meta: { authority: "verified_clerk_organization_admin" },
+      meta: { authority: "verified_identity_organization_admin" },
       createdAt: recoveredAt,
     }),
   ]);

@@ -59,9 +59,6 @@ export default defineConfig({
         API_INTERNAL_URL: apiOrigin,
         NEXT_PUBLIC_E2E_FIXTURE_MODE: "true",
         E2E_FIXTURE_SECRET: fixtureSecret,
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
-          "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
-        CLERK_SECRET_KEY: "sk_test_integrated_fixture_not_used",
         LEGAL_OPERATOR_NAME: "Example Aviation e.V.",
         LEGAL_OPERATOR_ADDRESS: "Example Street 1|10115 Berlin|Germany",
         LEGAL_OPERATOR_EMAIL: "legal@example.test",

@@ -58,7 +58,7 @@ describe("member administration service", () => {
     mocks.writeAudit.mockResolvedValue(undefined);
   });
 
-  it("pages and synchronizes Clerk directories larger than 100 members", async () => {
+  it("pages and synchronizes identity directories larger than 100 members", async () => {
     const allMembers = Array.from({ length: 205 }, (_, index) =>
       directoryMember(index),
     );
@@ -121,7 +121,7 @@ describe("member administration service", () => {
     });
   });
 
-  it("reports a Clerk membership without a stable user ID as incomplete", async () => {
+  it("reports a directory membership without a stable user ID as incomplete", async () => {
     const result = await syncMembersFromDirectory({
       tenantId: "tenant-1",
       actorMembershipId: "admin-1",

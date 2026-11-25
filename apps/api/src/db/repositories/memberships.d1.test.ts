@@ -549,7 +549,7 @@ describe("administrative member transactions (D1)", () => {
     expect(audit.rows).toEqual([
       {
         actorMembershipId: created.id,
-        authority: "verified_clerk_membership",
+        authority: "verified_identity_membership",
       },
     ]);
   });

@@ -1,6 +1,6 @@
 # Deployment and Operations
 
-The production target is Cloudflare: two Workers on one hostname, D1, R2, Workers KV, Clerk Organizations, and Hoppie's ACARS. The step-by-step setup lives in [`docs/cloudflare-deployment.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/docs/cloudflare-deployment.md).
+The production target is Cloudflare: two Workers on one hostname, D1, R2, Workers KV, stem (the shiftbloom account service), and Hoppie's ACARS. The step-by-step setup lives in [`docs/cloudflare-deployment.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/docs/cloudflare-deployment.md).
 
 ## Primary topology
 
@@ -25,22 +25,15 @@ The zone route takes precedence over the custom domain, so browser requests stay
 - D1 Time Travel provides 30 days of point-in-time restore.
 - R2 bucket `va-dispatch-tenant-logos` stores tenant logos.
 
-### Clerk
+### stem
 
-- Enable Organizations with optional membership and organization slugs.
-- Enable Clerk Waitlist mode and email delivery; host the configured waitlist at
-  `/vsas/waitlist`. Invite-only (`restricted`) sign-up mode and the paid
-  allowlist are not required.
-- Set the Clerk Account Portal sign-up fallback redirect to the public
-  `/vsas/join` URL; Dashboard-approved waitlist emails use the Account Portal by
-  default.
-- Disable user-created organizations, automatic first-organization creation,
-  and Verified Domain enrollment/membership requests.
-- Add `org:pilot` and `org:dispatcher` to the Primary Role Set alongside
-  `org:admin`; use pilot as the new-member default.
+- Register a confidential client for app `va-dispatcher` with redirect URI
+  `https://<host>/auth/callback`, post-logout redirect URI `https://<host>/`,
+  and resource `https://<host>/api` (also listed in stem's `RESOURCES`).
+- Make sure stem's `ORG_ROLES` include `dispatcher` and `pilot`.
 - Create the vSAS organization with slug `vsas`.
 - Store its ID in `VSAS_AUTH_ORG_ID`.
-- Keep Clerk Dashboard team access global-only. Review tenant application roles
+- Keep stem operator access global-only. Review tenant application roles
   and organization membership periodically through VA Dispatch.
 
 ### Hoppie
@@ -69,7 +62,7 @@ The zone route takes precedence over the custom domain, so browser requests stay
 
 ## Deployment sequence
 
-1. Provision the D1 database, R2 bucket, and Clerk instance.
+1. Provision the D1 database and R2 bucket, and register the app with stem.
 2. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference) and the deployment guide.
 3. Connect `va-dispatch-api` (root `apps/api`) and `va-dispatch-web` (root
    `apps/web`) with Workers Builds. Deploy the API first.
@@ -80,12 +73,10 @@ The zone route takes precedence over the custom domain, so browser requests stay
 6. Check `GET /api/ready` on the production host.
 7. Verify `VSAS_AUTH_ORG_ID`, then let the first authenticated request from
    that exact organization create or repair the trusted vSAS mapping.
-8. Join `/vsas/waitlist`, invite the entry in Clerk, complete the invited
-   Clerk Account Portal sign-up flow, confirm its fallback reaches `/vsas/join`,
+8. Create an account at `/vsas/sign-up`, confirm it reaches `/vsas/join`,
    submit a pilot or dispatcher application, approve it in the tenant Admin
-   console, select the organization, and verify routing. Test the tenant-branded
-   `/vsas/sign-up` route separately with an invitation that redirects into the
-   application.
+   console, open VA Dispatch again, and verify routing. Test a direct
+   invitation separately.
 9. Load and review `/imprint`, `/impressum`, `/privacy`, and `/datenschutz` before public promotion.
 10. As an Admin, configure/test Hoppie and branding; as the assigned pilot and
     dispatcher, verify any enabled SimBrief, Navigraph, and weather integration.
@@ -101,9 +92,9 @@ detects a missing or incompatible workspace schema but does not repair it.
 Production returns not found for `/internal/seed/vsas`. The first authenticated
 request from the exact `VSAS_AUTH_ORG_ID` creates or repairs the `vsas` tenant
 mapping. A new local membership is provisioned and audited as a pilot or
-dispatcher according to its verified Clerk role. A verified Clerk organization
-Admin may use the serialized recovery path only while the tenant has no active
-application Admin; later changes use the Admin control plane. No other Clerk
+dispatcher according to its verified stem role. A verified organization owner or
+admin may use the serialized recovery path only while the tenant has no active
+application Admin; later changes use the Admin control plane. No other stem
 organization receives that bootstrap behavior.
 
 The seed route remains a non-production convenience for disposable local
@@ -184,7 +175,7 @@ application monitoring.
 - Signed-in users without an organization can see only their tenant
   application state, not operational data.
 - Pilot and dispatcher applications require an explicit tenant-admin decision.
-- Removing a member disables local access even if Clerk removal is temporarily
+- Removing a member disables local access even if stem removal is temporarily
   unavailable; a retry completes provider synchronization.
 
 ### Security and privacy
@@ -192,7 +183,7 @@ application monitoring.
 - HTTPS and HSTS are present.
 - Frame, content-type, referrer, permissions, and CSP headers match policy.
 - Requests with a low bot score are rejected on protected mutations.
-- Public legal pages load without Clerk scripts.
+- Public legal pages load without reading the session or loading third-party scripts.
 - No analytics or tracking requests are made; only strictly necessary cookies are set.
 - `NEXT_PUBLIC_SOURCE_URL` resolves to the corresponding deployed source.
 
@@ -229,7 +220,7 @@ application monitoring.
 - ACARS stores an explicit `accepted`, `rejected`, or `ambiguous` outcome after
   its single send. There is no automatic retry queue; inspect ambiguous rows
   before deciding whether a manual resend is safe.
-- Test a D1 Time Travel restore and Clerk access recovery before they are needed.
+- Test a D1 Time Travel restore and stem access recovery before they are needed.
 
 ## Cost profile
 
@@ -238,7 +229,7 @@ Everything is usage-based with no always-on server:
 - Workers bill per request and CPU time;
 - D1 bills rows read/written and storage, R2 storage and operations, KV reads
   and writes, and Images unique transformations;
-- Clerk is hosted and usage-based; and
+- stem runs on the same Cloudflare account and has no per-user fee; and
 - no external queue is part of v1.
 
 The one-minute Hoppie cron, hourly privacy cron, and simulator telemetry create

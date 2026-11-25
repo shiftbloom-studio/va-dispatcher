@@ -4,7 +4,7 @@
 
 - Node.js 26 or newer; `.nvmrc` pins the version CI uses.
 - pnpm 11.21.0, as declared by `packageManager`.
-- Optional Clerk development keys when testing real authentication.
+- A registered stem client only when testing real sign-in on a public Preview host.
 - Chromium installed through Playwright when running browser tests.
 
 No database server is needed. The API runs under `wrangler dev`, which keeps a
@@ -18,7 +18,7 @@ pnpm install --frozen-lockfile
 
 ## Recommended local mode
 
-The fastest local setup uses local D1, API development-header authentication, and the isolated mock ACARS adapter. It does not contact Clerk or Hoppie for business requests.
+The fastest local setup uses local D1, API development-header authentication, and the isolated mock ACARS adapter. It does not contact stem or Hoppie for business requests.
 
 ### 1. Configure the API
 
@@ -48,12 +48,10 @@ For ordinary development against the local API:
 
 ```dotenv
 API_ORIGIN=http://localhost:3001
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
 NEXT_PUBLIC_SOURCE_URL=https://github.com/shiftbloom-studio/va-dispatcher
 ```
 
-The Clerk keys are still needed for the normal web shell. The separate Playwright fixture mode bypasses Clerk rendering and is configured automatically by `playwright.config.ts`; do not copy its bypass variables into production.
+Without `AUTH_*` values the web shell treats everyone as signed out, because stem cannot redirect to `localhost`. For UI work, use the Playwright route fixture mode (`NEXT_PUBLIC_E2E_ROUTE_FIXTURE_MODE=true`) or call the API directly with the bypass headers below; for the real sign-in flow, see [Real sign-in](#real-sign-in). The Playwright fixture mode bypasses sign-in and is configured automatically by `playwright.config.ts`; do not copy its bypass variables into production.
 
 Configure development-safe legal values as described in [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference). Production requires real operator values.
 
@@ -101,23 +99,9 @@ X-Dev-Role: admin
 
 The browser client does not add these headers itself. Use them when calling the API directly in bypass mode. The web's deterministic end-to-end fixture mode is a different test-only mechanism.
 
-## Real Clerk mode
+## Real sign-in
 
-To exercise production-like authentication locally:
-
-1. Enable Clerk Organizations with optional membership and organization slugs.
-2. Disable user-created organizations and Verified Domain enrollment; add
-   `org:pilot` and `org:dispatcher` to the Primary Role Set.
-3. Create an organization whose slug is exactly `vsas`.
-4. Set its organization ID as `VSAS_AUTH_ORG_ID` in the API.
-5. Put the Clerk secret key in both server environments and the publishable key in the web environment.
-6. Set `APP_ORIGIN=http://localhost:3000` and `AUTH_DEV_BYPASS=false`.
-7. Seed or let the trusted configured organization repair the initial vSAS tenant on first authenticated access.
-8. With Clerk Waitlist mode enabled, join at `/vsas/waitlist`, invite the entry,
-   complete Clerk's default Account Portal sign-up, and confirm the Account
-   Portal sign-up fallback is configured to reach `/vsas/join`. Approve the
-   application from a tenant admin session, and test `/vsas/sign-up` separately
-   with an invitation redirected into the local application.
+stem does not accept loopback redirect URIs, so `localhost` always uses the development bypass above. To exercise the real OIDC flow, deploy a Preview Worker on a public hostname that the stem operator has registered as a redirect URI. Then set `AUTH_ISSUER`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`, `AUTH_AUDIENCE`, and `AUTH_SESSION_SECRET` on the web Worker, `AUTH_ISSUER`, `AUTH_AUDIENCE`, `AUTH_CLIENT_ID`, and `AUTH_CLIENT_SECRET` on the API Worker, and `AUTH_DEV_BYPASS=false`.
 
 Unknown organizations are not automatically provisioned. A new member of a
 registered tenant is provisioned as pilot or dispatcher from the verified role;
@@ -194,7 +178,7 @@ This repository uses Next.js 16.3.6 and APIs may differ from older training mate
 ## Development safety
 
 - Use synthetic users, schedules, flights, messages, and screenshots.
-- Never commit `.env` files, Hoppie logons, Clerk keys, database URLs, cron secrets, or personal data.
+- Never commit `.env` files, Hoppie logons, client or session secrets, database URLs, cron secrets, or personal data.
 - Do not point tests at production services.
 - Do not enable `AUTH_DEV_BYPASS`, `E2E_FIXTURE_MODE`, or
   `NEXT_PUBLIC_E2E_FIXTURE_MODE` in production; runtime validation rejects them.

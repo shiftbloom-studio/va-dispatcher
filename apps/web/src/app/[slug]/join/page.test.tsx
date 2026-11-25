@@ -2,7 +2,7 @@ import { isValidElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  auth: vi.fn(),
+  getSession: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("@clerk/nextjs/server", () => ({ auth: mocks.auth }));
+vi.mock("@/lib/auth/server-session", () => ({
+  getSession: mocks.getSession,
+}));
 vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
   redirect: mocks.redirect,
@@ -26,11 +28,11 @@ import JoinTenantPage from "./page";
 describe("tenant join page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.auth.mockResolvedValue({ userId: "user-applicant", orgSlug: null });
+    mocks.getSession.mockResolvedValue({ sub: "user-applicant" });
   });
 
   it("requires sign-in before exposing the application workflow", async () => {
-    mocks.auth.mockResolvedValue({ userId: null, orgSlug: null });
+    mocks.getSession.mockResolvedValue(null);
 
     await expect(
       JoinTenantPage({ params: Promise.resolve({ slug: "vsas" }) }),
@@ -38,21 +40,7 @@ describe("tenant join page", () => {
     expect(mocks.redirect).toHaveBeenCalledWith("/vsas/sign-in");
   });
 
-  it("renders for a signed-in user without an active organization", async () => {
-    const page = await JoinTenantPage({
-      params: Promise.resolve({ slug: "vsas" }),
-    });
-
-    expect(isValidElement(page)).toBe(true);
-    expect(mocks.redirect).not.toHaveBeenCalled();
-  });
-
-  it("still renders application state when an organization is selected", async () => {
-    mocks.auth.mockResolvedValue({
-      userId: "user-member",
-      orgSlug: "VSAS",
-    });
-
+  it("renders the application workflow for a signed-in user", async () => {
     const page = await JoinTenantPage({
       params: Promise.resolve({ slug: "vsas" }),
     });

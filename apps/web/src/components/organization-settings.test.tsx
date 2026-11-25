@@ -142,7 +142,7 @@ describe("organization settings", () => {
     ).toBeInTheDocument();
   });
 
-  it("configures manual applications and Clerk invitation lifetime", async () => {
+  it("configures manual applications and invitation lifetime", async () => {
     const user = userEvent.setup();
     render(
       <TestQueryProvider>

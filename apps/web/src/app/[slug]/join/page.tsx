@@ -1,10 +1,10 @@
-import { auth } from "@clerk/nextjs/server";
 import { notFound, redirect } from "next/navigation";
 
 import { MembershipApplication } from "@/components/membership-application";
 import { QueryProvider } from "@/components/query-provider";
 import { TenantAuthShell } from "@/components/tenant-auth-shell";
 import { getTenantAuthRoutes } from "@/lib/auth-routes";
+import { getSession } from "@/lib/auth/server-session";
 import { e2eFixtureEnabled } from "@/lib/e2e-fixture";
 import { getPublicTenantConfig } from "@/lib/public-tenant";
 
@@ -18,8 +18,8 @@ export default async function JoinTenantPage({
   if (!tenant) notFound();
 
   if (!e2eFixtureEnabled()) {
-    const session = await auth();
-    if (!session.userId) redirect(getTenantAuthRoutes(slug).signIn);
+    const session = await getSession();
+    if (!session) redirect(getTenantAuthRoutes(slug).signIn);
   }
 
   return (

@@ -1178,7 +1178,7 @@ test("admin configures the tenant Hoppie ground station", async ({
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
 });
 
-test("admin invites, approves, and removes tenant members without Clerk UI", async ({
+test("admin invites, approves, and removes tenant members without identity-provider UI", async ({
   page,
   context,
 }) => {

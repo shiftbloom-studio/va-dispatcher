@@ -20,10 +20,10 @@
     "dev:workers": "vite dev --port 3000"
   },
   "dependencies": {
-    "@clerk/nextjs": "7.10.8",
     "@hookform/resolvers": "7.0.9",
     "@tanstack/react-query": "5.108.4",
     "@vinext/cloudflare": "1.4.0",
+    "jose": "6.2.18",
     "lucide-react": "1.79.0",
     "next": "16.4.6",
     "react": "19.3.1",

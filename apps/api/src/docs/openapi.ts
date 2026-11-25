@@ -4227,7 +4227,7 @@ export const openApiDocument = {
         scheme: "bearer",
         bearerFormat: "JWT",
         description:
-          "Production identity-provider access token with an active Organization claim.",
+          "stem access token (EdDSA JWT, typ at+jwt) for this API. Send X-Tenant-Slug with the Virtual Airline slug; the token's orgs claim must contain that tenant's organization. Without the header, the only organization in the token is used.",
       },
       devUserId: {
         type: "apiKey",

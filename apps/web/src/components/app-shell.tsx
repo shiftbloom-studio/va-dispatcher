@@ -1,11 +1,6 @@
 "use client";
 
 import {
-  OrganizationSwitcher,
-  UserButton,
-  useOrganization,
-} from "@clerk/nextjs";
-import {
   ClipboardList,
   LayoutDashboard,
   MessageSquareText,
@@ -18,6 +13,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { SignOutForm } from "@/components/identity-sign-in";
 import { OnlineStatus } from "@/components/online-status";
 import { SiteFooter } from "@/components/site-footer";
 import { TenantLogo } from "@/components/tenant-logo";
@@ -91,19 +87,11 @@ export function AppShell({
             className="flex min-h-28 items-center border-b border-slate-200 px-6 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--brand-action)]"
           >
             <span className="min-w-0">
-              {bypass ? (
-                <TenantLogo
-                  tenant={tenant}
-                  variant="wordmark"
-                  className="h-11 w-40"
-                />
-              ) : (
-                <ClerkTenantLogo
-                  tenant={tenant}
-                  variant="wordmark"
-                  className="h-11 w-40"
-                />
-              )}
+              <TenantLogo
+                tenant={tenant}
+                variant="wordmark"
+                className="h-11 w-40"
+              />
               <span className="mt-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                 <span
                   aria-hidden
@@ -142,27 +130,13 @@ export function AppShell({
           </nav>
 
           <div className="border-t border-slate-200 p-4">
-            {!bypass ? (
-              <OrganizationSwitcher
-                hidePersonal
-                afterSelectOrganizationUrl="/:slug"
-                appearance={{
-                  elements: {
-                    rootBox: "w-full",
-                    organizationSwitcherTrigger:
-                      "w-full rounded-none border border-slate-200 py-2",
-                  },
-                }}
-              />
-            ) : null}
-            <div className="mt-3 flex items-center gap-3 border border-slate-200 p-3">
-              {bypass ? (
-                <span className="grid size-8 place-items-center bg-slate-900 text-[10px] font-black text-white">
-                  TU
-                </span>
-              ) : (
-                <UserButton />
-              )}
+            <div className="flex items-center gap-3 border border-slate-200 p-3">
+              <span
+                aria-hidden
+                className="grid size-8 shrink-0 place-items-center bg-slate-900 text-[10px] font-black text-white"
+              >
+                {bypass ? "TU" : initials(memberName)}
+              </span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-bold text-slate-900">
                   {memberName}
@@ -180,7 +154,9 @@ export function AppShell({
               >
                 Switch test identity
               </button>
-            ) : null}
+            ) : (
+              <SignOutForm className="mt-2 min-h-10 w-full border border-slate-300 px-3 text-xs font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50" />
+            )}
           </div>
         </aside>
 
@@ -191,19 +167,11 @@ export function AppShell({
               prefetch={false}
               className="flex min-w-0 items-center md:hidden"
             >
-              {bypass ? (
-                <TenantLogo
-                  tenant={tenant}
-                  variant="wordmark"
-                  className="h-8 w-24"
-                />
-              ) : (
-                <ClerkTenantLogo
-                  tenant={tenant}
-                  variant="wordmark"
-                  className="h-8 w-24"
-                />
-              )}
+              <TenantLogo
+                tenant={tenant}
+                variant="wordmark"
+                className="h-8 w-24"
+              />
             </Link>
             <div className="ml-auto flex items-center gap-4 sm:gap-6">
               <UtcClock />
@@ -211,7 +179,7 @@ export function AppShell({
               <OnlineStatus />
               {!bypass ? (
                 <span className="md:hidden">
-                  <UserButton />
+                  <SignOutForm className="text-xs font-black uppercase tracking-wider text-slate-600 hover:text-slate-900" />
                 </span>
               ) : null}
             </div>
@@ -261,25 +229,14 @@ export function AppShell({
   );
 }
 
-function ClerkTenantLogo({
-  tenant,
-  className,
-  variant = "mark",
-}: {
-  tenant: TenantConfig;
-  className: string;
-  variant?: "mark" | "wordmark";
-}) {
-  const { organization } = useOrganization();
-
-  return (
-    <TenantLogo
-      tenant={tenant}
-      src={organization?.imageUrl ?? tenant.logo.src}
-      className={className}
-      variant={variant}
-    />
-  );
+function initials(name: string): string {
+  const letters = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+  return letters || "VA";
 }
 
 function linkIsActive(

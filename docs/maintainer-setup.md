@@ -54,7 +54,7 @@ pnpm package updates to Dependabot when GitHub documents pnpm 11 support.
 The API blocks likely automated mutations with Cloudflare's bot score
 (`request.cf.botManagement.score`, see `apps/api/src/middleware/human.ts`):
 
-- A strict threshold protects bulk flight creation, Clerk membership sync,
+- A strict threshold protects bulk flight creation, stem membership sync,
   Hoppie configuration tests, and outbound Hoppie messages.
 - A basic threshold protects every other `POST`, `PUT`, `PATCH`, and `DELETE`
   request.
@@ -69,19 +69,17 @@ API carry a bot score.
 ## Tenant administration
 
 Review the [administrator control-plane runbook](admin-control-plane.md) before
-reconciling Clerk, deciding applications, removing a member with assigned work,
+reconciling the stem directory, deciding applications, removing a member with assigned work,
 or exporting audit history. Maintain at least two active application
-administrators. The verified Clerk-admin recovery seam is only for a tenant
+administrators. The verified organization-admin recovery seam is only for a tenant
 with no active application administrator and is not a routine role-management
 path.
 
-The global Clerk administrator must keep Organizations in membership-optional
-mode, disable end-user organization creation and Verified Domain enrollment,
-and maintain `org:pilot` plus `org:dispatcher` in the tenant Role Set. Do not
-grant tenant administrators Clerk Dashboard workspace access. Verify
-Production's explicit `APP_ORIGIN`, and allowlist any preview origin in Clerk
-(set `APP_ENV=preview` and its `APP_ORIGIN`) before testing direct invitations
-there.
+The stem operator keeps `pilot` and `dispatcher` in stem's `ORG_ROLES` and
+provisions tenant organizations. Tenant administrators never get stem operator
+access. Verify Production's explicit `APP_ORIGIN`, and have the stem operator
+register any preview origin as a redirect URI (set `APP_ENV=preview` and its
+`APP_ORIGIN`) before testing sign-in or direct invitations there.
 
 Before enabling an active retention policy or handling a verified subject
 request, follow the [privacy lifecycle runbook](privacy-operations.md). Confirm

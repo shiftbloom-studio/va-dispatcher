@@ -6,14 +6,6 @@ import { AppShell } from "@/components/app-shell";
 import type { Me } from "@/lib/api/schemas";
 import type { TenantConfig } from "@/lib/tenant";
 
-vi.mock("@clerk/nextjs", () => ({
-  OrganizationSwitcher: () => <div>Organization switcher</div>,
-  UserButton: () => <div>User button</div>,
-  useOrganization: () => ({
-    organization: { imageUrl: "https://img.clerk.com/org_vsas-logo" },
-  }),
-}));
-
 vi.mock("next/navigation", () => ({
   usePathname: () => "/vsas/dispatch",
   useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
@@ -66,7 +58,7 @@ const me: Me = {
 };
 
 describe("AppShell", () => {
-  it("uses the Clerk organization image and suppresses shell prefetches", () => {
+  it("uses the tenant logo, offers sign-out, and suppresses shell prefetches", () => {
     const { container } = render(
       <AppShell slug="vsas" tenant={tenant} me={me} role="admin">
         Workspace
@@ -80,7 +72,10 @@ describe("AppShell", () => {
     ).not.toHaveLength(0);
     expect(
       screen.getAllByRole("img", { name: "Virtual SAS logo" })[0],
-    ).toHaveAttribute("src", "https://img.clerk.com/org_vsas-logo");
+    ).toHaveAttribute("src", "/tenants/vsas/logo.jpg");
+    expect(
+      screen.getAllByRole("button", { name: "Sign out" }),
+    ).not.toHaveLength(0);
     expect(
       screen.getAllByRole("img", { name: "Virtual SAS logo" })[0]
         ?.parentElement,

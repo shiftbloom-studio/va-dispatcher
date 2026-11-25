@@ -7,23 +7,6 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("@clerk/nextjs", () => ({
-  SignUp: (props: {
-    fallbackRedirectUrl: string;
-    path: string;
-    signInFallbackRedirectUrl: string;
-    signInUrl: string;
-  }) => (
-    <div
-      data-fallback-url={props.fallbackRedirectUrl}
-      data-path={props.path}
-      data-sign-in-fallback-url={props.signInFallbackRedirectUrl}
-      data-sign-in-url={props.signInUrl}
-      data-testid="clerk-sign-up"
-    />
-  ),
-}));
-
 vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
 }));
@@ -44,21 +27,12 @@ describe("tenant sign-up", () => {
     render(await SignUpPage({ params: Promise.resolve({ slug: "vsas" }) }));
 
     expect(screen.getAllByAltText("Virtual SAS logo")).toHaveLength(2);
-    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
-      "data-path",
-      "/vsas/sign-up",
-    );
-    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
-      "data-sign-in-url",
+    expect(
+      screen.getByRole("link", { name: "Continue to sign up" }),
+    ).toHaveAttribute("href", "/auth/login?returnTo=%2Fvsas%2Fjoin");
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+      "href",
       "/vsas/sign-in",
-    );
-    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
-      "data-fallback-url",
-      "/vsas/join",
-    );
-    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
-      "data-sign-in-fallback-url",
-      "/vsas",
     );
   });
 

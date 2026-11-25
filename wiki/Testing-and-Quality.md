@@ -19,10 +19,10 @@ API tests use Vitest in a Node environment and cover:
 - linked-flight validation before contacting Hoppie;
 - ACARS route authorization;
 - flight and schedule state transitions;
-- Clerk compact claims and trusted tenant repair;
+- `orgs` claim checks, tenant selection, and trusted tenant repair;
 - signed-in applicant authentication without an organization claim;
 - unknown-organization rejection;
-- tenant isolation across Clerk organizations;
+- tenant isolation across stem organizations;
 - member self-service callsign uniqueness;
 - admin Hoppie configuration secrecy and authorization;
 - cron authentication and the scheduled-handler cron mapping;
@@ -34,7 +34,7 @@ API tests use Vitest in a Node environment and cover:
 - SimBrief revision/callback atomicity and trusted attribution;
 - simulator-device ownership, telemetry/OOOI provenance, pruning, and visibility;
 - admin reassignment, last-admin recovery, audit redaction/export; and
-- tenant-scoped application submission/cancellation, approval races, Clerk role
+- tenant-scoped application submission/cancellation, approval races, stem role
   synchronization, safe local-first removal, invitations, and access policy;
 - privacy dry-run/execute, holds, subject workflows, and external-task recovery.
 
@@ -74,7 +74,7 @@ behavior. The integrated suite contains exactly two journeys:
 The integrated suite starts real Next.js and Hono processes and persists through
 repositories to an in-memory local D1 database created for the run. It blocks
 external provider traffic and uses a production-hard-off synthetic auth
-authority. It is not a live Clerk, Cloudflare bot-score, zone-route, Hoppie,
+authority. It is not a live stem, Cloudflare bot-score, zone-route, Hoppie,
 SimBrief, or Navigraph test.
 
 ## Coverage thresholds
@@ -155,17 +155,17 @@ Do not perform broad dependency updates incidentally. Read release notes, check 
 
 ## What to test for common changes
 
-| Change               | Minimum focused evidence                                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| New API resource     | validation, role denial, tenant isolation, happy path, serializer/OpenAPI                                         |
-| State transition     | allowed path, illegal jumps, actor ownership, UI action matrix                                                    |
-| Schema field         | repository, serializer, web schema, null/backfill behavior, rollout                                               |
-| Clerk/tenant logic   | signed out, no org, wrong org, unknown tenant, role map/sync, pending/disabled membership, approval/removal races |
-| Hoppie behavior      | provider error class, no-secret error, explicit ambiguous outcome, no auto retry                                  |
-| Bot-check policy     | strict/basic route level and excluded routes                                                                      |
-| Optional third party | pre-consent absence, accept, reject, withdrawal, version expiry, cross-tab                                        |
-| UI workflow          | loading, empty, error, mutation success/failure, accessibility, browser journey                                   |
-| Legal copy/config    | strict production failure and rendered public pages                                                               |
+| Change                | Minimum focused evidence                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| New API resource      | validation, role denial, tenant isolation, happy path, serializer/OpenAPI                                         |
+| State transition      | allowed path, illegal jumps, actor ownership, UI action matrix                                                    |
+| Schema field          | repository, serializer, web schema, null/backfill behavior, rollout                                               |
+| Identity/tenant logic | signed out, no org, wrong org, unknown tenant, role map/sync, pending/disabled membership, approval/removal races |
+| Hoppie behavior       | provider error class, no-secret error, explicit ambiguous outcome, no auto retry                                  |
+| Bot-check policy      | strict/basic route level and excluded routes                                                                      |
+| Optional third party  | pre-consent absence, accept, reject, withdrawal, version expiry, cross-tab                                        |
+| UI workflow           | loading, empty, error, mutation success/failure, accessibility, browser journey                                   |
+| Legal copy/config     | strict production failure and rendered public pages                                                               |
 
 ## Evidence language
 

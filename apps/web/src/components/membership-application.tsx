@@ -1,10 +1,10 @@
 "use client";
 
-import { OrganizationList, SignOutButton } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, Clock3, ShieldCheck, UserPlus } from "lucide-react";
 import { useState } from "react";
 
+import { SignOutForm } from "@/components/identity-sign-in";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Label, Select } from "@/components/ui/fields";
@@ -106,14 +106,16 @@ export function MembershipApplication({
         <Card className="overflow-hidden">
           <CardHeader
             title="Membership approved"
-            description="Select the organization below to open VA Dispatch."
+            description="Your access is ready. Open VA Dispatch to continue."
             action={
               <CircleCheck aria-hidden className="size-5 text-emerald-700" />
             }
           />
           <div className="p-5">
+            {/* A fresh sign-in picks up the new organization role at once;
+                stem's own session makes it a quick redirect. */}
             <a
-              href={`/${slug}`}
+              href={`/auth/login?returnTo=${encodeURIComponent(`/${slug}`)}`}
               className="inline-flex min-h-11 items-center bg-[var(--brand-action)] px-4 py-2 text-sm font-semibold text-[var(--brand-on-action)] hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
               Open VA Dispatch
@@ -185,16 +187,8 @@ export function MembershipApplication({
         </p>
       ) : null}
 
-      <div className="overflow-hidden border border-slate-200 bg-white p-2">
-        <OrganizationList hidePersonal afterSelectOrganizationUrl="/:slug" />
-      </div>
       <div className="text-center text-sm text-slate-600">
-        Using the wrong account?{" "}
-        <SignOutButton redirectUrl={`/${slug}/sign-in`}>
-          <button className="font-semibold text-[var(--brand-action)] underline underline-offset-4">
-            Sign out
-          </button>
-        </SignOutButton>
+        Using the wrong account? <SignOutForm />
       </div>
     </div>
   );

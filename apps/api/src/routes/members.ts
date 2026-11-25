@@ -587,11 +587,11 @@ function invitationRedirectUrl(slug: string): string {
       { status: 503 },
     );
   }
-  // The identity provider appends its invitation ticket and account status to
-  // this public page. The embedded SignIn component handles both existing
-  // users and the transfer to sign-up for new users; the protected tenant root
-  // cannot do that without dropping the ticket.
-  return new URL(`/${slug}/sign-in`, origin).toString();
+  // After accepting in stem, the person lands here. A fresh sign-in picks up
+  // the new organization role at once; stem's own session makes it quick.
+  const url = new URL("/auth/login", origin);
+  url.searchParams.set("returnTo", `/${slug}`);
+  return url.toString();
 }
 
 function directoryBypassed(): boolean {

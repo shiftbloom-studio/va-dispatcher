@@ -55,8 +55,12 @@ Primary example: `apps/web/.env.example`.
 
 | Variable                             | Exposure     | Required when              | Purpose                                                                        |
 | ------------------------------------ | ------------ | -------------------------- | ------------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`  | Browser      | Normal auth                | Clerk publishable key                                                          |
-| `CLERK_SECRET_KEY`                   | Server only  | Server-side Clerk auth     | Clerk secret key                                                               |
+| `AUTH_ISSUER`                        | Server only  | Sign-in                    | stem issuer, for example `https://stem.example.com`                            |
+| `AUTH_CLIENT_ID`                     | Server only  | Sign-in                    | The app's OIDC client ID                                                       |
+| `AUTH_CLIENT_SECRET`                 | Server only  | Sign-in                    | The app's OIDC client secret (Worker secret)                                   |
+| `AUTH_AUDIENCE`                      | Server only  | Sign-in                    | API resource requested on authorize and token calls; same value as the API's   |
+| `AUTH_SESSION_SECRET`                | Server only  | Sign-in                    | 32+ random characters that encrypt the session cookie (Worker secret)          |
+| `APP_ORIGIN`                         | Server only  | Production                 | Public origin for redirect URIs; set from `VA_HOSTNAME` by the Worker config   |
 | `API_INTERNAL_URL`                   | Server only  | Local or test override     | API origin for server calls; production uses the `API` service binding instead |
 | `API_ORIGIN`                         | Server/build | Local development          | `next dev` rewrites browser `/api/*` requests to this origin                   |
 | `NEXT_PUBLIC_SOURCE_URL`             | Browser      | Every hosted fork          | Corresponding source for the deployed AGPL version                             |
@@ -97,61 +101,31 @@ The public `/imprint`, `/impressum`, `/privacy`, and `/datenschutz` pages load o
 
 The repository cannot decide which optional disclosure duties apply to a specific operator. Review the rendered pages and `docs/privacy-compliance.md` with qualified counsel before launch.
 
-## Clerk configuration
+## stem configuration
 
-The global Clerk application administrator must configure the instance once:
+stem is the shared shiftbloom account service. Its operator registers VA Dispatch once:
 
-1. Enable Organizations with **membership optional**. Applicants must be able
-   to hold a verified user session before they belong to an organization.
-2. Enable organization slugs.
-3. Disable user-created organizations and automatic first-organization
-   creation. Only global application administrators provision tenants.
-4. Disable Verified Domain automatic invitations/suggestions and Clerk-native
-   membership requests for this deployment. VA Dispatch owns the tenant-level
-   manual approval queue; enabling a second enrollment path would create
-   inconsistent approval state.
-5. Enable Clerk Waitlist mode and email delivery. The waitlist is the
-   application-wide gate for self-service account requests; VA Dispatch still
-   owns the separate tenant-role application after account creation. Do not
-   enable Invite-only (`restricted`) sign-up mode or the paid allowlist; neither
-   is required for this flow.
-6. Add custom roles with keys `pilot` and `dispatcher`, producing
-   `org:pilot` and `org:dispatcher`. Include them with `org:admin` in the
-   Primary Role Set and make `org:pilot` the new-member default.
-7. Create the vSAS organization with slug exactly `vsas` and set
-   `VSAS_AUTH_ORG_ID` to its immutable ID.
-8. In the Clerk Account Portal **Redirects** settings, set the sign-up fallback
-   to the public `https://<web-origin>/vsas/join` URL. Dashboard-approved
-   waitlist emails use the Account Portal sign-up page by default and do not
-   inherit the application's `ClerkProvider` URLs.
-9. Set Production `APP_ORIGIN` to the canonical public web origin so
-   server-created organization invitations return through `/vsas/sign-in`.
-   A Preview Worker needs its own explicit `APP_ORIGIN`, allowlisted in Clerk,
-   before testing direct invitations. Confirm Clerk's redirect/origin
-   settings cover the tested URL, then acceptance-test the Account Portal
-   waitlist flow, tenant-branded invited sign-up, and direct organization
-   invitation separately.
+1. Create a confidential client with `app` = `va-dispatcher`:
+   - redirect URI `https://<web-origin>/auth/callback`;
+   - post-logout redirect URI `https://<web-origin>/`;
+   - resource `https://<web-origin>/api`, which must also be listed in stem's `RESOURCES`;
+   - `skip_consent` (first-party app).
+     The client ID and secret go to both Workers (`AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`). The web Worker uses them to sign people in, and the API Worker uses them for the directory API.
+2. Include `dispatcher` and `pilot` in stem's `ORG_ROLES`.
+3. Create the vSAS organization for app `va-dispatcher` with slug exactly `vsas`, and set `VSAS_AUTH_ORG_ID` to its ID.
+4. Set `APP_ORIGIN` to the canonical public web origin, so invitation links return to `/:slug` on an allowed redirect origin.
 
-Do not give tenant administrators Clerk Dashboard team access. Their Clerk
-organization role and the VA Dispatch `admin` role are tenant-scoped; global
-instance settings, API keys, tenant provisioning, role definitions, and
-Verified Domain policy remain with the global application administrator.
+Tenant administrators never need access to stem itself. Their organization role and the VA Dispatch `admin` role are tenant-scoped; clients, roles, and organization provisioning stay with the stem operator.
 
-Clerk organization roles map as follows:
+Organization roles map as follows:
 
-| Clerk role suffix                     | Application role |
+| stem organization role                | Application role |
 | ------------------------------------- | ---------------- |
 | `admin`, `owner`                      | `admin`          |
 | `dispatcher`                          | `dispatcher`     |
 | `pilot`, `member`, unknown, or absent | `pilot`          |
 
-First tenant access provisions the verified `org:pilot` or `org:dispatcher`
-role. The stored local membership is the runtime authority after provisioning,
-and active role changes from the VA Dispatch admin console are synchronized
-back to Clerk. The sole recovery exception can promote a verified Clerk
-organization Admin when the tenant has no active application Admin. Disabled
-or invited local memberships cannot access the application and are not revived
-by directory synchronization.
+First tenant access provisions the verified `pilot` or `dispatcher` role. The stored local membership is the runtime authority after provisioning, and active role changes from the VA Dispatch admin console are synchronized back to stem. The sole recovery exception can promote a verified organization admin or owner when the tenant has no active application Admin. Disabled or invited local memberships cannot access the application and are not revived by directory synchronization.
 
 Tenant administrators configure the organization name, allowed application
 roles, application open/closed switch, and 7/14/30-day invitation lifetime at
@@ -204,8 +178,8 @@ Before promoting a deployment:
 1. Load `/api/health`, confirm the database-configured flag and effective ACARS
    provider, then verify readiness with a synthetic authenticated read.
 2. Create a synthetic account through the tenant URL, submit an application,
-   approve it in the tenant admin UI, select the organization, and confirm URL,
-   Clerk organization, role, and API tenant agree.
+   approve it in the tenant admin UI, open the tenant again, and confirm URL,
+   stem organization, role, and API tenant agree.
 3. Load `/imprint`, `/impressum`, `/privacy`, and `/datenschutz`; verify real
    operator details, the language switch, and all links.
 4. Confirm `NEXT_PUBLIC_SOURCE_URL` points to the corresponding source of the deployed version.
