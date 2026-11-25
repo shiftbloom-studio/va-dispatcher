@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { OptionalTelemetry } from "@/components/optional-telemetry";
-import { PrivacyControls } from "@/components/privacy-controls";
-
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,8 +22,6 @@ export default function RootLayout({
           Skip to content
         </a>
         {children}
-        <PrivacyControls />
-        <OptionalTelemetry />
       </body>
     </html>
   );

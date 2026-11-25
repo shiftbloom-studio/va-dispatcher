@@ -1,81 +1,42 @@
-# Cost & provisioning (scale-to-zero)
+# Cost and provisioning
 
-Goal: **near-zero cost when nobody is using the tool**, while staying ready for vSAS testing.
+Goal: low, usage-based cost with no always-on servers.
 
-## Stack choices for idle = $0
+## Stack
 
-### Neon Postgres (required)
+| Layer          | Service                       | Billing model                                        |
+| -------------- | ----------------------------- | ---------------------------------------------------- |
+| Web + API      | Cloudflare Workers            | Requests and CPU time; nothing while idle            |
+| Database       | Cloudflare D1                 | Rows read/written and storage; no idle compute       |
+| Logos          | Cloudflare R2                 | Storage and operations; no egress fees               |
+| Data cache     | Workers KV                    | Reads, writes, and storage                           |
+| Images         | Cloudflare Images (transform) | Unique transformations per month                     |
+| Scheduled jobs | Worker cron triggers          | Counted as Worker invocations                        |
+| Auth           | Clerk + B2B Authentication    | Hosted plan; production custom roles need the add-on |
 
-- Use **Neon Free** (or Launch with autosuspend) via Vercel Marketplace.
-- Neon **scales to zero**: compute suspends after idle → no compute charge while sleeping.
-- Cold start on first query is a few hundred ms — acceptable for dispatch UI.
-- Driver already used: `@neondatabase/serverless` (HTTP, no persistent pool to keep warm).
+Check current Cloudflare and Clerk pricing and free allowances before launch.
+Set Cloudflare budget alerts for Workers, D1, R2, and Images.
 
-**Avoid:** always-on Postgres, large fixed compute, paid Redis for v1.
+## Scheduled load
 
-### Clerk (required for real auth)
+- The Hoppie poll runs every minute but reads only tenants with a saved
+  encrypted logon. With no configured tenant it performs one indexed query.
+- The privacy lifecycle runs hourly and processes at most ten queued runs.
 
-- Clerk's development instance is sufficient for local role testing, but the
-  production `org:pilot` and `org:dispatcher` custom roles require the **B2B
-  Authentication add-on**. Verify current Clerk pricing and included allowances
-  before launch; the Free plan alone is not a complete production fit.
-- No server process of yours; cost is the hosted plan/add-on and usage rather
-  than idle compute.
-- Locally you can skip Clerk with `AUTH_DEV_BYPASS=true` (never production).
+## Clerk
 
-### Vercel Functions
+Clerk's development instance is enough for local role testing, but the
+production `org:pilot` and `org:dispatcher` custom roles require the **B2B
+Authentication add-on**. Locally you can skip Clerk with `AUTH_DEV_BYPASS=true`
+(never in production).
 
-- Fluid Compute / Active CPU: billed when handling requests, not for sitting idle.
-- Hobby/Pro free allowances cover light VA traffic.
-- The production Hoppie cron runs **every minute** and polls only tenants with a saved logon. Vercel Pro is required for that frequency.
-- The privacy lifecycle cron runs hourly and processes at most ten resumable
-  checkpoints per invocation. It creates no destructive work until a policy is
-  dual-approved and the dry-run/confirmation rules are satisfied.
+## ACARS by environment
 
-### ACARS
+| Environment  | Behavior                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| Local / test | `ACARS_PROVIDER=mock`; the poll job skips work                                            |
+| Production   | Hoppie is enforced; the cron checks configured tenants once per minute and sends are live |
 
-| Environment        | Behavior                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------- |
-| Development / test | `ACARS_PROVIDER=mock` uses the internal adapter; no background Hoppie polling                      |
-| Production         | Hoppie is enforced; the cron checks configured tenants once per minute and outbound sends are live |
+## Provisioning
 
-## Provisioning steps
-
-```bash
-cd va-dispatcher
-vercel login          # browser once
-vercel link           # create/link project (Hobby is fine)
-
-# Storage — pick Free / scale-to-zero plan in the prompt
-vercel integration add neon --yes
-
-# Auth — production custom roles require Clerk's B2B Authentication add-on
-vercel integration add clerk --yes
-
-# Pull secrets (names only logged; never commit .env)
-vercel env pull apps/api/.env.local --yes
-cp apps/api/.env.local apps/api/.env
-# ensure: AUTH_DEV_BYPASS=true for local without Clerk UI
-#         ACARS_PROVIDER=hoppie (production; tenants configure credentials in Settings)
-#         CRON_SECRET=...
-
-DATABASE_URL='postgresql://...' pnpm db:push
-curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
-  -H "Authorization: Bearer $CRON_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"clerkOrgId":"org_..."}'
-```
-
-If an integration requires a **browser claim** step:
-
-```bash
-vercel integration open neon
-vercel integration open clerk
-```
-
-## What not to add (yet)
-
-- Upstash Redis / queues (idle or minimum cost; not needed)
-- Always-on Neon compute
-- 1-minute Hoppie polling cron before live ACARS is required
-- Extra observability SaaS until you have production traffic
+Follow [`cloudflare-deployment.md`](cloudflare-deployment.md).

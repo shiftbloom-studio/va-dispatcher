@@ -248,18 +248,7 @@ async function flightFeatureFixtures(
   );
 }
 
-async function continueWithoutAnalytics(page: Page) {
-  const notice = page.getByRole("complementary", { name: "Cookie notice" });
-  await expect(notice).toBeVisible();
-  await notice
-    .getByRole("button", { name: "Continue without analytics" })
-    .click();
-  await expect(notice).toBeHidden();
-}
-
-test("public legal pages expose privacy and telemetry controls", async ({
-  page,
-}) => {
+test("public legal pages load without a consent banner", async ({ page }) => {
   await page.goto("/privacy");
   await expect(
     page.getByRole("heading", { name: "Privacy Notice", exact: true }),
@@ -269,24 +258,22 @@ test("public legal pages expose privacy and telemetry controls", async ({
   ).toBeVisible();
   await expect(page.locator('script[src*="clerk"]')).toHaveCount(0);
 
-  const notice = page.getByRole("complementary", { name: "Cookie notice" });
-  await expect(notice).toBeVisible();
-  await page.getByRole("button", { name: "Details" }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByText("Always active", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Use without analytics" }).click();
-  await page.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeHidden();
-  await expect(notice).toBeHidden();
+  // Only strictly necessary storage is used, so no consent banner is shown.
+  await expect(
+    page.getByRole("complementary", { name: "Cookie notice" }),
+  ).toHaveCount(0);
 
-  await page.reload();
-  await expect(notice).toBeHidden();
-  await page.getByRole("button", { name: "Cookie settings" }).click();
-  await page.getByRole("button", { name: "Show notice again" }).click();
-  await expect(notice).toBeVisible();
+  await page.getByRole("link", { name: "Deutsch" }).click();
+  await expect(page).toHaveURL(/\/datenschutz$/);
+  await expect(
+    page.getByRole("heading", { name: "Datenschutzerklärung", exact: true }),
+  ).toBeVisible();
 
   await page.goto("/imprint");
-  await expect(page).toHaveURL(/\/impressum$/);
+  await expect(
+    page.getByRole("heading", { name: "Imprint", exact: true }),
+  ).toBeVisible();
+  await page.goto("/impressum");
   await expect(
     page.getByRole("heading", { name: "Impressum", exact: true }),
   ).toBeVisible();
@@ -353,7 +340,6 @@ test("pilot requests a UTC schedule and accepts an offer", async ({
   await flightFeatureFixtures(page);
 
   await page.goto("/vsas/portal/schedule-requests/new");
-  await continueWithoutAnalytics(page);
   await page.getByLabel("Number of flights").fill("1");
   await page.getByLabel("Start (UTC)").fill("2026-09-10T08:00");
   await page.getByLabel("End (UTC)").fill("2026-09-10T12:00");
@@ -413,7 +399,6 @@ test("pilot edit reloads after a schedule request version conflict", async ({
   );
 
   await page.goto(`/vsas/portal/schedule-requests/${currentRequest.id}`);
-  await continueWithoutAnalytics(page);
   await page.getByRole("button", { name: "Edit request" }).click();
   const title = page.getByLabel("Title (optional)");
   await title.fill("Stale pilot edit");
@@ -523,7 +508,6 @@ test("dispatcher builds the exact offer and advances a flight", async ({
   await flightFeatureFixtures(page);
 
   await page.goto(`/vsas/dispatch/requests/${currentRequest.id}`);
-  await continueWithoutAnalytics(page);
   await page.getByLabel("Flights in this batch").selectOption("1");
   await page.getByLabel("Flight number").fill("SK201");
   await page.getByLabel("Departure ICAO").fill("EKCH");
@@ -758,7 +742,6 @@ test("pilot cancels a request and explicitly cancels pre-departure flights", asy
   );
 
   await page.goto(`/vsas/portal/schedule-requests/${currentRequest.id}`);
-  await continueWithoutAnalytics(page);
   await page.getByRole("button", { name: "Cancel request" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Cancel pre-departure flights").check();
@@ -810,7 +793,6 @@ test("dispatcher cancels a request while preserving its linked offers", async ({
   );
 
   await page.goto(`/vsas/dispatch/requests/${currentRequest.id}`);
-  await continueWithoutAnalytics(page);
   await page.getByRole("button", { name: "Cancel request" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("Keep linked flights")).toBeChecked();
@@ -913,7 +895,6 @@ test("dispatcher monitors MSFS telemetry and records an OOOI correction", async 
   });
 
   await page.goto(`/vsas/dispatch/flights/${currentFlight.id}`);
-  await continueWithoutAnalytics(page);
   await expect(
     page.getByText("Simulator online", { exact: true }),
   ).toBeVisible();
@@ -994,7 +975,6 @@ test("operations views show real pilot presence, an overdue lane, and the pilot'
   );
 
   await page.goto("/vsas/dispatch");
-  await continueWithoutAnalytics(page);
   await expect(page.getByText("Pilots online")).toBeVisible();
   await expect(page.getByText("1 airborne · 0 stale")).toBeVisible();
   const overdueLane = page.getByRole("region", { name: "Overdue" });
@@ -1053,7 +1033,6 @@ test("dispatcher telemetry workspace fails closed when the flight resource is de
   );
 
   await page.goto(`/vsas/dispatch/flights/${currentFlight.id}`);
-  await continueWithoutAnalytics(page);
 
   await expect(page.getByText("Flight telemetry not found")).toBeVisible();
   await expect(page.getByText("Simulator online", { exact: true })).toHaveCount(
@@ -1106,7 +1085,6 @@ test("dispatcher sends Hoppie ACARS", async ({ page, context }) => {
     return json(route, { message }, 201);
   });
   await page.goto("/vsas/dispatch/acars");
-  await continueWithoutAnalytics(page);
   await page.getByLabel("Recipient station").fill("SAS101");
   await page.getByLabel("Message", { exact: true }).fill("CONTACT DISPATCH");
   await page.getByRole("button", { name: "Send telex" }).click();
@@ -1139,7 +1117,6 @@ test("dispatcher simulates inbound ACARS with the development adapter", async ({
   });
 
   await page.goto("/vsas/dispatch/acars");
-  await continueWithoutAnalytics(page);
   await page.getByLabel("Simulated sender").fill("sas404");
   await page.getByLabel("Simulated message").fill("REQUESTING GATE");
   await page.getByRole("button", { name: "Simulate inbound" }).click();
@@ -1191,7 +1168,6 @@ test("admin configures the tenant Hoppie ground station", async ({
   });
 
   await page.goto("/vsas/settings/organization");
-  await continueWithoutAnalytics(page);
   await page.getByLabel("Ground-station callsign").fill("sas");
   await page.getByLabel("Ground-station Hoppie logon").fill("private-logon");
   await page.getByRole("button", { name: "Test and save" }).click();
@@ -1314,7 +1290,6 @@ test("admin invites, approves, and removes tenant members without Clerk UI", asy
 
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/vsas/admin");
-  await continueWithoutAnalytics(page);
 
   await page.getByLabel("Email address").fill("new.dispatcher@example.test");
   await page.getByLabel("Tenant role").selectOption("dispatcher");

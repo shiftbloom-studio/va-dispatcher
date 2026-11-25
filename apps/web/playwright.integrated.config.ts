@@ -4,8 +4,6 @@ const webPort = validPort("E2E_INTEGRATED_WEB_PORT", 3200);
 const apiPort = validPort("E2E_INTEGRATED_API_PORT", 3201);
 const webOrigin = `http://127.0.0.1:${webPort}`;
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
-const databaseUrl = required("E2E_DATABASE_URL");
-const databaseName = required("E2E_CONFIRM_DATABASE");
 const fixtureSecret =
   process.env.E2E_FIXTURE_SECRET ??
   "local-integrated-e2e-authority-not-for-production";
@@ -36,11 +34,9 @@ export default defineConfig({
         NODE_ENV: "test",
         PORT: String(apiPort),
         CORS_ORIGIN: webOrigin,
-        DATABASE_URL: databaseUrl,
         AUTH_DEV_BYPASS: "true",
         E2E_FIXTURE_MODE: "true",
         E2E_FIXTURE_SECRET: fixtureSecret,
-        E2E_CONFIRM_DATABASE: databaseName,
         ACARS_PROVIDER: "mock",
         CRON_SECRET: "isolated-e2e-cron-authority",
         VSAS_CLERK_ORG_ID: "org_e2e_vsas",
@@ -76,12 +72,6 @@ export default defineConfig({
     },
   ],
 });
-
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required for integrated E2E`);
-  return value;
-}
 
 function validPort(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);

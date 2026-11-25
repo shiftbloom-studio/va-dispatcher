@@ -279,7 +279,7 @@ export async function processRetentionRun(
       await privacyRepo.createExternalRunTask({
         tenantId: claimed.tenantId,
         runId: claimed.id,
-        provider: classKey === "logs" ? "vercel" : "backup",
+        provider: classKey === "logs" ? "cloudflare" : "backup",
         action:
           classKey === "logs"
             ? `verify_log_expiry_${config.classes.logs.retentionDays}_days`
@@ -890,8 +890,8 @@ export async function exportPrivacyRequestPage(input: {
       stores: privacyRepo.PRIVACY_EXPORT_STORES,
       externalSystems: [
         "Clerk",
-        "Vercel logs and security telemetry",
-        "Neon backups and point-in-time recovery",
+        "Cloudflare Workers logs and security telemetry",
+        "Cloudflare D1 Time Travel (point-in-time recovery)",
         "Hoppie provider queue",
         "Navigraph and SimBrief",
       ],
@@ -1034,8 +1034,8 @@ async function ensureDestructiveExternalTasks(
         provider: "clerk",
         action: "disable_or_delete_account_before_local_destruction",
       },
-      { provider: "vercel", action: "review_subject_log_deletion" },
-      { provider: "neon", action: "verify_pitr_expiry" },
+      { provider: "cloudflare", action: "review_subject_log_deletion" },
+      { provider: "cloudflare", action: "verify_d1_time_travel_expiry" },
       { provider: "backup", action: "verify_backup_expiry" },
       {
         provider: "hoppie",
@@ -1061,8 +1061,8 @@ async function ensureExportExternalTasks(
     requestId: request.id,
     tasks: [
       { provider: "clerk", action: "export_verified_identity_record" },
-      { provider: "vercel", action: "export_or_assess_subject_logs" },
-      { provider: "neon", action: "assess_backup_and_pitr_scope" },
+      { provider: "cloudflare", action: "export_or_assess_subject_logs" },
+      { provider: "cloudflare", action: "assess_d1_time_travel_scope" },
       { provider: "backup", action: "assess_independent_backup_scope" },
       { provider: "hoppie", action: "document_provider_queue_scope" },
       {

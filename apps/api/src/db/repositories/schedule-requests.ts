@@ -1,7 +1,9 @@
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { guard, insertAudit, ms, runAtomic } from "../atomic.js";
 import { getDb } from "../client.js";
 import {
-  auditEvents,
   flights,
   scheduleRequests,
   type ScheduleRequest,
@@ -25,56 +27,33 @@ export async function createScheduleRequest(input: {
   preferences?: Record<string, unknown>;
 }): Promise<ScheduleRequest> {
   const db = getDb();
-  const result = await db.execute<{ id: string }>(sql`
-    WITH inserted AS (
-      INSERT INTO ${scheduleRequests} (
-        tenant_id,
-        pilot_membership_id,
-        title,
-        notes,
-        window_start,
-        window_end,
-        desired_flight_count,
-        preferences,
-        status
-      )
-      VALUES (
-        ${input.tenantId},
-        ${input.pilotMembershipId},
-        ${input.title ?? null},
-        ${input.notes ?? null},
-        ${sql.param(input.windowStart, scheduleRequests.windowStart)},
-        ${sql.param(input.windowEnd, scheduleRequests.windowEnd)},
-        ${input.desiredFlightCount},
-        ${JSON.stringify(input.preferences ?? {})}::jsonb,
-        'pending'
-      )
-      RETURNING ${scheduleRequests.id}
-    ), audited AS (
-      INSERT INTO ${auditEvents} (
-        tenant_id,
-        actor_membership_id,
-        action,
-        entity_type,
-        entity_id,
-        meta
-      )
-      SELECT
-        ${input.tenantId},
-        ${input.actorMembershipId},
-        'schedule_request.create',
-        'schedule_request',
-        inserted.id,
-        '{}'::jsonb
-      FROM inserted
-      RETURNING id
-    )
-    SELECT inserted.id FROM inserted INNER JOIN audited ON TRUE
-  `);
-  const id = result.rows[0]?.id;
-  if (!id) {
-    throw new Error("Schedule request creation did not return an audited row");
-  }
+  const id = randomUUID();
+  const now = new Date();
+  await runAtomic([
+    db.insert(scheduleRequests).values({
+      id,
+      tenantId: input.tenantId,
+      pilotMembershipId: input.pilotMembershipId,
+      title: input.title ?? null,
+      notes: input.notes ?? null,
+      windowStart: input.windowStart,
+      windowEnd: input.windowEnd,
+      desiredFlightCount: input.desiredFlightCount,
+      preferences: input.preferences ?? {},
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    }),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.actorMembershipId,
+      action: "schedule_request.create",
+      entityType: "schedule_request",
+      entityId: id,
+      meta: {},
+      createdAt: now,
+    }),
+  ]);
   const created = await findScheduleRequest(input.tenantId, id);
   if (!created) {
     throw new Error("Created schedule request could not be reloaded");
@@ -97,6 +76,26 @@ export async function findScheduleRequest(
   return rows[0] ?? null;
 }
 
+function requestAt(input: {
+  tenantId: string;
+  id: string;
+  expectedVersion: number;
+  expectedStatus: ScheduleRequestStatus;
+}) {
+  return and(
+    eq(scheduleRequests.tenantId, input.tenantId),
+    eq(scheduleRequests.id, input.id),
+    eq(scheduleRequests.version, input.expectedVersion),
+    eq(scheduleRequests.status, input.expectedStatus),
+  )!;
+}
+
+function requestAtGuard(input: Parameters<typeof requestAt>[0]) {
+  return guard(
+    sql`EXISTS (SELECT 1 FROM ${scheduleRequests} WHERE ${requestAt(input)})`,
+  );
+}
+
 export async function updateScheduleRequest(input: {
   tenantId: string;
   id: string;
@@ -115,55 +114,42 @@ export async function updateScheduleRequest(input: {
   };
 }): Promise<ScheduleRequest | null> {
   const db = getDb();
-  const auditMeta = JSON.stringify(input.auditMeta);
-  const result = await db.execute<{ id: string }>(sql`
-    WITH updated AS (
-      UPDATE ${scheduleRequests}
-      SET
-        ${sql.identifier(scheduleRequests.title.name)} = ${input.patch.title},
-        ${sql.identifier(scheduleRequests.notes.name)} = ${input.patch.notes},
-        ${sql.identifier(scheduleRequests.windowStart.name)} = ${sql.param(input.patch.windowStart, scheduleRequests.windowStart)},
-        ${sql.identifier(scheduleRequests.windowEnd.name)} = ${sql.param(input.patch.windowEnd, scheduleRequests.windowEnd)},
-        ${sql.identifier(scheduleRequests.desiredFlightCount.name)} = ${input.patch.desiredFlightCount},
-        ${sql.identifier(scheduleRequests.preferences.name)} = ${JSON.stringify(input.patch.preferences)}::jsonb,
-        ${sql.identifier(scheduleRequests.version.name)} = ${scheduleRequests.version} + 1,
-        ${sql.identifier(scheduleRequests.updatedAt.name)} = NOW()
+  const now = new Date();
+  const result = await runAtomic([
+    requestAtGuard(input),
+    // Editing is only allowed while no live flight references the request.
+    guard(sql`NOT EXISTS (
+      SELECT 1
+      FROM ${flights}
       WHERE
-        ${scheduleRequests.tenantId} = ${input.tenantId}
-        AND ${scheduleRequests.id} = ${input.id}
-        AND ${scheduleRequests.version} = ${input.expectedVersion}
-        AND ${scheduleRequests.status} = ${input.expectedStatus}
-        AND NOT EXISTS (
-          SELECT 1
-          FROM ${flights}
-          WHERE
-            ${flights.tenantId} = ${input.tenantId}
-            AND ${flights.scheduleRequestId} = ${input.id}
-            AND ${flights.status} <> 'cancelled'
-        )
-      RETURNING ${scheduleRequests.id}
-    ), audited AS (
-      INSERT INTO ${auditEvents} (
-        tenant_id,
-        actor_membership_id,
-        action,
-        entity_type,
-        entity_id,
-        meta
-      )
-      SELECT
-        ${input.tenantId},
-        ${input.actorMembershipId},
-        ${input.action},
-        'schedule_request',
-        ${input.id},
-        ${auditMeta}::jsonb
-      FROM updated
-      RETURNING id
-    )
-    SELECT updated.id FROM updated INNER JOIN audited ON TRUE
-  `);
-  if (!result.rows[0]) return null;
+        ${flights.tenantId} = ${input.tenantId}
+        AND ${flights.scheduleRequestId} = ${input.id}
+        AND ${flights.status} <> 'cancelled'
+    )`),
+    db
+      .update(scheduleRequests)
+      .set({
+        title: input.patch.title,
+        notes: input.patch.notes,
+        windowStart: input.patch.windowStart,
+        windowEnd: input.patch.windowEnd,
+        desiredFlightCount: input.patch.desiredFlightCount,
+        preferences: input.patch.preferences,
+        version: sql`${scheduleRequests.version} + 1`,
+        updatedAt: now,
+      })
+      .where(requestAt(input)),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.actorMembershipId,
+      action: input.action,
+      entityType: "schedule_request",
+      entityId: input.id,
+      meta: input.auditMeta,
+      createdAt: now,
+    }),
+  ]);
+  if (!result) return null;
   return findScheduleRequest(input.tenantId, input.id);
 }
 
@@ -179,47 +165,42 @@ export async function transitionScheduleRequest(input: {
   auditMeta: Record<string, unknown>;
 }): Promise<ScheduleRequest | null> {
   const db = getDb();
-  const auditMeta = JSON.stringify(input.auditMeta);
-  const result = await db.execute<{ id: string }>(sql`
-    WITH updated AS (
-      UPDATE ${scheduleRequests}
-      SET
-        ${sql.identifier(scheduleRequests.status.name)} = ${input.status},
-        ${sql.identifier(scheduleRequests.rejectReason.name)} = ${input.status === "rejected" ? (input.reason ?? null) : scheduleRequests.rejectReason},
-        ${sql.identifier(scheduleRequests.version.name)} = ${scheduleRequests.version} + 1,
-        ${sql.identifier(scheduleRequests.updatedAt.name)} = NOW()
-      WHERE
-        ${scheduleRequests.tenantId} = ${input.tenantId}
-        AND ${scheduleRequests.id} = ${input.id}
-        AND ${scheduleRequests.version} = ${input.expectedVersion}
-        AND ${scheduleRequests.status} = ${input.expectedStatus}
-      RETURNING ${scheduleRequests.id}
-    ), audited AS (
-      INSERT INTO ${auditEvents} (
-        tenant_id,
-        actor_membership_id,
-        action,
-        entity_type,
-        entity_id,
-        meta
-      )
-      SELECT
-        ${input.tenantId},
-        ${input.actorMembershipId},
-        ${input.action},
-        'schedule_request',
-        ${input.id},
-        ${auditMeta}::jsonb
-      FROM updated
-      RETURNING id
-    )
-    SELECT updated.id FROM updated INNER JOIN audited ON TRUE
-  `);
-  if (!result.rows[0]) return null;
+  const now = new Date();
+  const result = await runAtomic([
+    requestAtGuard(input),
+    db
+      .update(scheduleRequests)
+      .set({
+        status: input.status,
+        ...(input.status === "rejected"
+          ? { rejectReason: input.reason ?? null }
+          : {}),
+        version: sql`${scheduleRequests.version} + 1`,
+        updatedAt: now,
+      })
+      .where(requestAt(input)),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.actorMembershipId,
+      action: input.action,
+      entityType: "schedule_request",
+      entityId: input.id,
+      meta: input.auditMeta,
+      createdAt: now,
+    }),
+  ]);
+  if (!result) return null;
   return findScheduleRequest(input.tenantId, input.id);
 }
 
 export type LinkedFlightCancellationAction = "keep" | "cancel_predeparture";
+
+const PREDEPARTURE_FLIGHT_STATUSES = [
+  "draft",
+  "offered",
+  "accepted",
+  "briefed",
+] as const;
 
 export async function cancelScheduleRequest(input: {
   tenantId: string;
@@ -231,121 +212,89 @@ export async function cancelScheduleRequest(input: {
   reason?: string;
 }): Promise<ScheduleRequest | null> {
   const db = getDb();
-  const cancelReason = input.reason?.trim() || "Schedule request cancelled";
-  const requestAuditMeta = JSON.stringify({
+  const now = new Date();
+  const reason = input.reason?.trim() || null;
+  const cancelReason = reason ?? "Schedule request cancelled";
+  const requestAuditMeta = {
     from: input.expectedStatus,
     to: "cancelled",
     fromVersion: input.expectedVersion,
     toVersion: input.expectedVersion + 1,
-    reason: input.reason?.trim() || undefined,
+    reason: reason ?? undefined,
     linkedFlightAction: input.linkedFlightAction,
     linkedFlightPolicy:
       input.linkedFlightAction === "cancel_predeparture"
         ? "cancel draft, offered, accepted, and briefed; preserve active and terminal flights"
         : "preserve every linked flight",
-  });
-  const shouldCancelFlights =
-    input.linkedFlightAction === "cancel_predeparture";
-  const result = await db.execute<{ id: string }>(sql`
-    WITH request_updated AS (
-      UPDATE ${scheduleRequests}
-      SET
-        ${sql.identifier(scheduleRequests.status.name)} = 'cancelled',
-        ${sql.identifier(scheduleRequests.cancelReason.name)} = ${input.reason?.trim() || null},
-        ${sql.identifier(scheduleRequests.version.name)} = ${scheduleRequests.version} + 1,
-        ${sql.identifier(scheduleRequests.updatedAt.name)} = NOW()
-      WHERE
-        ${scheduleRequests.tenantId} = ${input.tenantId}
-        AND ${scheduleRequests.id} = ${input.id}
-        AND ${scheduleRequests.version} = ${input.expectedVersion}
-        AND ${scheduleRequests.status} = ${input.expectedStatus}
-      RETURNING ${scheduleRequests.id}
-    ), eligible_flights AS (
-      SELECT
-        ${flights.id} AS id,
-        ${flights.status} AS from_status,
-        ${flights.version} AS from_version
-      FROM ${flights}
-      INNER JOIN request_updated ON TRUE
-      WHERE
-        ${shouldCancelFlights}
-        AND ${flights.tenantId} = ${input.tenantId}
-        AND ${flights.scheduleRequestId} = ${input.id}
-        AND ${flights.status} IN ('draft', 'offered', 'accepted', 'briefed')
-      FOR UPDATE OF ${flights}
-    ), cancelled_flights AS (
-      UPDATE ${flights}
-      SET
-        ${sql.identifier(flights.status.name)} = 'cancelled',
-        ${sql.identifier(flights.cancelReason.name)} = ${cancelReason},
-        ${sql.identifier(flights.version.name)} = ${flights.version} + 1,
-        ${sql.identifier(flights.updatedAt.name)} = NOW()
-      FROM eligible_flights
-      WHERE
-        ${flights.tenantId} = ${input.tenantId}
-        AND ${flights.id} = eligible_flights.id
-      RETURNING
-        ${flights.id},
-        eligible_flights.from_status,
-        eligible_flights.from_version,
-        ${flights.version} AS to_version
-    ), request_audited AS (
-      INSERT INTO ${auditEvents} (
-        tenant_id,
-        actor_membership_id,
-        action,
-        entity_type,
-        entity_id,
-        meta
-      )
-      SELECT
-        ${input.tenantId},
-        ${input.actorMembershipId},
-        'schedule_request.cancelled',
-        'schedule_request',
-        ${input.id},
-        ${requestAuditMeta}::jsonb
-      FROM request_updated
-      RETURNING id
-    ), flights_audited AS (
-      INSERT INTO ${auditEvents} (
-        tenant_id,
-        actor_membership_id,
-        action,
-        entity_type,
-        entity_id,
-        meta
-      )
-      SELECT
-        ${input.tenantId},
-        ${input.actorMembershipId},
-        'flight.cancelled',
-        'flight',
-        cancelled_flights.id,
-        jsonb_build_object(
-          'from', cancelled_flights.from_status,
-          'to', 'cancelled',
-          'fromVersion', cancelled_flights.from_version,
-          'toVersion', cancelled_flights.to_version,
-          'reason', ${input.reason?.trim() || null}::text,
-          'source', 'schedule_request_cancellation',
-          'scheduleRequestId', ${input.id}::uuid
-        )
-      FROM cancelled_flights
-      RETURNING id
-    ), cancelled_totals AS (
-      SELECT count(*)::integer AS count FROM cancelled_flights
-    ), audit_totals AS (
-      SELECT count(*)::integer AS count FROM flights_audited
-    )
-    SELECT request_updated.id
-    FROM request_updated
-    INNER JOIN request_audited ON TRUE
-    INNER JOIN cancelled_totals ON TRUE
-    INNER JOIN audit_totals
-      ON audit_totals.count = cancelled_totals.count
-  `);
-  if (!result.rows[0]) return null;
+  };
+  const linkedPredeparture = and(
+    eq(flights.tenantId, input.tenantId),
+    eq(flights.scheduleRequestId, input.id),
+    inArray(flights.status, [...PREDEPARTURE_FLIGHT_STATUSES]),
+  )!;
+  const flightStatements =
+    input.linkedFlightAction === "cancel_predeparture"
+      ? [
+          // Audit first so the pre-cancellation status and version are read
+          // from the same transaction that cancels the flights.
+          sql`
+            INSERT INTO audit_events (
+              tenant_id, actor_membership_id, action, entity_type, entity_id,
+              meta, created_at
+            )
+            SELECT
+              ${input.tenantId},
+              ${input.actorMembershipId},
+              'flight.cancelled',
+              'flight',
+              ${flights.id},
+              json_object(
+                'from', ${flights.status},
+                'to', 'cancelled',
+                'fromVersion', ${flights.version},
+                'toVersion', ${flights.version} + 1,
+                'reason', ${reason},
+                'source', 'schedule_request_cancellation',
+                'scheduleRequestId', ${input.id}
+              ),
+              ${ms(now)}
+            FROM ${flights}
+            WHERE ${linkedPredeparture}
+          `,
+          db
+            .update(flights)
+            .set({
+              status: "cancelled",
+              cancelReason,
+              version: sql`${flights.version} + 1`,
+              updatedAt: now,
+            })
+            .where(linkedPredeparture),
+        ]
+      : [];
+  const result = await runAtomic([
+    requestAtGuard(input),
+    db
+      .update(scheduleRequests)
+      .set({
+        status: "cancelled",
+        cancelReason: reason,
+        version: sql`${scheduleRequests.version} + 1`,
+        updatedAt: now,
+      })
+      .where(requestAt(input)),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.actorMembershipId,
+      action: "schedule_request.cancelled",
+      entityType: "schedule_request",
+      entityId: input.id,
+      meta: requestAuditMeta,
+      createdAt: now,
+    }),
+    ...flightStatements,
+  ]);
+  if (!result) return null;
   return findScheduleRequest(input.tenantId, input.id);
 }
 
@@ -407,7 +356,7 @@ export async function countScheduleRequestsByStatus(
   const rows = await db
     .select({
       status: scheduleRequests.status,
-      count: sql<number>`count(*)::int`,
+      count: sql<number>`count(*)`,
     })
     .from(scheduleRequests)
     .where(eq(scheduleRequests.tenantId, tenantId))

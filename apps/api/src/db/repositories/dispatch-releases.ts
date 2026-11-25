@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../client.js";
+import { guard, json, ms, runAtomic } from "../atomic.js";
 import {
   dispatchReleases,
   flights,
@@ -47,44 +48,25 @@ export async function publishDispatchReleaseAtomic(
 ): Promise<{ flight: Flight; release: DispatchRelease } | null> {
   const db = getDb();
   const releaseId = randomUUID();
-  const publishedAt = input.publishedAt.toISOString();
-  const result = await db.execute<{
-    flight_id: string;
-    release_id: string;
-  }>(sql`
-    WITH updated_flight AS (
-      UPDATE flights flight
-      SET status = 'briefed',
-          version = flight.version + 1,
-          updated_at = ${publishedAt}::timestamptz
-      WHERE flight.id = ${input.flightId}::uuid
-        AND flight.tenant_id = ${input.tenantId}::uuid
-        AND flight.version = ${input.expectedFlightVersion}
-        AND flight.status IN ('accepted', 'briefed')
-        AND EXISTS (
-          SELECT 1
-          FROM memberships actor
-          WHERE actor.id = ${input.releasedByMembershipId}::uuid
-            AND actor.tenant_id = flight.tenant_id
-            AND actor.role IN ('dispatcher', 'admin')
-            AND actor.status = 'active'
-        )
-      RETURNING flight.id, flight.tenant_id, flight.version, flight.status
-    ),
-    next_revision AS (
-      SELECT updated.id AS flight_id,
-             updated.tenant_id,
-             updated.version,
-             updated.status,
-             COALESCE(MAX(existing.revision), 0)::integer + 1 AS revision
-      FROM updated_flight updated
-      LEFT JOIN dispatch_releases existing
-        ON existing.tenant_id = updated.tenant_id
-       AND existing.flight_id = updated.id
-      GROUP BY updated.id, updated.tenant_id, updated.version,
-               updated.status
-    ),
-    inserted_release AS (
+  const publishedAt = ms(input.publishedAt);
+  const flightAt = and(
+    eq(flights.tenantId, input.tenantId),
+    eq(flights.id, input.flightId),
+    eq(flights.version, input.expectedFlightVersion),
+    inArray(flights.status, ["accepted", "briefed"]),
+  )!;
+
+  const result = await runAtomic([
+    guard(sql`EXISTS (SELECT 1 FROM ${flights} WHERE ${flightAt})`),
+    guard(sql`EXISTS (
+      SELECT 1
+      FROM memberships actor
+      WHERE actor.id = ${input.releasedByMembershipId}
+        AND actor.tenant_id = ${input.tenantId}
+        AND actor.role IN ('dispatcher', 'admin')
+        AND actor.status = 'active'
+    )`),
+    sql`
       INSERT INTO dispatch_releases (
         id, tenant_id, flight_id, revision, operational_route, sid, star,
         cruise_level, alternate_icao, fuel_unit, payload_unit, taxi_fuel,
@@ -93,49 +75,58 @@ export async function publishDispatchReleaseAtomic(
         release_notes, dispatcher_remarks, released_by_membership_id,
         released_at
       )
-      SELECT ${releaseId}::uuid, next.tenant_id, next.flight_id,
-             next.revision, ${input.operationalRoute}, ${input.sid ?? null},
-             ${input.star ?? null}, ${input.cruiseLevel},
-             ${input.alternateIcao}, ${input.fuelUnit}::dispatch_unit,
-             ${input.payloadUnit}::dispatch_unit, ${input.taxiFuel},
-             ${input.tripFuel}, ${input.contingencyFuel},
-             ${input.alternateFuel}, ${input.finalReserveFuel},
-             ${input.additionalFuel}, ${input.blockFuel},
-             ${input.plannedPayload},
-             ${JSON.stringify(input.weatherSnapshot)}::jsonb,
-             ${input.releaseNotes ?? null},
-             ${input.dispatcherRemarks ?? null},
-             ${input.releasedByMembershipId}::uuid,
-             ${publishedAt}::timestamptz
-      FROM next_revision next
-      RETURNING id, tenant_id, flight_id, revision
-    ),
-    inserted_audit AS (
+      SELECT ${releaseId}, ${input.tenantId}, ${input.flightId},
+        coalesce((
+          SELECT max(existing.revision)
+          FROM dispatch_releases existing
+          WHERE existing.tenant_id = ${input.tenantId}
+            AND existing.flight_id = ${input.flightId}
+        ), 0) + 1,
+        ${input.operationalRoute}, ${input.sid ?? null}, ${input.star ?? null},
+        ${input.cruiseLevel}, ${input.alternateIcao}, ${input.fuelUnit},
+        ${input.payloadUnit}, ${input.taxiFuel}, ${input.tripFuel},
+        ${input.contingencyFuel}, ${input.alternateFuel},
+        ${input.finalReserveFuel}, ${input.additionalFuel},
+        ${input.blockFuel}, ${input.plannedPayload},
+        json(${json(input.weatherSnapshot)}),
+        ${input.releaseNotes ?? null}, ${input.dispatcherRemarks ?? null},
+        ${input.releasedByMembershipId}, ${publishedAt}
+    `,
+    db
+      .update(flights)
+      .set({
+        status: "briefed",
+        version: sql`${flights.version} + 1`,
+        updatedAt: input.publishedAt,
+      })
+      .where(flightAt),
+    sql`
       INSERT INTO audit_events (
         tenant_id, actor_membership_id, action, entity_type, entity_id,
         meta, created_at
       )
-      SELECT release.tenant_id, ${input.releasedByMembershipId}::uuid,
-             'flight.release_publish', 'flight', release.flight_id::text,
-             jsonb_build_object(
-               'releaseId', release.id,
-               'revision', release.revision,
-               'beforeVersion', next.version - 1,
-               'afterVersion', next.version,
-               'status', next.status,
-               'weatherUnavailable',
-                 ${JSON.stringify(input.weatherSnapshot)}::jsonb -> 'unavailable'
-             ),
-             ${publishedAt}::timestamptz
-      FROM inserted_release release
-      JOIN next_revision next ON next.flight_id = release.flight_id
-      RETURNING id
-    )
-    SELECT release.flight_id, release.id AS release_id
-    FROM inserted_release release
-    JOIN inserted_audit audit ON TRUE
-  `);
-  const published = result.rows[0];
+      SELECT release.tenant_id, ${input.releasedByMembershipId},
+        'flight.release_publish', 'flight', release.flight_id,
+        json_object(
+          'releaseId', release.id,
+          'revision', release.revision,
+          'beforeVersion', flight.version - 1,
+          'afterVersion', flight.version,
+          'status', flight.status,
+          'weatherUnavailable',
+            json(${json(input.weatherSnapshot)}) -> '$.unavailable'
+        ),
+        ${publishedAt}
+      FROM dispatch_releases release
+      JOIN flights flight
+        ON flight.tenant_id = release.tenant_id
+       AND flight.id = release.flight_id
+      WHERE release.id = ${releaseId}
+    `,
+  ]);
+  const published = result
+    ? { flight_id: input.flightId, release_id: releaseId }
+    : null;
   if (!published) return null;
 
   const [flightRows, releaseRows] = await Promise.all([

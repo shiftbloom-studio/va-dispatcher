@@ -360,9 +360,7 @@ async function completeFixtureSignIn(
   page: Page,
   identity: "pilot" | "dispatcher",
 ) {
-  await dismissAnalytics(page);
   await page.getByRole("radio", { name: identity }).check();
-  await dismissAnalytics(page);
   await page
     .getByRole("button", { name: `Continue to ${identity} workspace` })
     .click();
@@ -384,14 +382,6 @@ async function setIdentity(
       sameSite: "Lax",
     },
   ]);
-}
-
-async function dismissAnalytics(page: Page) {
-  await page
-    .getByRole("complementary", { name: "Cookie notice" })
-    .getByRole("button", { name: "Continue without analytics" })
-    .click({ timeout: 2_000 })
-    .catch(() => undefined);
 }
 
 async function fixtureControl(action: "reset"): Promise<unknown> {

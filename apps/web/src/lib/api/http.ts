@@ -27,17 +27,25 @@ export class ApiError extends Error {
 type RequestJsonOptions<TSchema extends z.ZodType> = RequestInit & {
   schema: TSchema;
   token?: string | null;
+  /** Transport override, e.g. a Worker service binding. */
+  fetcher?: typeof fetch;
 };
 
 export async function requestJson<TSchema extends z.ZodType>(
   url: string,
-  { schema, token, headers, ...init }: RequestJsonOptions<TSchema>,
+  {
+    schema,
+    token,
+    headers,
+    fetcher = fetch,
+    ...init
+  }: RequestJsonOptions<TSchema>,
 ): Promise<z.output<TSchema>> {
   const requestHeaders = new Headers(headers);
   requestHeaders.set("Accept", "application/json");
   if (token) requestHeaders.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(url, {
+  const response = await fetcher(url, {
     ...init,
     cache: init.cache ?? "no-store",
     headers: requestHeaders,

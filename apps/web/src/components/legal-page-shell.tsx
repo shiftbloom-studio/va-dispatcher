@@ -2,21 +2,43 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { SiteFooter } from "@/components/site-footer";
-import type { LegalConfig } from "@/lib/legal";
+import type { LegalConfig, LegalLocale } from "@/lib/legal";
+
+const shellCopy = {
+  en: {
+    badge: "Legal",
+    eyebrow: "Legal information",
+    devConfig: "Development configuration:",
+    devConfigBody:
+      "real legal operator details are required before production. Missing:",
+  },
+  de: {
+    badge: "Rechtliches",
+    eyebrow: "Rechtliche Hinweise",
+    devConfig: "Entwicklungskonfiguration:",
+    devConfigBody:
+      "vor dem Produktivbetrieb müssen echte Angaben zum Betreiber hinterlegt werden. Es fehlen:",
+  },
+} as const;
 
 export function LegalPageShell({
+  locale = "en",
   title,
   description,
   config,
+  alternate,
   children,
 }: {
+  locale?: LegalLocale;
   title: string;
   description: string;
   config: LegalConfig;
+  alternate?: { href: string; label: string; lang: LegalLocale };
   children: ReactNode;
 }) {
+  const t = shellCopy[locale];
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div lang={locale} className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <Link
@@ -30,9 +52,22 @@ export function LegalPageShell({
               vSAS Live Operations
             </span>
           </Link>
-          <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            Legal
-          </span>
+          <div className="flex items-center gap-4">
+            {alternate ? (
+              <Link
+                href={alternate.href}
+                hrefLang={alternate.lang}
+                lang={alternate.lang}
+                prefetch={false}
+                className="rounded-sm text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 hover:text-slate-950"
+              >
+                {alternate.label}
+              </Link>
+            ) : null}
+            <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+              {t.badge}
+            </span>
+          </div>
         </div>
       </header>
 
@@ -42,7 +77,7 @@ export function LegalPageShell({
       >
         <div className="max-w-3xl">
           <p className="text-sm font-bold uppercase tracking-[0.16em] text-red-700">
-            Legal information
+            {t.eyebrow}
           </p>
           <h1 className="mt-3 font-display text-4xl font-semibold text-slate-950 sm:text-5xl">
             {title}
@@ -55,8 +90,7 @@ export function LegalPageShell({
             role="alert"
             className="mt-8 rounded-[2px] border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950"
           >
-            <strong>Development configuration:</strong> real legal operator
-            details are required before production. Missing:{" "}
+            <strong>{t.devConfig}</strong> {t.devConfigBody}{" "}
             {config.missingEnvironmentVariables.join(", ")}.
           </div>
         ) : null}

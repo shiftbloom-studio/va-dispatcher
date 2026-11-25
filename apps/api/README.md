@@ -7,7 +7,7 @@ Hono REST API for Virtual Airline Live Dispatch & ACARS.
 | Path          | Purpose                                          |
 | ------------- | ------------------------------------------------ |
 | `GET /health` | Liveness                                         |
-| `/api/v1/*`   | Versioned API (public rewrite from Vercel)       |
+| `/api/v1/*`   | Versioned API (zone route on the shared host)    |
 | `/v1/*`       | Same routes (if `/api` is stripped by a rewrite) |
 | `/api/docs/*` | Public API documentation                         |
 | `/docs/*`     | Same docs when addressed as a standalone service |
@@ -20,7 +20,7 @@ Run `pnpm dev:api`, then open one of the interactive references:
 - ReDoc: <http://localhost:3001/docs/redoc>
 - OpenAPI JSON: <http://localhost:3001/docs/openapi.json>
 
-On the same-origin Vercel deployment, use `/api/docs/swagger`,
+On the same-origin deployment, use `/api/docs/swagger`,
 `/api/docs/redoc`, and `/api/docs/openapi.json`. The specification uses
 `/api/v1` as its primary server and also exposes the service-scoped `/v1`
 alias. Swagger UI and ReDoc load version-pinned renderer assets from their
@@ -47,9 +47,8 @@ X-Dev-Role: admin   # pilot | dispatcher | admin
    organization creation and Verified Domain enrollment, add `org:pilot` and
    `org:dispatcher`, create vSAS, and copy its org id to
    `VSAS_CLERK_ORG_ID`.
-2. Create an empty database, set `DATABASE_URL`, and run `pnpm db:push` from the
-   exact release commit. This pre-production Shiftbloom project recreates its
-   database when the canonical schema changes.
+2. Deploy the API Worker; its deploy applies the D1 migrations in
+   `migrations/`. Locally, run `pnpm db:migrate:local`.
 3. In production, sign in as a verified administrator of the configured Clerk
    organization. The audited first-login and no-active-admin recovery path
    creates the initial local tenant, membership, and administrator without a
@@ -130,7 +129,7 @@ Navigraph account linking uses its **Authorization Code flow with S256 PKCE**.
 The registered production redirect URI is exactly:
 
 ```text
-https://www.va-dispatcher.world/api/v1/simbrief/oauth/callback
+https://<host>/api/v1/simbrief/oauth/callback
 ```
 
 Use the canonical `www` host above in the access request. The apex domain
@@ -142,8 +141,8 @@ Once Navigraph issues the credentials, configure these backend-only values:
 ```dotenv
 NAVIGRAPH_CLIENT_ID=...
 NAVIGRAPH_CLIENT_SECRET=...
-NAVIGRAPH_REDIRECT_URI=https://www.va-dispatcher.world/api/v1/simbrief/oauth/callback
-APP_ORIGIN=https://www.va-dispatcher.world
+NAVIGRAPH_REDIRECT_URI=https://<host>/api/v1/simbrief/oauth/callback
+APP_ORIGIN=https://<host>
 ```
 
 `TENANT_SECRETS_KEY` must also be configured. It encrypts each short-lived PKCE
@@ -160,7 +159,7 @@ The response contains `authorizationUrl`, `redirectUri`, and `expiresAt`. Open
 the authorization URL in the browser. Its production shape is:
 
 ```text
-https://identity.api.navigraph.com/connect/authorize?client_id=<client-id>&response_type=code&state=<one-time-state>&scope=openid%20userinfo&redirect_uri=https%3A%2F%2Fwww.va-dispatcher.world%2Fapi%2Fv1%2Fsimbrief%2Foauth%2Fcallback&code_challenge=<S256-challenge>&code_challenge_method=S256
+https://identity.api.navigraph.com/connect/authorize?client_id=<client-id>&response_type=code&state=<one-time-state>&scope=openid%20userinfo&redirect_uri=https%3A%2F%2F<host>%2Fapi%2Fv1%2Fsimbrief%2Foauth%2Fcallback&code_challenge=<S256-challenge>&code_challenge_method=S256
 ```
 
 The public callback atomically consumes the state, exchanges the short-lived
@@ -183,8 +182,8 @@ Before enabling the integration:
 2. Set `SIMBRIEF_API_KEY` and the three `NAVIGRAPH_*` variables on the API
    deployment.
 3. Set `SIMBRIEF_CALLBACK_URL` to the separate flight-plan completion callback,
-   `https://www.va-dispatcher.world/api/v1/simbrief/callback` in production.
-4. Apply the canonical schema to a new empty database with `pnpm db:push`.
+   `https://<host>/api/v1/simbrief/callback` in production (the production
+   Worker config derives it from `VA_HOSTNAME`).
 
 Members connect a numeric Pilot ID separately from optional Navigraph OAuth:
 
@@ -275,7 +274,7 @@ required 32-byte base64 key with `openssl rand -base64 32`.
 `ACARS_PROVIDER=mock` selects the DB-backed adapter only for local development
 and automated tests. Production always resolves to Hoppie, including when a
 stale environment variable still says `mock`; set `ACARS_PROVIDER=hoppie` in
-Vercel to keep the declared configuration aligned with runtime behavior.
+the Worker variables to keep the declared configuration aligned with runtime behavior.
 
 Hoppie's `ping` is used for connection tests because it does not mark or lock
 the station online. A real send is recorded only after Hoppie returns `ok`.
@@ -288,8 +287,10 @@ Registration is self-service and does not need separate API approval:
 ## Scripts
 
 ```bash
-pnpm dev          # watch mode :3001
-pnpm test
+pnpm dev               # wrangler dev on :3001 with local D1 and R2
+pnpm db:migrate:local  # apply migrations to the local D1 database
+pnpm db:generate       # write a migration after changing src/db/schema.ts
+pnpm test              # unit tests and D1 repository contracts
 pnpm typecheck
-DATABASE_URL='postgresql://...' pnpm db:push
+pnpm deploy            # render wrangler.deploy.jsonc, migrate D1, deploy
 ```

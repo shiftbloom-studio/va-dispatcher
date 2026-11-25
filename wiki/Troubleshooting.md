@@ -66,9 +66,8 @@ from organization** to finish provider synchronization.
 
 - Record the visible status, message, and request ID. A provider rejection can
   indicate a missing `org:pilot`/`org:dispatcher` role or an invalid
-  invitation redirect configuration. Verify Production's explicit `APP_ORIGIN`;
-  Preview requires Vercel system environment URLs and Clerk allowlisting for
-  the tested branch or deployment URL.
+  invitation redirect configuration. Verify the Worker's explicit `APP_ORIGIN`
+  and that Clerk allowlists it.
 - In local auth-bypass mode, live Clerk invitations are intentionally disabled
   and directory sync is a no-op. Set `AUTH_DEV_BYPASS=false` only in a safe
   environment configured with matching Clerk keys when testing this flow.
@@ -93,23 +92,12 @@ claims on later requests.
 
 ## API and web contract errors
 
-### API `FUNCTION_INVOCATION_FAILED` on Vercel Services
+### Authenticated routes fail with a database error
 
-If the API runtime log reports `ERR_MODULE_NOT_FOUND` for `hono` from
-`/var/task/app.js`, the Hono service was emitted without its pnpm workspace
-dependencies. The API service keeps `vercel-entry.ts` checked in because
-Vercel validates the path before its service build, then replaces that file in
-the isolated build checkout with a dependency-complete bundle. Run
-`pnpm run build:vercel` locally; the command writes to `dist/` and imports the
-result from an isolated temporary directory before accepting the build.
-Do not add one missing package at a time to the function because the next bare
-runtime import will fail in the same way.
-
-### `DATABASE_URL is required for authenticated routes`
-
-The health endpoint can still respond without a database. Configure
-`DATABASE_URL`, apply canonical `schema.ts` to a new empty database with
-`pnpm db:push`, and authenticate through the trusted Clerk organization.
+The health endpoint can still respond without a schema. Locally, run
+`pnpm db:migrate:local`. In production, confirm the `DB` binding points at the
+`va-dispatch` database and that the API build applied its migrations, then
+authenticate through the trusted Clerk organization.
 
 ### `INVALID_RESPONSE` in the web UI
 
@@ -130,9 +118,9 @@ The requested status change is not allowed from the current status. Reload the r
 
 Send `nextCursor` back unchanged. A malformed or decoded/re-encoded cursor returns `400 BAD_REQUEST`.
 
-### Production mutation returns BotID `403`
+### Production mutation returns `403 Automated requests are not allowed`
 
-Direct `curl`, scripts, or clients without browser challenge proof are expected to fail on protected mutations. Test through the deployed web UI and inspect BotID events. Do not disable BotID to make an undocumented machine client work.
+Cloudflare scored the request as automated. Scripts and `curl` are expected to fail on protected mutations. Test through the deployed web UI and inspect the request in Security Analytics. Do not lower the threshold to make an undocumented machine client work.
 
 ## Schedule and flight issues
 
@@ -193,7 +181,7 @@ Ensure only one poller owns the station. Stop the other client and wait about tw
 
 ### Messages arrive slowly
 
-Verify the Vercel cron runs every minute and `hoppiePollingEnabled` is true. The web adds up to about 10 seconds after storage. Slower cron plans create correspondingly slower inbound delivery.
+Verify the API Worker's `* * * * *` cron trigger runs (Workers → Settings → Triggers, and its logs) and `hoppiePollingEnabled` is true. The web adds up to about 10 seconds after storage. Slower cron plans create correspondingly slower inbound delivery.
 
 ### Message sent but pilot did not receive it
 
@@ -219,14 +207,6 @@ presence and coordinates, but there is no map rendering to update.
 
 Check every required `LEGAL_*` value. Addresses must contain a non-empty line, emails must be valid, the supervisory URL must be absolute HTTPS, and paired register/editorial fields must be complete.
 
-### Analytics appears off after consent
-
-Inspect the versioned local-storage preference and browser blocking. The current notice version must match, `analyticsAllowed` must be true, and every event is rechecked. Consent in another tab should propagate through the storage event.
-
-### Notice appears again after an update
-
-Expected when `LEGAL_NOTICE_VERSION` changed. A new notice version invalidates the old preference so the user can make an informed choice again.
-
 ## Local build and test issues
 
 ### Next.js behavior differs from expectation
@@ -247,12 +227,12 @@ E2E_PORT=3200 pnpm --filter @va-dispatch/web test:e2e
 pnpm --filter @va-dispatch/web exec playwright install chromium
 ```
 
-### Drizzle command cannot see the database URL
+### Remote D1 migration fails
 
-Supply `DATABASE_URL` in the command environment or ensure the approved
-development environment is loaded. This pre-production Shiftbloom project
-expects a new empty database for `db:push`; never use a database containing data
-that must be preserved.
+`wrangler d1 migrations apply --remote` needs the rendered
+`wrangler.deploy.jsonc` with the real database ID. Run `pnpm --filter
+@va-dispatch/api config` with `VA_D1_DATABASE_ID` set, or let Workers Builds
+run the deploy. Restore a bad migration with D1 Time Travel.
 
 ## Reporting a reproducible problem
 

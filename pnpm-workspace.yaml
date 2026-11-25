@@ -9,17 +9,10 @@ overrides:
   "undici@>=8.0.0 <8.12.2": 8.12.2
   "zod@>=4.0.0 <4.6.6": 4.6.7
   "source-map-js@>=1.0.0 <1.2.2": 1.2.2
-  "vite@>=8.2.0 <8.2.4": 8.2.4
   "brace-expansion@<1.1.20": 1.1.20
   "brace-expansion@>=4.0.0 <5.0.11": 5.0.11
 allowBuilds:
   esbuild: true
   unrs-resolver: true
-minimumReleaseAgeExclude:
-  - "@clerk/backend@3.16.4"
-  - "@clerk/nextjs@7.7.4"
-  - "@testing-library/user-event@14.6.4"
-  - "@vitest/mocker@5.0.0-rc.1"
-  - "@vitest/spy@5.0.0-rc.1"
-  - vitest@5.0.0-rc.1
-  - "@vitest/coverage-istanbul@5.0.0-rc.1"
+  workerd: true
+  sharp: true

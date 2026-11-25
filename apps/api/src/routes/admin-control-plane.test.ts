@@ -468,14 +468,12 @@ describe("admin control-plane routes", () => {
     });
   });
 
-  it("uses the Vercel branch origin for Preview tenant invitations", async () => {
+  it("uses the configured origin for preview tenant invitations", async () => {
     resetEnvCache();
     loadEnv({
       NODE_ENV: "test",
-      VERCEL_ENV: "preview",
-      VERCEL_BRANCH_URL:
-        "va-dispatcher-git-preview-origin-shiftbloom.vercel.app",
-      VERCEL_URL: "va-dispatcher-deployment-shiftbloom.vercel.app",
+      APP_ENV: "preview",
+      APP_ORIGIN: "https://preview-origin.example.test",
     });
     const createdAt = new Date("2026-08-18T10:00:00.000Z").getTime();
     mocks.createOrganizationInvitation.mockResolvedValue({
@@ -503,15 +501,14 @@ describe("admin control-plane routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.createOrganizationInvitation).toHaveBeenCalledWith(
       expect.objectContaining({
-        redirectUrl:
-          "https://va-dispatcher-git-preview-origin-shiftbloom.vercel.app/vsas/sign-in",
+        redirectUrl: "https://preview-origin.example.test/vsas/sign-in",
       }),
     );
   });
 
   it("fails a Preview invitation safely when no trusted origin is available", async () => {
     resetEnvCache();
-    loadEnv({ NODE_ENV: "test", VERCEL_ENV: "preview" });
+    loadEnv({ NODE_ENV: "test", APP_ENV: "preview" });
 
     const response = await app.request("/members/invitations", {
       method: "POST",

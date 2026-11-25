@@ -15,8 +15,8 @@ import {
  */
 export function isMockAcarsEnabled(): boolean {
   const current = env();
-  const isProduction = current.VERCEL_ENV
-    ? current.VERCEL_ENV === "production"
+  const isProduction = current.APP_ENV
+    ? current.APP_ENV === "production"
     : current.NODE_ENV === "production";
   return !isProduction && current.ACARS_PROVIDER === "mock";
 }

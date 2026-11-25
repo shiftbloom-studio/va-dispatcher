@@ -25,8 +25,8 @@ export function TenantLogo({
       aria-label={src ? undefined : tenant.logo.alt}
     >
       {src ? (
-        // Vercel Services does not expose Next's image optimizer for the web
-        // service. Tenant and Clerk logos are already small, bounded assets.
+        // No image optimizer is configured on Workers. Tenant and Clerk logos
+        // are already small, bounded assets.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           alt={tenant.logo.alt}

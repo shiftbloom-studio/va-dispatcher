@@ -1,33 +1,29 @@
 # Deployment and Operations
 
-The primary production target is Vercel with a Next.js web service, Hono API service, Neon PostgreSQL, Clerk Organizations, and Hoppie's ACARS.
+The production target is Cloudflare: two Workers on one hostname, D1, R2, Workers KV, Clerk Organizations, and Hoppie's ACARS. The step-by-step setup lives in [`docs/cloudflare-deployment.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/docs/cloudflare-deployment.md).
 
 ## Primary topology
 
-`vercel.ts` defines a multi-service project:
-
 ```text
 public request
-├── /api/*  -> api service (apps/api, src/index.ts)
-└── /*      -> web service (apps/web)
+├── <host>/api/*  -> va-dispatch-api (apps/api, zone route)
+└── <host>/*      -> va-dispatch-web (apps/web, custom domain)
 
-web -- API_INTERNAL_URL service binding --> api
-Vercel cron (* * * * *) ----------------> /api/v1/internal/cron/acars-poll
-Vercel cron (0 * * * *) ----------------> /api/v1/internal/cron/privacy-lifecycle
+va-dispatch-web -- API service binding --> va-dispatch-api
+cron (* * * * *) --> va-dispatch-api scheduled(): Hoppie poll
+cron (0 * * * *) --> va-dispatch-api scheduled(): privacy lifecycle
 ```
 
-If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately and set the web project's `API_ORIGIN` to the public API origin. The Next.js rewrite keeps browser requests on same-origin `/api/*`.
+The zone route takes precedence over the custom domain, so browser requests stay on one origin.
 
 ## External services
 
-### Neon PostgreSQL
+### Cloudflare D1 and R2
 
-- Choose a region and plan consistent with legal and latency requirements.
-- Scale-to-zero is the intended idle behavior.
-- The application uses Neon's HTTP driver and no persistent pool.
-- Cold start on the first query after suspension is expected.
-- This pre-production project uses a new empty database for each incompatible
-  schema iteration; take an optional snapshot only when test data is worth keeping.
+- D1 database `va-dispatch` holds all application data. Migrations in
+  `apps/api/migrations` are applied by the API deploy.
+- D1 Time Travel provides 30 days of point-in-time restore.
+- R2 bucket `va-dispatch-tenant-logos` stores tenant logos.
 
 ### Clerk
 
@@ -62,40 +58,26 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
   revision and the signed callback imports the OFP.
 - Dispatch release weather uses Aviation Weather and degrades to an explicit
   unavailable state when that provider cannot be reached.
-- Vercel Blob is required only for tenant logo upload; the remaining brand
-  settings stay in PostgreSQL.
+- Tenant logos are stored in R2; the remaining brand settings stay in D1.
 
-### Vercel
+### Cloudflare Workers
 
-- Configure both services and all server/public environment values.
-- Let GitHub Actions coordinate deployments; checked-in configuration disables
-  Vercel's independent Git deployment so CI and readiness finish first.
-- The workflow disables custom Production-domain assignment on each deployment
-  request, then promotes the staged build only after readiness passes.
-- Enable Secure Backend Access with OIDC Federation for BotID server verification.
-- Use an eligible plan for Deep Analysis and the one-minute cron.
-- Configure spend notifications for Deep Analysis and other metered features.
+- Connect both Workers to the repository with Workers Builds and set the
+  build variables and secrets from the deployment guide.
+- Enable Bot Management on the zone so API requests carry a bot score.
+- Configure budget alerts for Workers, D1, R2, KV, and Images.
 
 ## Deployment sequence
 
-1. Provision or select Neon, Clerk, and Vercel environments.
-2. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference).
-3. Configure the one-time GitHub `VERCEL_TOKEN` secret, Vercel project/team and
-   repository variables, and the `Preview` and `Production` environments
-   described in `docs/maintainer-setup.md`. Configure Protection Bypass for
-   Automation in Vercel; the workflow reads its current value only for
-   readiness while Vercel Authentication remains enabled on Preview deployments.
-4. For a schema change, with explicit operator approval, recreate the intended
-   empty database and run `pnpm db:push` from the exact validated revision. The
-   deployment workflow never changes the database.
-5. Open or update an internal pull request. GitHub runs the database contracts,
-   quality checks, and integrated E2E suite. A separate default-branch workflow
-   then deploys that exact successful commit without executing pull-request code
-   with deployment credentials. Vercel builds the application and exposes a
-   preview only if `/api/ready` confirms the pre-provisioned schema.
-6. Review and merge the green pull request. The deployment workflow repeats for
-   the exact successful `main` commit, verifies the staged deployment, and then
-   promotes it to Production.
+1. Provision the D1 database, R2 bucket, and Clerk instance.
+2. Configure API, web, legal, source-link, and secret values from [Configuration Reference](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Configuration-Reference) and the deployment guide.
+3. Connect `va-dispatch-api` (root `apps/api`) and `va-dispatch-web` (root
+   `apps/web`) with Workers Builds. Deploy the API first.
+4. Open or update a pull request. GitHub Actions runs the D1 contracts, quality
+   checks, the vinext build, and both browser suites.
+5. Review and merge the green pull request. Workers Builds applies pending D1
+   migrations and deploys both Workers from `main`.
+6. Check `GET /api/ready` on the production host.
 7. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
    that exact organization create or repair the trusted vSAS mapping.
 8. Join `/vsas/waitlist`, invite the entry in Clerk, complete the invited
@@ -104,27 +86,15 @@ If Vercel Services is unavailable, deploy `apps/web` and `apps/api` separately a
    console, select the organization, and verify routing. Test the tenant-branded
    `/vsas/sign-up` route separately with an invitation that redirects into the
    application.
-9. Load and review `/impressum` and `/privacy` before public promotion.
+9. Load and review `/imprint`, `/impressum`, `/privacy`, and `/datenschutz` before public promotion.
 10. As an Admin, configure/test Hoppie and branding; as the assigned pilot and
     dispatcher, verify any enabled SimBrief, Navigraph, and weather integration.
-11. Verify BotID, both cron routes, headers, logs, and a synthetic end-to-end
-    workflow.
-
-Example initial tooling flow:
-
-```bash
-vercel login
-vercel link
-vercel integration add neon
-vercel integration add clerk
-vercel env pull apps/api/.env.local --yes
-```
+11. Verify bot scoring, both cron triggers, headers, logs, and a synthetic
+    end-to-end workflow.
 
 Do not apply schema, seed, or deployment changes to a shared environment
-without explicit operator approval and a rollback plan. This project replaces
-its pre-production database rather than evolving an existing catalog. The
-readiness gate detects a missing or incompatible workspace schema but does not
-repair it.
+without explicit operator approval and a rollback plan. The readiness endpoint
+detects a missing or incompatible workspace schema but does not repair it.
 
 ## Tenant bootstrap
 
@@ -153,19 +123,19 @@ environments, using either the development auth bypass or cron bearer.
 }
 ```
 
-This is a liveness/configuration endpoint. `database: true` means `DATABASE_URL` is configured; it does not execute a database query. Use a synthetic authenticated read when verifying database readiness.
+This is a liveness/configuration endpoint. `database: true` means the D1 binding is present; it does not execute a database query. Use a synthetic authenticated read when verifying database readiness.
 
 `GET /ready` performs zero-row projections across the tenant and membership
 tables. It verifies database connectivity and the columns required for tenant
-bootstrap and authorization without reading or returning user records. GitHub
-Actions requires `database: true` and `schema: true` from this endpoint before
-it marks a preview or Production deployment ready.
+bootstrap and authorization without reading or returning user records. Check
+it after each deploy.
 
 ## ACARS cron operations
 
-The one-minute cron is required for normal inbound latency. It:
+The one-minute cron trigger is required for normal inbound latency. It:
 
-- authenticates with `CRON_SECRET`;
+- runs in the API Worker's `scheduled()` handler (the HTTP route remains for
+  manual runs with `CRON_SECRET`);
 - skips the mock provider;
 - selects only tenants with encrypted Hoppie credentials;
 - isolates a failure to one tenant; and
@@ -181,7 +151,7 @@ Operational checks:
 
 ## Privacy lifecycle cron operations
 
-The hourly cron authenticates with `CRON_SECRET` and processes only bounded,
+The hourly cron trigger processes only bounded,
 queued work that has already passed the required Admin approval. Policies,
 legal holds, requests, and execution approval remain operator-controlled.
 External-provider and backup tasks remain visible until an operator records
@@ -192,16 +162,15 @@ their completion; the cron does not claim external erasure. Follow
 
 Current signals are:
 
-- Vercel function/build/cron logs;
+- Cloudflare Workers logs and traces (observability is enabled for both Workers);
 - `X-Request-Id` correlation;
-- Vercel Firewall/BotID events;
-- consent-gated Web Analytics and Speed Insights;
+- Cloudflare Security Analytics, including bot scores;
 - GitHub Actions CI and security checks; and
 - database audit-event rows plus the Admin audit viewer and bounded export.
 
 There is no Sentry integration, distributed tracing backend, or metrics
-dashboard. Do not describe the health endpoint, audit viewer, or optional
-analytics as full application monitoring.
+dashboard. Do not describe the health endpoint or audit viewer as full
+application monitoring.
 
 ## Production verification
 
@@ -222,9 +191,9 @@ analytics as full application monitoring.
 
 - HTTPS and HSTS are present.
 - Frame, content-type, referrer, permissions, and CSP headers match policy.
-- BotID blocks an automated Basic and Deep Analysis mutation.
+- Requests with a low bot score are rejected on protected mutations.
 - Public legal pages load without Clerk scripts.
-- Optional analytics makes no request before affirmative consent and stops events after withdrawal.
+- No analytics or tracking requests are made; only strictly necessary cookies are set.
 - `NEXT_PUBLIC_SOURCE_URL` resolves to the corresponding deployed source.
 
 ### Business workflow
@@ -248,9 +217,10 @@ analytics as full application monitoring.
 
 ## Rollback and recovery
 
-- Roll back application code to a known green `main` commit through the deployment platform.
-- Roll schema back by reconnecting the previous untouched test database, or
-  recreate another empty database from the prior green commit.
+- Roll back a Worker with **Deployments → Rollback** in the Cloudflare dashboard.
+- Restore the database with D1 Time Travel
+  (`wrangler d1 time-travel restore va-dispatch --timestamp <ISO time>`).
+  Migrations are forward-only; a rollback across a migration needs a restore.
 - Preserve audit and operational history unless an approved retention/incident procedure says otherwise.
 - If `TENANT_SECRETS_KEY` is wrong, restore the correct key before issuing new
   simulator tokens or starting provider callbacks. Intentional rotation also
@@ -259,22 +229,21 @@ analytics as full application monitoring.
 - ACARS stores an explicit `accepted`, `rejected`, or `ambiguous` outcome after
   its single send. There is no automatic retry queue; inspect ambiguous rows
   before deciding whether a manual resend is safe.
-- Test Neon restoration and Clerk access recovery before they are needed.
+- Test a D1 Time Travel restore and Clerk access recovery before they are needed.
 
 ## Cost profile
 
-The design targets near-zero idle application compute:
+Everything is usage-based with no always-on server:
 
-- Neon can autosuspend;
-- Clerk is hosted and usage-based;
-- Vercel functions charge around invocation/active compute rather than an always-on process; and
-- no Redis or external queue is part of v1.
+- Workers bill per request and CPU time;
+- D1 bills rows read/written and storage, R2 storage and operations, KV reads
+  and writes, and Images unique transformations;
+- Clerk is hosted and usage-based; and
+- no external queue is part of v1.
 
 The one-minute Hoppie cron, hourly privacy cron, and simulator telemetry create
-regular invocations; the one-minute schedule normally requires Vercel Pro.
-Deep Analysis checks and external provider traffic can also be metered.
-Re-evaluate the cost model before adding queues, higher-frequency polling, or
-third-party observability.
+regular invocations. Re-evaluate the cost model before adding queues,
+higher-frequency polling, or third-party observability.
 
 ## Release hygiene
 

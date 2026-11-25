@@ -2543,6 +2543,42 @@ export const openApiDocument = {
         },
       },
     },
+    "/public/tenant-logos/{slug}/{file}": {
+      get: {
+        tags: ["Tenant"],
+        operationId: "getPublicTenantLogo",
+        summary: "Get an organization logo",
+        description:
+          "Streams an uploaded organization logo. Logo keys are random and never reused, so responses are cached as immutable.",
+        security: [],
+        parameters: [
+          {
+            name: "slug",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+          {
+            name: "file",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Logo image.",
+            content: {
+              "image/png": { schema: { type: "string", format: "binary" } },
+              "image/jpeg": { schema: { type: "string", format: "binary" } },
+              "image/webp": { schema: { type: "string", format: "binary" } },
+            },
+          },
+          "404": responseRef("NotFound"),
+          "500": responseRef("InternalError"),
+        },
+      },
+    },
     "/tenant": {
       get: {
         tags: ["Tenant"],
@@ -2631,7 +2667,7 @@ export const openApiDocument = {
         operationId: "uploadTenantLogo",
         summary: "Upload the tenant square logo",
         description:
-          "Requires admin. Accepts one PNG, JPEG, or WebP logo up to 1 MB and replaces the previous Vercel Blob asset.",
+          "Requires admin. Accepts one PNG, JPEG, or WebP logo up to 1 MB and replaces the previously stored logo.",
         "x-required-role": "admin",
         requestBody: {
           required: true,
@@ -3989,7 +4025,7 @@ export const openApiDocument = {
         operationId: "pollAcarsGet",
         summary: "Poll configured Hoppie tenants",
         description:
-          "Vercel cron-compatible GET form. Authenticate with CRON_SECRET as a bearer token.",
+          "Manual trigger; the Worker's scheduled handler runs the same job every minute. Authenticate with CRON_SECRET as a bearer token.",
         security: cronSecurity,
         responses: {
           "200": jsonResponse(

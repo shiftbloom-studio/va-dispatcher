@@ -88,7 +88,9 @@ internalRoutes.post(
       throw new AppError("UNAUTHORIZED", "Seed not authorized");
     }
     if (!hasDatabase()) {
-      throw new AppError("INTERNAL", "DATABASE_URL required", { status: 503 });
+      throw new AppError("INTERNAL", "The database binding is required", {
+        status: 503,
+      });
     }
 
     const body = c.req.valid("json") ?? {};

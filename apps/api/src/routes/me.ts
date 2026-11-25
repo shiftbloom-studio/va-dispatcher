@@ -10,7 +10,7 @@ import {
 import { acarsStationSchema } from "../domain/acars/validation.js";
 import { AppError } from "../lib/errors.js";
 import { writeAudit } from "../db/repositories/audit.js";
-import { isUniqueViolation } from "../lib/postgres.js";
+import { isUniqueViolation } from "../lib/db-errors.js";
 
 export const meRoutes = new Hono<{ Variables: AppVariables }>();
 

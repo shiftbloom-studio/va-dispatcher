@@ -51,7 +51,6 @@ describe("Clerk organization claims", () => {
     loadEnv({
       ...process.env,
       NODE_ENV: "test",
-      DATABASE_URL: "test-database",
       CLERK_SECRET_KEY: "test-clerk-secret",
       CRON_SECRET: "test-cron-secret",
     });
@@ -111,7 +110,6 @@ describe("Clerk organization claims", () => {
     loadEnv({
       ...process.env,
       NODE_ENV: "test",
-      DATABASE_URL: "test-database",
       CLERK_SECRET_KEY: "test-clerk-secret",
       CRON_SECRET: "test-cron-secret",
       VSAS_CLERK_ORG_ID: "org_vsas",
@@ -143,7 +141,6 @@ describe("Clerk organization claims", () => {
     loadEnv({
       ...process.env,
       NODE_ENV: "test",
-      DATABASE_URL: "test-database",
       CLERK_SECRET_KEY: "test-clerk-secret",
       CRON_SECRET: "test-cron-secret",
       VSAS_CLERK_ORG_ID: "org_vsas",

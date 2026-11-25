@@ -20,76 +20,13 @@ Create a branch ruleset for `main` in **Settings → Rules → Rulesets**:
 Do not enable automatic merge for dependency updates without reviewing their
 release notes, lockfile changes, licenses, and test results.
 
-## Automated preview and production delivery
+## Deployment
 
-GitHub Actions is the sole deployment coordinator. Vercel's automatic Git
-deployments are disabled in `vercel.ts` so a commit cannot deploy before the
-repository's PostgreSQL contracts, quality checks, and integrated browser tests
-have passed.
-
-Complete this one-time repository setup:
-
-1. Create a dedicated Vercel access token scoped to the `va-dispatcher`
-   project. Do not reuse an individual's interactive CLI token. Record its
-   expiry and rotate it before that date.
-2. Add the token as the repository Actions secret `VERCEL_TOKEN`.
-3. Create a dedicated Vercel **Protection Bypass for Automation** value with a
-   note such as `GitHub Actions readiness`. The workflow reads the current value
-   through the project-scoped Vercel token; do not duplicate it in GitHub. Keep
-   Vercel Authentication on.
-4. Keep Vercel's **Automatically expose System Environment Variables** setting
-   enabled. Preview invitation and provider-recovery redirects use the trusted
-   `VERCEL_BRANCH_URL`, falling back to the exact `VERCEL_URL`; Production never
-   uses those generated hostnames in place of its explicit `APP_ORIGIN`.
-5. Add repository Actions variables `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, and
-   `VERCEL_GITHUB_REPOSITORY_ID`.
-6. Keep GitHub deployment environments named exactly `Preview` and
-   `Production` so deployment history stays separated by target.
-7. Keep application build/runtime secrets, including each environment's Neon
-   `DATABASE_URL`, in Vercel. Do not duplicate database credentials in GitHub.
-
-The repository values can be configured with GitHub CLI:
-
-```bash
-gh secret set VERCEL_TOKEN
-gh variable set VERCEL_ORG_ID --body '<vercel-team-id>'
-gh variable set VERCEL_PROJECT_ID --body '<vercel-project-id>'
-gh variable set VERCEL_GITHUB_REPOSITORY_ID --body '<github-repository-id>'
-```
-
-Use the IDs shown in Vercel Project Settings. Retrieve GitHub's numeric
-repository ID with `gh api repos/{owner}/{repository} --jq .id`.
-
-An internal pull request runs all validation, then the default-branch `Deploy`
-workflow creates one serialized preview from that exact successful CI commit.
-It never checks out or executes pull-request code while holding the Vercel
-token. Before any `node` or `gh` command, each deploy job installs Node.js
-26 and a checksum-pinned GitHub CLI, so the jobs do not depend on what the
-runner image puts on `PATH`. The same setup installs `curl` only when it
-is missing; the Vercel API calls use `curl`. The Vercel build does not change the database,
-and the deployment succeeds only after `/api/ready` confirms the
-already-provisioned live schema.
-A merge to `main` repeats the same flow for Production. Fork and Dependabot
-pull requests validate but do not receive deployment credentials.
-
-The readiness step loads the current automation bypass from the Vercel project
-with `VERCEL_TOKEN`, masks it immediately, and sends the Vercel-documented
-`x-vercel-protection-bypass` header. The probe therefore works against an
-authentication-protected Preview without copying or exposing the bypass.
-
-The Vercel deployment request omits `target` for Preview, as required by the
-API. Production uses `target: production` with
-`autoAssignCustomDomains: false`, remains staged while readiness is checked,
-and is promoted through Vercel's promotion API only after the check passes.
-The per-deployment flag keeps this safety boundary independent of the project's
-default domain-assignment setting.
-
-For a schema change, explicitly confirm and recreate the intended empty
-database, then run `pnpm db:push` from the exact validated revision before
-expecting readiness to pass. The deployment workflow never runs `db:push` and
-cannot mutate a database still used by the previous application revision.
-Record the Vercel token expiry in the maintainer inventory and rotate
-`VERCEL_TOKEN` before that date without changing the workflow.
+Cloudflare Workers Builds deploys the API and web Workers from `main`; GitHub
+Actions only validates. The one-time Cloudflare setup (resources, Workers
+Builds, build variables, secrets) is in
+[`cloudflare-deployment.md`](cloudflare-deployment.md). Keep application
+secrets in Cloudflare; do not duplicate them as GitHub secrets.
 
 ## GitHub security features
 
@@ -112,29 +49,22 @@ update support currently ends at pnpm 10, so `.github/dependabot.yml` updates
 GitHub Actions only. Keep the scheduled `pnpm security:audit` job enabled and add
 pnpm package updates to Dependabot when GitHub documents pnpm 11 support.
 
-## Vercel BotID
+## Bot protection
 
-BotID is enforced on same-origin browser mutations under `/api/v1/*`. The
-client and API explicitly select the same check level so a dashboard default
-cannot create a verification mismatch:
+The API blocks likely automated mutations with Cloudflare's bot score
+(`request.cf.botManagement.score`, see `apps/api/src/middleware/human.ts`):
 
-- Deep Analysis protects bulk flight creation, Clerk membership sync, Hoppie
-  configuration tests, and outbound Hoppie messages.
-- Basic protects every other `POST`, `PUT`, `PATCH`, and `DELETE` request.
+- A strict threshold protects bulk flight creation, Clerk membership sync,
+  Hoppie configuration tests, and outbound Hoppie messages.
+- A basic threshold protects every other `POST`, `PUT`, `PATCH`, and `DELETE`
+  request.
 - Health checks, read requests, and secret-authenticated `/api/v1/internal/*`
-  operations are intentionally excluded.
+  operations are excluded, and verified bots always pass.
 
-Before deploying, enable **Secure Backend Access with OIDC Federation** in the
-Vercel project settings. BotID uses the request-scoped Vercel OIDC token for
-server verification; do not copy that token into a long-lived secret. Deep
-Analysis requires an eligible paid plan and incurs per-check usage, so configure
-spend notifications appropriate for the deployment.
-
-Test protected requests through the deployed web application. Direct production
-requests from `curl` or other clients that did not run the browser challenge are
-expected to receive `403`. Local development passes as human by default. After
-deployment, inspect BotID events in the Vercel Firewall traffic view and verify
-both a Basic route and a Deep Analysis route before promoting the release.
+Bot scores require Bot Management on the zone. Without it, requests carry no
+score and pass, so check **Security → Bots** before relying on this protection.
+After a deploy, confirm in **Security → Analytics** that requests reaching the
+API carry a bot score.
 
 ## Tenant administration
 
@@ -149,10 +79,9 @@ The global Clerk administrator must keep Organizations in membership-optional
 mode, disable end-user organization creation and Verified Domain enrollment,
 and maintain `org:pilot` plus `org:dispatcher` in the tenant Role Set. Do not
 grant tenant administrators Clerk Dashboard workspace access. Verify
-Production's explicit `APP_ORIGIN`. For Preview, keep Vercel system environment
-variables enabled and allowlist the stable branch URL before testing direct
-invitations; an exact deployment-URL fallback may need separate Clerk
-allowlisting.
+Production's explicit `APP_ORIGIN`, and allowlist any preview origin in Clerk
+(set `APP_ENV=preview` and its `APP_ORIGIN`) before testing direct invitations
+there.
 
 Before enabling an active retention policy or handling a verified subject
 request, follow the [privacy lifecycle runbook](privacy-operations.md). Confirm

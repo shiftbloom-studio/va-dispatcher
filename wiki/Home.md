@@ -25,16 +25,17 @@ The current deployment is branded for **vSAS** at `/vsas`, while the API and dat
 
 ```mermaid
 flowchart LR
-    U["Pilot / Dispatcher / Admin"] --> W["Next.js web app<br/>apps/web"]
-    W -->|"same-origin /api/v1"| A["Hono API<br/>apps/api"]
+    U["Pilot / Dispatcher / Admin"] --> W["Next.js web Worker<br/>apps/web"]
+    U -->|"same-origin /api/*"| A
+    W -->|"service binding"| A["Hono API Worker<br/>apps/api"]
     W --> C["Clerk authentication<br/>and organizations"]
     A --> C
-    A --> N["Neon PostgreSQL"]
+    A --> N["Cloudflare D1 and R2"]
     A --> H["Hoppie's ACARS"]
-    V["Vercel cron<br/>every minute"] --> A
+    V["Cron trigger<br/>every minute"] --> A
 ```
 
-The primary production shape is a Vercel multi-service project. The Next.js service handles tenant-branded pages, Clerk sessions, and typed client interactions. The Hono service owns authorization, tenant isolation, state transitions, persistence, Hoppie traffic, and the public OpenAPI reference. Neon provides scale-to-zero PostgreSQL storage.
+Production runs as two Cloudflare Workers on one hostname. The Next.js web Worker (built with vinext) handles tenant-branded pages, Clerk sessions, and typed client interactions. The Hono API Worker owns authorization, tenant isolation, state transitions, persistence, Hoppie traffic, and the public OpenAPI reference. D1 stores the data, R2 stores tenant logos, and nothing runs while idle.
 
 ## Current capability snapshot
 
