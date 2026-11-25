@@ -73,11 +73,19 @@ all on Cloudflare.
    | `AUTH_AUDIENCE`          | both   | API resource `https://<host>/api`; the `aud` of access tokens                    |
    | `AUTH_CLIENT_ID`         | both   | OIDC client ID: sign-in on the web, directory API (invitations, sync) on the API |
    | `VSAS_AUTH_ORG_ID`       | API    | Immutable ID of the first tenant's identity-provider organization (optional)     |
+   | `AUTH_IDENTITY_WORKER`   | both   | Name of the stem Worker when it runs in the same account (optional, see below)   |
    | `NEXT_PUBLIC_SOURCE_URL` | web    | Corresponding-source URL for hosted forks                                        |
    | `LEGAL_*`                | web    | Operator details for the imprint and privacy notice, see `apps/web/.env.example` |
 
    For a manual deploy from a workstation, put the same values in an untracked
    `.env.deploy` at the repository root or in the app directory.
+
+   When stem runs as a Worker in the same Cloudflare account, set
+   `AUTH_IDENTITY_WORKER` to its Worker name. Both Workers then reach the
+   issuer through a service binding (`IDENTITY`). Without it, the token,
+   JWKS and directory calls go over the public hostname, where Bot Fight Mode
+   on the issuer's zone can challenge them, and sign-in fails with
+   `/auth/error?reason=provider`.
 
 4. **Secrets** (Settings → Variables and Secrets, or `wrangler secret put`):
    - API: `AUTH_CLIENT_SECRET`, `TENANT_SECRETS_KEY`, `CRON_SECRET`,
