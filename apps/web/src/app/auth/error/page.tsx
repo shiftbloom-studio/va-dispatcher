@@ -41,7 +41,7 @@ export default async function AuthErrorPage({
           </Link>
         </section>
       </main>
-      <SiteFooter className="border-t border-slate-800 text-slate-400 [&_a:hover]:text-white [&_button:hover]:text-white" />
+      <SiteFooter tone="dark" className="border-t border-slate-800" />
     </div>
   );
 }

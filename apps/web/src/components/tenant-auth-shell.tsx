@@ -33,7 +33,6 @@ export function TenantAuthShell({
       >
         <section className="relative hidden overflow-hidden p-12 lg:flex lg:flex-col lg:justify-between">
           <div className="absolute inset-y-0 right-0 w-px bg-[var(--brand)] opacity-80" />
-          <div className="auth-flight-path absolute inset-x-0 top-1/3 h-px opacity-40" />
           <div className="relative">
             <TenantLogo
               tenant={tenant}
@@ -45,8 +44,15 @@ export function TenantAuthShell({
               Live operations
             </span>
           </div>
-          <div className="relative max-w-xl">
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--brand-border)]">
+          <div className="relative mt-16">
+            {/* Sits just above the eyebrow so it never runs through the text,
+                whatever the viewport height. -inset-x-12 undoes the panel's
+                p-12 so the line still spans the full panel. */}
+            <div
+              aria-hidden
+              className="auth-flight-path absolute -inset-x-12 -top-8 h-px opacity-40"
+            />
+            <p className="max-w-xl text-sm font-bold uppercase tracking-[0.2em] text-[var(--brand-border)]">
               Dispatch · Schedule · ACARS
             </p>
             <h1 className="mt-4 max-w-[12ch] text-balance font-display text-5xl font-semibold leading-[1.08] xl:text-6xl">
@@ -78,7 +84,7 @@ export function TenantAuthShell({
           </div>
         </section>
       </main>
-      <SiteFooter className="border-t border-slate-800 text-slate-400 [&_a:hover]:text-white [&_button:hover]:text-white" />
+      <SiteFooter tone="dark" className="border-t border-slate-800" />
     </div>
   );
 }
