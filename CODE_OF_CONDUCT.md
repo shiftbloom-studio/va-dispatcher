@@ -58,7 +58,7 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported privately to the project maintainers at `hello@shiftbloom.studio`.
+reported privately to the project maintainers at `safety@shiftbloom.studio`.
 Reports will be reviewed promptly and fairly. All community leaders are
 obligated to respect the privacy and security of the reporter of any incident.
 

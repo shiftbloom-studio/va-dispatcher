@@ -14,7 +14,7 @@ fixes are applied to the latest commit on the default branch.
 
 Do not open a public issue for a suspected vulnerability.
 
-Email `hello@shiftbloom.studio` with the subject `[va-dispatcher security]`.
+Email `safety@shiftbloom.studio` with the subject `[va-dispatcher security]`.
 This is the project's current private reporting channel.
 
 Include, when possible:
