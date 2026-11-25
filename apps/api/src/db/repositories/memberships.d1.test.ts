@@ -1,10 +1,7 @@
-import { PgDialect } from "drizzle-orm/pg-core";
-import { drizzle } from "drizzle-orm/node-postgres";
-import type { SQL } from "drizzle-orm";
-import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { setDbForTests, type Db } from "../client.js";
+import { createTestDatabase, type TestDatabase } from "../../test/d1.js";
+import { flights, memberships, scheduleRequests, tenants } from "../schema.js";
 import {
   administrativelyUpdateMembership,
   createDirectoryMembershipWithAudit,
@@ -14,12 +11,6 @@ import {
   submitMembershipApplicationWithAudit,
   cancelMembershipApplicationWithAudit,
 } from "./memberships.js";
-
-const { Pool } = pg;
-const databaseUrl = process.env.TEST_DATABASE_URL;
-const confirmedDatabase = process.env.TEST_CONFIRM_DATABASE;
-const describePostgres = databaseUrl ? describe : describe.skip;
-const dialect = new PgDialect();
 
 const TENANT_ONE = "26000000-0000-4000-8000-000000000001";
 const TENANT_TWO = "26000000-0000-4000-8000-000000000002";
@@ -36,112 +27,53 @@ const FLIGHT_TERMINAL_LINK = "26000000-0000-4000-8000-000000000043";
 const FLIGHT_DRAFT = "26000000-0000-4000-8000-000000000044";
 const FLIGHT_RACE = "26000000-0000-4000-8000-000000000045";
 
-type BatchQuery = { query: SQL };
+const HOUR = 60 * 60 * 1000;
 
-class PgTestAdapter {
-  private nextCommitPause:
-    | {
-        reached: () => void;
-        release: Promise<void>;
-      }
-    | undefined;
-
-  constructor(private readonly pool: pg.Pool) {}
-
-  execute(query: SQL): BatchQuery & PromiseLike<pg.QueryResult> {
-    return {
-      query,
-      then: (onFulfilled, onRejected) =>
-        this.run(query).then(onFulfilled, onRejected),
-    };
-  }
-
-  async batch(queries: readonly BatchQuery[]): Promise<pg.QueryResult[]> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      const results: pg.QueryResult[] = [];
-      for (const item of queries) {
-        const compiled = dialect.sqlToQuery(item.query);
-        results.push(await client.query(compiled.sql, compiled.params));
-      }
-      const pause = this.nextCommitPause;
-      this.nextCommitPause = undefined;
-      if (pause) {
-        pause.reached();
-        await pause.release;
-      }
-      await client.query("commit");
-      return results;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  private async run(query: SQL): Promise<pg.QueryResult> {
-    const compiled = dialect.sqlToQuery(query);
-    return this.pool.query(compiled.sql, compiled.params);
-  }
-
-  pauseNextBatchBeforeCommit(): {
-    reached: Promise<void>;
-    release: () => void;
-  } {
-    let markReached!: () => void;
-    let release!: () => void;
-    const reached = new Promise<void>((resolve) => {
-      markReached = resolve;
-    });
-    const releasePromise = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.nextCommitPause = { reached: markReached, release: releasePromise };
-    return { reached, release };
-  }
-}
-
-describePostgres("administrative member transactions (PostgreSQL)", () => {
-  let pool: pg.Pool;
-  let adapter: PgTestAdapter;
+describe("administrative member transactions (D1)", () => {
+  let database: TestDatabase;
+  const pool = {
+    async query<T = Record<string, unknown>>(
+      statement: string,
+      params: unknown[] = [],
+    ): Promise<{ rows: T[] }> {
+      return { rows: await database.query<T>(statement, ...params) };
+    },
+  };
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: databaseUrl });
-    const database = await pool.query<{ currentDatabase: string }>(
-      'select current_database() as "currentDatabase"',
-    );
-    expect(database.rows[0]?.currentDatabase).toBe(confirmedDatabase);
-    adapter = new PgTestAdapter(pool);
-    setDbForTests(createPgTestDatabase(pool, adapter));
+    database = await createTestDatabase();
   });
 
   beforeEach(async () => {
-    await resetFixtures(pool);
+    await database.reset();
+    await seedFixtures(database);
   });
 
   afterAll(async () => {
-    setDbForTests(null);
-    if (pool) {
-      await pool.query(
-        "drop trigger if exists audit_events_test_failure on audit_events",
-      );
-      await pool.query(
-        "drop trigger if exists self_provision_audit_test_failure on audit_events",
-      );
-      await pool.query(
-        "drop function if exists reject_test_audit_event() cascade",
-      );
-      await pool.query(
-        "drop function if exists reject_self_provision_audit() cascade",
-      );
-      await pool.query("delete from tenants where id = any($1::uuid[])", [
-        [TENANT_ONE, TENANT_TWO],
-      ]);
-      await pool.end();
-    }
+    await database.dispose();
   });
+
+  async function insertFlight(
+    id: string,
+    pilotMembershipId: string,
+    flightNumber: string,
+    status: (typeof flights.$inferInsert)["status"],
+    scheduleRequestId: string | null = null,
+  ) {
+    const etd = new Date();
+    await database.db.insert(flights).values({
+      id,
+      tenantId: TENANT_ONE,
+      scheduleRequestId,
+      pilotMembershipId,
+      flightNumber,
+      depIcao: "EKCH",
+      arrIcao: "ENGM",
+      etd,
+      eta: new Date(etd.getTime() + HOUR),
+      status,
+    });
+  }
 
   it("serializes simultaneous demotions and preserves one active admin", async () => {
     const [first, second] = await Promise.all([
@@ -166,14 +98,14 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       reason: "last_active_admin",
     });
     const activeAdmins = await pool.query<{ count: number }>(
-      `select count(*)::int as count from memberships
-       where tenant_id = $1 and role = 'admin' and status = 'active'`,
+      `select count(*) as count from memberships
+       where tenant_id = ?1 and role = 'admin' and status = 'active'`,
       [TENANT_ONE],
     );
     expect(activeAdmins.rows[0]?.count).toBe(1);
     const audits = await pool.query<{ count: number }>(
-      `select count(*)::int as count from audit_events
-       where tenant_id = $1 and action = 'member.updated'`,
+      `select count(*) as count from audit_events
+       where tenant_id = ?1 and action = 'member.updated'`,
       [TENANT_ONE],
     );
     expect(audits.rows[0]?.count).toBe(1);
@@ -201,25 +133,15 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
   it("rolls back the member update when its audit insert fails", async () => {
     const activeAdmin = await pool.query<{ id: string }>(
       `select id from memberships
-       where tenant_id = $1 and role = 'admin' and status = 'active' limit 1`,
+       where tenant_id = ?1 and role = 'admin' and status = 'active' limit 1`,
       [TENANT_ONE],
     );
     const adminId = activeAdmin.rows[0]!.id;
-    await pool.query(`
-      create or replace function reject_test_audit_event()
-      returns trigger language plpgsql as $$
-      begin
-        if new.action = 'member.updated' then
-          raise exception 'synthetic audit failure';
-        end if;
-        return new;
-      end $$
-    `);
-    await pool.query(`
-      create trigger audit_events_test_failure
-      before insert on audit_events
-      for each row execute function reject_test_audit_event()
-    `);
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'member.updated'",
+      "synthetic audit failure",
+    );
 
     await expect(
       administrativelyUpdateMembership({
@@ -229,10 +151,9 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
         patch: { displayName: "Must roll back" },
       }),
     ).rejects.toThrow("synthetic audit failure");
-    await pool.query("drop trigger audit_events_test_failure on audit_events");
 
     const member = await pool.query<{ displayName: string | null }>(
-      'select display_name as "displayName" from memberships where id = $1',
+      'select display_name as "displayName" from memberships where id = ?1',
       [adminId],
     );
     expect(member.rows[0]?.displayName).not.toBe("Must roll back");
@@ -241,7 +162,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
   it("reoffers accepted work, keeps its linked request consistent, and audits each entity", async () => {
     const actor = await pool.query<{ id: string }>(
       `select id from memberships
-       where tenant_id = $1 and role = 'admin' and status = 'active' limit 1`,
+       where tenant_id = ?1 and role = 'admin' and status = 'active' limit 1`,
       [TENANT_ONE],
     );
     const result = await administrativelyUpdateMembership({
@@ -270,7 +191,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
          version,
          assignment_revision as "assignmentRevision",
          assignment_confirmed_revision as "assignmentConfirmedRevision"
-       from flights where id = $1`,
+       from flights where id = ?1`,
       [FLIGHT_ONE],
     );
     expect(flight.rows[0]).toEqual({
@@ -285,7 +206,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       version: number;
     }>(
       `select pilot_membership_id as "pilotMembershipId", version
-       from schedule_requests where id = $1`,
+       from schedule_requests where id = ?1`,
       [REQUEST_ONE],
     );
     expect(request.rows[0]).toEqual({
@@ -297,7 +218,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       meta: Record<string, unknown>;
     }>(
       `select action, meta from audit_events
-       where tenant_id = $1
+       where tenant_id = ?1
          and action in (
            'flight.assignment_reassigned',
            'schedule_request.assignment_reassigned'
@@ -308,7 +229,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       "flight.assignment_reassigned",
       "schedule_request.assignment_reassigned",
     ]);
-    expect(events.rows[0]?.meta).toMatchObject({
+    expect(JSON.parse(String(events.rows[0]?.meta))).toMatchObject({
       before: {
         pilotMembershipId: PILOT_ONE,
         status: "accepted",
@@ -326,7 +247,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       acceptanceInvalidated: true,
       reason: "member_became_ineligible",
     });
-    expect(events.rows[1]?.meta).toMatchObject({
+    expect(JSON.parse(String(events.rows[1]?.meta))).toMatchObject({
       before: {
         pilotMembershipId: PILOT_ONE,
         status: "in_review",
@@ -344,7 +265,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
   it("rejects a cross-tenant replacement and blocks changes during an active flight", async () => {
     const actor = await pool.query<{ id: string }>(
       `select id from memberships
-       where tenant_id = $1 and role = 'admin' and status = 'active' limit 1`,
+       where tenant_id = ?1 and role = 'admin' and status = 'active' limit 1`,
       [TENANT_ONE],
     );
     const crossTenant = await administrativelyUpdateMembership({
@@ -371,7 +292,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       `insert into flights (
         id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
         etd, eta, status
-      ) values ($1, $2, $3, 'SK902', 'EKCH', 'ENGM', now(), now() + interval '1 hour', 'active')`,
+      ) values (?1, ?2, ?3, 'SK902', 'EKCH', 'ENGM', cast(unixepoch('subsec') * 1000 as integer), cast(unixepoch('subsec') * 1000 as integer) + 3600000, 'active')`,
       [FLIGHT_ACTIVE, TENANT_ONE, PILOT_TWO],
     );
     const active = await administrativelyUpdateMembership({
@@ -386,51 +307,25 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     });
   });
 
-  it("lets a concurrent briefed-to-active transition win without reassigning the active flight", async () => {
-    await pool.query(
-      `insert into flights (
-        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
-        etd, eta, status
-      ) values ($1, $2, $3, 'SK905', 'EKCH', 'ENGM', now(), now() + interval '1 hour', 'briefed')`,
-      [FLIGHT_RACE, TENANT_ONE, PILOT_TWO],
+  it("lets a committed briefed-to-active transition win without reassigning the active flight", async () => {
+    await insertFlight(FLIGHT_RACE, PILOT_TWO, "SK905", "briefed");
+    // D1 serializes writes: the pilot's transition commits first.
+    await database.query(
+      "update flights set status = 'active' where id = ? and status = 'briefed'",
+      FLIGHT_RACE,
     );
-    const transition = await pool.connect();
-    let transactionOpen = false;
-    try {
-      await transition.query("begin");
-      transactionOpen = true;
-      await transition.query(
-        `update flights set status = 'active', updated_at = now()
-         where id = $1 and status = 'briefed'`,
-        [FLIGHT_RACE],
-      );
-      const administration = administrativelyUpdateMembership({
+    await expect(
+      administrativelyUpdateMembership({
         tenantId: TENANT_ONE,
         membershipId: PILOT_TWO,
         actorMembershipId: ADMIN_ONE,
         patch: { status: "disabled" },
         reassignToMembershipId: PILOT_ONE,
-      });
-      await waitForLockWait(pool, "with target as materialized");
-      await transition.query("commit");
-      transactionOpen = false;
-
-      await expect(administration).resolves.toMatchObject({
-        kind: "blocked",
-        reason: "active_flight",
-      });
-    } finally {
-      if (transactionOpen) {
-        await transition.query("rollback").catch(() => undefined);
-      }
-      transition.release();
-    }
-    const flight = await pool.query<{
-      pilotMembershipId: string;
-      status: string;
-    }>(
+      }),
+    ).resolves.toMatchObject({ kind: "blocked", reason: "active_flight" });
+    const flight = await pool.query(
       `select pilot_membership_id as "pilotMembershipId", status
-       from flights where id = $1`,
+       from flights where id = ?1`,
       [FLIGHT_RACE],
     );
     expect(flight.rows[0]).toEqual({
@@ -440,42 +335,25 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
   });
 
   it("lets admin reassignment win without a stale briefed-to-active overwrite", async () => {
-    await pool.query(
-      `insert into flights (
-        id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
-        etd, eta, status
-      ) values ($1, $2, $3, 'SK905', 'EKCH', 'ENGM', now(), now() + interval '1 hour', 'briefed')`,
-      [FLIGHT_RACE, TENANT_ONE, PILOT_TWO],
+    await insertFlight(FLIGHT_RACE, PILOT_TWO, "SK905", "briefed");
+    await expect(
+      administrativelyUpdateMembership({
+        tenantId: TENANT_ONE,
+        membershipId: PILOT_TWO,
+        actorMembershipId: ADMIN_ONE,
+        patch: { status: "disabled" },
+        reassignToMembershipId: PILOT_ONE,
+      }),
+    ).resolves.toMatchObject({ kind: "updated", reassignedFlightCount: 1 });
+    // The stale transition still expects the briefed state it read earlier.
+    const stale = await database.query(
+      "update flights set status = 'active' where id = ? and status = 'briefed' returning id",
+      FLIGHT_RACE,
     );
-    const gate = adapter.pauseNextBatchBeforeCommit();
-    const administration = administrativelyUpdateMembership({
-      tenantId: TENANT_ONE,
-      membershipId: PILOT_TWO,
-      actorMembershipId: ADMIN_ONE,
-      patch: { status: "disabled" },
-      reassignToMembershipId: PILOT_ONE,
-    });
-    await gate.reached;
-    const transition = pool.query(
-      `update flights set status = 'active', updated_at = now()
-       where id = $1 and status = 'briefed'
-       returning id`,
-      [FLIGHT_RACE],
-    );
-    await waitForLockWait(pool, "update flights set status = 'active'");
-    gate.release();
-
-    await expect(administration).resolves.toMatchObject({
-      kind: "updated",
-      reassignedFlightCount: 1,
-    });
-    expect((await transition).rowCount).toBe(0);
-    const flight = await pool.query<{
-      pilotMembershipId: string;
-      status: string;
-    }>(
+    expect(stale).toHaveLength(0);
+    const flight = await pool.query(
       `select pilot_membership_id as "pilotMembershipId", status
-       from flights where id = $1`,
+       from flights where id = ?1`,
       [FLIGHT_RACE],
     );
     expect(flight.rows[0]).toEqual({
@@ -484,44 +362,26 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     });
   });
 
-  it("does not rewrite request ownership when a concurrent terminal transition wins", async () => {
-    const transition = await pool.connect();
-    let transactionOpen = false;
-    try {
-      await transition.query("begin");
-      transactionOpen = true;
-      await transition.query(
-        `update schedule_requests set status = 'fulfilled', updated_at = now()
-         where id = $1 and status = 'in_review'`,
-        [REQUEST_ONE],
-      );
-      const administration = administrativelyUpdateMembership({
+  it("does not rewrite request ownership when a committed terminal transition wins", async () => {
+    await database.query(
+      "update schedule_requests set status = 'fulfilled' where id = ? and status = 'in_review'",
+      REQUEST_ONE,
+    );
+    await expect(
+      administrativelyUpdateMembership({
         tenantId: TENANT_ONE,
         membershipId: PILOT_ONE,
         actorMembershipId: ADMIN_ONE,
         patch: { status: "disabled" },
         reassignToMembershipId: PILOT_TWO,
-      });
-      await waitForLockWait(pool, "with target as materialized");
-      await transition.query("commit");
-      transactionOpen = false;
-
-      await expect(administration).resolves.toMatchObject({
-        kind: "blocked",
-        reason: "terminal_request_link",
-      });
-    } finally {
-      if (transactionOpen) {
-        await transition.query("rollback").catch(() => undefined);
-      }
-      transition.release();
-    }
-    const request = await pool.query<{
-      pilotMembershipId: string;
-      status: string;
-    }>(
+      }),
+    ).resolves.toMatchObject({
+      kind: "blocked",
+      reason: "terminal_request_link",
+    });
+    const request = await pool.query(
       `select pilot_membership_id as "pilotMembershipId", status
-       from schedule_requests where id = $1`,
+       from schedule_requests where id = ?1`,
       [REQUEST_ONE],
     );
     expect(request.rows[0]).toEqual({
@@ -530,45 +390,36 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     });
     const flight = await pool.query<{ pilotMembershipId: string }>(
       `select pilot_membership_id as "pilotMembershipId"
-       from flights where id = $1`,
+       from flights where id = ?1`,
       [FLIGHT_ONE],
     );
     expect(flight.rows[0]?.pilotMembershipId).toBe(PILOT_ONE);
   });
 
   it("lets admin reassignment win before a stale terminal transition", async () => {
-    const gate = adapter.pauseNextBatchBeforeCommit();
-    const administration = administrativelyUpdateMembership({
-      tenantId: TENANT_ONE,
-      membershipId: PILOT_ONE,
-      actorMembershipId: ADMIN_ONE,
-      patch: { status: "disabled" },
-      reassignToMembershipId: PILOT_TWO,
-    });
-    await gate.reached;
-    const terminalTransition = pool.query(
-      `update schedule_requests
-       set status = 'fulfilled', updated_at = now()
-       where id = $1
-         and pilot_membership_id = $2
-         and status = 'in_review'
-       returning id`,
-      [REQUEST_ONE, PILOT_ONE],
-    );
-    await waitForLockWait(pool, "update schedule_requests");
-    gate.release();
-
-    await expect(administration).resolves.toMatchObject({
+    await expect(
+      administrativelyUpdateMembership({
+        tenantId: TENANT_ONE,
+        membershipId: PILOT_ONE,
+        actorMembershipId: ADMIN_ONE,
+        patch: { status: "disabled" },
+        reassignToMembershipId: PILOT_TWO,
+      }),
+    ).resolves.toMatchObject({
       kind: "updated",
       reassignedScheduleRequestCount: 1,
     });
-    expect((await terminalTransition).rowCount).toBe(0);
-    const request = await pool.query<{
-      pilotMembershipId: string;
-      status: string;
-    }>(
+    const stale = await database.query(
+      `update schedule_requests set status = 'fulfilled'
+       where id = ? and pilot_membership_id = ? and status = 'in_review'
+       returning id`,
+      REQUEST_ONE,
+      PILOT_ONE,
+    );
+    expect(stale).toHaveLength(0);
+    const request = await pool.query(
       `select pilot_membership_id as "pilotMembershipId", status
-       from schedule_requests where id = $1`,
+       from schedule_requests where id = ?1`,
       [REQUEST_ONE],
     );
     expect(request.rows[0]).toEqual({
@@ -582,7 +433,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       `insert into schedule_requests (
         id, tenant_id, pilot_membership_id, window_start, window_end,
         desired_flight_count, status
-      ) values ($1, $2, $3, now(), now() + interval '1 day', 1, 'fulfilled')`,
+      ) values (?1, ?2, ?3, cast(unixepoch('subsec') * 1000 as integer), cast(unixepoch('subsec') * 1000 as integer) + 86400000, 1, 'fulfilled')`,
       [REQUEST_TERMINAL, TENANT_ONE, PILOT_ONE],
     );
     await pool.query(
@@ -590,8 +441,8 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
         id, tenant_id, schedule_request_id, pilot_membership_id, flight_number,
         dep_icao, arr_icao, etd, eta, status
       ) values (
-        $1, $2, $3, $4, 'SK903', 'EKCH', 'ENGM', now(),
-        now() + interval '1 hour', 'accepted'
+        ?1, ?2, ?3, ?4, 'SK903', 'EKCH', 'ENGM', cast(unixepoch('subsec') * 1000 as integer),
+        cast(unixepoch('subsec') * 1000 as integer) + 3600000, 'accepted'
       )`,
       [FLIGHT_TERMINAL_LINK, TENANT_ONE, REQUEST_TERMINAL, PILOT_ONE],
     );
@@ -610,7 +461,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     });
     const request = await pool.query<{ pilotMembershipId: string }>(
       `select pilot_membership_id as "pilotMembershipId"
-       from schedule_requests where id = $1`,
+       from schedule_requests where id = ?1`,
       [REQUEST_TERMINAL],
     );
     expect(request.rows[0]?.pilotMembershipId).toBe(PILOT_ONE);
@@ -621,7 +472,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       `insert into flights (
         id, tenant_id, pilot_membership_id, flight_number, dep_icao, arr_icao,
         etd, eta, status
-      ) values ($1, $2, $3, 'SK904', 'EKCH', 'ENGM', now(), now() + interval '1 hour', 'draft')`,
+      ) values (?1, ?2, ?3, 'SK904', 'EKCH', 'ENGM', cast(unixepoch('subsec') * 1000 as integer), cast(unixepoch('subsec') * 1000 as integer) + 3600000, 'draft')`,
       [FLIGHT_DRAFT, TENANT_ONE, PILOT_TWO],
     );
     const result = await administrativelyUpdateMembership({
@@ -637,7 +488,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       status: string;
     }>(
       `select pilot_membership_id as "pilotMembershipId", status
-       from flights where id = $1`,
+       from flights where id = ?1`,
       [FLIGHT_DRAFT],
     );
     expect(flight.rows[0]).toEqual({
@@ -649,7 +500,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
   it("creates a directory member and audit atomically", async () => {
     const actor = await pool.query<{ id: string }>(
       `select id from memberships
-       where tenant_id = $1 and role = 'admin' and status = 'active' limit 1`,
+       where tenant_id = ?1 and role = 'admin' and status = 'active' limit 1`,
       [TENANT_ONE],
     );
     const created = await createDirectoryMembershipWithAudit({
@@ -664,8 +515,8 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       role: "pilot",
     });
     const audit = await pool.query<{ count: number }>(
-      `select count(*)::int as count from audit_events
-       where tenant_id = $1 and entity_id = $2 and action = 'member.directory_created'`,
+      `select count(*) as count from audit_events
+       where tenant_id = ?1 and entity_id = ?2 and action = 'member.directory_created'`,
       [TENANT_ONE, created!.id],
     );
     expect(audit.rows[0]?.count).toBe(1);
@@ -688,10 +539,10 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     }>(
       `select
          actor_membership_id as "actorMembershipId",
-         meta->>'authority' as authority
+         meta ->> '$.authority' as authority
        from audit_events
-       where tenant_id = $1
-         and entity_id = $2
+       where tenant_id = ?1
+         and entity_id = ?2
          and action = 'member.self_provisioned'`,
       [TENANT_ONE, created.id],
     );
@@ -704,21 +555,11 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
   });
 
   it("rolls back first-login membership when its audit insert fails", async () => {
-    await pool.query(`
-      create or replace function reject_self_provision_audit()
-      returns trigger language plpgsql as $$
-      begin
-        if new.action = 'member.self_provisioned' then
-          raise exception 'synthetic self-provision audit failure';
-        end if;
-        return new;
-      end $$
-    `);
-    await pool.query(`
-      create trigger self_provision_audit_test_failure
-      before insert on audit_events
-      for each row execute function reject_self_provision_audit()
-    `);
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'member.self_provisioned'",
+      "synthetic self-provision audit failure",
+    );
 
     await expect(
       provisionPilotMembershipWithAudit({
@@ -726,14 +567,11 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
         clerkUserId: "user_unaudited_first_login",
       }),
     ).rejects.toThrow("synthetic self-provision audit failure");
-    await pool.query(
-      "drop trigger self_provision_audit_test_failure on audit_events",
-    );
 
     const membership = await pool.query<{ count: number }>(
-      `select count(*)::int as count
+      `select count(*) as count
        from memberships
-       where tenant_id = $1 and clerk_user_id = $2`,
+       where tenant_id = ?1 and clerk_user_id = ?2`,
       [TENANT_ONE, "user_unaudited_first_login"],
     );
     expect(membership.rows[0]?.count).toBe(0);
@@ -789,7 +627,7 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
 
     const audit = await pool.query<{ action: string }>(
       `select action from audit_events
-       where tenant_id = $1 and entity_id = $2
+       where tenant_id = ?1 and entity_id = ?2
        order by created_at`,
       [TENANT_ONE, submitted.membership.id],
     );
@@ -817,9 +655,9 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
       },
     });
     const audit = await pool.query<{ count: number }>(
-      `select count(*)::int as count from audit_events
-       where tenant_id = $1
-         and entity_id = $2
+      `select count(*) as count from audit_events
+       where tenant_id = ?1
+         and entity_id = ?2
          and action = 'membership.application_submitted'`,
       [TENANT_ONE, PILOT_ONE],
     );
@@ -872,90 +710,48 @@ describePostgres("administrative member transactions (PostgreSQL)", () => {
     });
     expect(secondAttempt).toBeNull();
     const audit = await pool.query<{ count: number }>(
-      `select count(*)::int as count from audit_events
-       where tenant_id = $1 and action = 'member.admin_recovered'`,
+      `select count(*) as count from audit_events
+       where tenant_id = ?1 and action = 'member.admin_recovered'`,
       [TENANT_TWO],
     );
     expect(audit.rows[0]?.count).toBe(1);
   });
 });
 
-function createPgTestDatabase(pool: pg.Pool, batchAdapter: PgTestAdapter): Db {
-  const database = drizzle({ client: pool });
-  return new Proxy(database, {
-    get(target, property, receiver) {
-      if (property === "execute")
-        return batchAdapter.execute.bind(batchAdapter);
-      if (property === "batch") return batchAdapter.batch.bind(batchAdapter);
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  }) as unknown as Db;
-}
-
-async function resetFixtures(pool: pg.Pool): Promise<void> {
-  await pool.query("delete from tenants where id = any($1::uuid[])", [
-    [TENANT_ONE, TENANT_TWO],
+async function seedFixtures({ db }: TestDatabase): Promise<void> {
+  await db.insert(tenants).values([
+    { id: TENANT_ONE, slug: "admin-test-one", name: "Admin Test One", clerkOrgId: "org_admin_test_one" },
+    { id: TENANT_TWO, slug: "admin-test-two", name: "Admin Test Two", clerkOrgId: "org_admin_test_two" },
   ]);
-  await pool.query(
-    `insert into tenants (id, slug, name, clerk_org_id) values
-      ($1, 'admin-test-one', 'Admin Test One', 'org_admin_test_one'),
-      ($2, 'admin-test-two', 'Admin Test Two', 'org_admin_test_two')`,
-    [TENANT_ONE, TENANT_TWO],
-  );
-  await pool.query(
-    `insert into memberships (
-      id, tenant_id, clerk_user_id, role, display_name, status
-    ) values
-      ($1, $6, 'admin_one', 'admin', 'Admin One', 'active'),
-      ($2, $6, 'admin_two', 'admin', 'Admin Two', 'active'),
-      ($3, $6, 'pilot_one', 'pilot', 'Pilot One', 'active'),
-      ($4, $6, 'pilot_two', 'pilot', 'Pilot Two', 'active'),
-      ($5, $7, 'outside_pilot', 'pilot', 'Outside Pilot', 'active')`,
-    [
-      ADMIN_ONE,
-      ADMIN_TWO,
-      PILOT_ONE,
-      PILOT_TWO,
-      OUTSIDE_PILOT,
-      TENANT_ONE,
-      TENANT_TWO,
-    ],
-  );
-  await pool.query(
-    `insert into schedule_requests (
-      id, tenant_id, pilot_membership_id, window_start, window_end,
-      desired_flight_count, status
-    ) values ($1, $2, $3, now(), now() + interval '1 day', 1, 'in_review')`,
-    [REQUEST_ONE, TENANT_ONE, PILOT_ONE],
-  );
-  await pool.query(
-    `insert into flights (
-      id, tenant_id, schedule_request_id, pilot_membership_id, flight_number,
-      dep_icao, arr_icao, etd, eta, status,
-      assignment_confirmed_revision, assignment_confirmed_at
-    ) values (
-      $1, $2, $3, $4, 'SK901', 'EKCH', 'ENGM', now(),
-      now() + interval '1 hour', 'accepted', 1, now()
-    )`,
-    [FLIGHT_ONE, TENANT_ONE, REQUEST_ONE, PILOT_ONE],
-  );
-}
-
-async function waitForLockWait(pool: pg.Pool, queryFragment: string) {
-  const deadline = Date.now() + 2_000;
-  while (Date.now() < deadline) {
-    const waiting = await pool.query<{ waiting: boolean }>(
-      `select exists (
-        select 1 from pg_stat_activity
-        where datname = current_database()
-          and wait_event_type = 'Lock'
-          and query ilike '%' || $1 || '%'
-      ) as waiting`,
-      [queryFragment],
-    );
-    if (waiting.rows[0]?.waiting) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`Timed out waiting for PostgreSQL lock: ${queryFragment}`);
+  await db.insert(memberships).values([
+    { id: ADMIN_ONE, tenantId: TENANT_ONE, clerkUserId: "admin_one", role: "admin", displayName: "Admin One", status: "active" },
+    { id: ADMIN_TWO, tenantId: TENANT_ONE, clerkUserId: "admin_two", role: "admin", displayName: "Admin Two", status: "active" },
+    { id: PILOT_ONE, tenantId: TENANT_ONE, clerkUserId: "pilot_one", role: "pilot", displayName: "Pilot One", status: "active" },
+    { id: PILOT_TWO, tenantId: TENANT_ONE, clerkUserId: "pilot_two", role: "pilot", displayName: "Pilot Two", status: "active" },
+    { id: OUTSIDE_PILOT, tenantId: TENANT_TWO, clerkUserId: "outside_pilot", role: "pilot", displayName: "Outside Pilot", status: "active" },
+  ]);
+  const now = new Date();
+  await db.insert(scheduleRequests).values({
+    id: REQUEST_ONE,
+    tenantId: TENANT_ONE,
+    pilotMembershipId: PILOT_ONE,
+    windowStart: now,
+    windowEnd: new Date(now.getTime() + 24 * HOUR),
+    desiredFlightCount: 1,
+    status: "in_review",
+  });
+  await db.insert(flights).values({
+    id: FLIGHT_ONE,
+    tenantId: TENANT_ONE,
+    scheduleRequestId: REQUEST_ONE,
+    pilotMembershipId: PILOT_ONE,
+    flightNumber: "SK901",
+    depIcao: "EKCH",
+    arrIcao: "ENGM",
+    etd: now,
+    eta: new Date(now.getTime() + HOUR),
+    status: "accepted",
+    assignmentConfirmedRevision: 1,
+    assignmentConfirmedAt: now,
+  });
 }
