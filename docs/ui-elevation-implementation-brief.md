@@ -17,7 +17,7 @@ Elevate VA Dispatch into a modern, professional, multi-tenant airline operations
 
 Every Virtual Airline must be able to individualize the application with almost no setup:
 
-- The only required image is one square organization logo. Reuse an existing organization or Clerk logo when available, or let the admin upload it once in organization settings.
+- The only required image is one square organization logo. Reuse an existing organization logo when available, or let the admin upload it once in organization settings.
 - The admin selects one seed brand color.
 - Add one simple **Brand presence** choice with three previews: **Restrained**, **Balanced**, and **High visibility**; default to **Balanced**.
 - Everything else must be intelligently derived: complementary tones, backgrounds, selection treatments, focus appearance, identity rail, subtle motif strength, and fallback organization initials.

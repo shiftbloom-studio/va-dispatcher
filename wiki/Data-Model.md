@@ -40,7 +40,7 @@ One row per Virtual Airline.
 | ------------------ | ------------------------------------------------------------------------------- |
 | `slug`             | Unique URL/application tenant key                                               |
 | `name`             | Operational display name                                                        |
-| `clerk_org_id`     | Unique Clerk organization mapping                                               |
+| `auth_org_id`      | Unique stem organization mapping                                                |
 | `hoppie_station`   | Shared ground-station callsign                                                  |
 | `hoppie_logon_enc` | AES-256-GCM encrypted Hoppie logon                                              |
 | `settings`         | Flexible JSON settings, including ACARS test metadata and `memberAccess` policy |
@@ -53,7 +53,7 @@ Tenant-local user profile and authorization record.
 
 | Important field                            | Purpose                                                                           |
 | ------------------------------------------ | --------------------------------------------------------------------------------- |
-| `clerk_user_id`                            | Clerk identity inside tenant                                                      |
+| `auth_user_id`                             | stem user ID inside tenant                                                        |
 | `role`                                     | `pilot`, `dispatcher`, or `admin`; for an invited application, the requested role |
 | `display_name`                             | Optional tenant display name                                                      |
 | `pilot_callsign`                           | Optional personal aircraft ACARS callsign                                         |
@@ -61,12 +61,12 @@ Tenant-local user profile and authorization record.
 | `navigraph_subject`, `navigraph_username`  | Navigraph OAuth identity                                                          |
 | `status`                                   | `active`, `invited`, or `disabled`                                                |
 
-`(tenant_id, clerk_user_id)` and `(tenant_id, pilot_callsign)` are unique. SQLite permits multiple null callsigns. Schedule requests restrict membership deletion; flight and audit actor links use set-null behavior.
+`(tenant_id, auth_user_id)` and `(tenant_id, pilot_callsign)` are unique. SQLite permits multiple null callsigns. Schedule requests restrict membership deletion; flight and audit actor links use set-null behavior.
 
 The application reuses the membership lifecycle instead of creating a second
 applicant identity store: `invited` plus the membership `role` is pending,
 `active` is approved, and `disabled` is rejected, cancelled, or removed. The
-verified Clerk user ID remains the unique identity inside a tenant. Application
+verified stem user ID remains the unique identity inside a tenant. Application
 submission, cancellation, approval, rejection, and safe removal each write the
 membership change and its local security audit atomically.
 
@@ -205,7 +205,7 @@ delivery: pending | accepted | rejected | ambiguous
 Cancellation preserves operational history. The privacy control plane supports
 approved dry-run/execute retention, verified export, correction, restriction,
 objection, anonymization/erasure, holds, and auditable external-provider tasks.
-Operators still define the lawful policy and complete Clerk, Cloudflare,
+Operators still define the lawful policy and complete stem, Cloudflare,
 Hoppie, backup, and legal work that the application cannot perform itself.
 
 Free-text fields—including notes, rejection/cancellation reasons, ACARS bodies, audit metadata, and settings JSON—can contain personal data even when the schema does not require it.

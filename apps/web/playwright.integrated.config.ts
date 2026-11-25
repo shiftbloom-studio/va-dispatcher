@@ -39,7 +39,7 @@ export default defineConfig({
         E2E_FIXTURE_SECRET: fixtureSecret,
         ACARS_PROVIDER: "mock",
         CRON_SECRET: "isolated-e2e-cron-authority",
-        VSAS_CLERK_ORG_ID: "org_e2e_vsas",
+        VSAS_AUTH_ORG_ID: "org_e2e_vsas",
         TENANT_SECRETS_KEY: tenantSecretsKey,
         SIMBRIEF_API_KEY: "integrated-e2e-simbrief-api-key",
         SIMBRIEF_CALLBACK_URL: `${apiOrigin}/api/v1/simbrief/callback`,
@@ -59,9 +59,6 @@ export default defineConfig({
         API_INTERNAL_URL: apiOrigin,
         NEXT_PUBLIC_E2E_FIXTURE_MODE: "true",
         E2E_FIXTURE_SECRET: fixtureSecret,
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
-          "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
-        CLERK_SECRET_KEY: "sk_test_integrated_fixture_not_used",
         LEGAL_OPERATOR_NAME: "Example Aviation e.V.",
         LEGAL_OPERATOR_ADDRESS: "Example Street 1|10115 Berlin|Germany",
         LEGAL_OPERATOR_EMAIL: "legal@example.test",

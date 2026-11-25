@@ -4,59 +4,58 @@ The tenant administrator control plane is available at `/{slug}/admin`. It is
 an application role boundary: every member and audit API independently requires
 an authenticated `admin`; hiding navigation is not authorization.
 
-## Member directory and Clerk reconciliation
+## Member directory and stem reconciliation
 
 The member console searches the tenant-local directory by display name, ACARS
-callsign, or Clerk user ID and filters by application role and membership
+callsign, or stem user ID and filters by application role and membership
 status. Results use deterministic cursor pagination.
 
-`POST /members/sync` reconciles the complete Clerk organization directory in
-pages of 100. It does not silently stop at Clerk's first page and it returns
+`POST /members/sync` reconciles the complete stem organization directory in
+pages of 100. It does not silently stop at stem's first page and it returns
 created, updated, unchanged, skipped, and failed counts. At most 25 opaque
 failure locations are returned so one invalid member does not expose provider
-error payloads or produce an unbounded response. Members absent from Clerk are
+error payloads or produce an unbounded response. Members absent from stem are
 not disabled automatically; an administrator must review and disable them
-explicitly. A Clerk entry without a user ID is reported as an incomplete,
+explicitly. A directory entry without a user ID is reported as an incomplete,
 skipped item instead of a successful no-op. Existing pending or disabled local
 memberships are also reported for explicit review and are never reactivated or
-rewritten from Clerk directory state.
+rewritten from stem directory state.
 
-Only accepted Clerk organization memberships appear in this directory. Pending
-organization invitations and application-wide account invitations are not
+Only accepted stem organization memberships appear in this directory. Pending
+organization invitations and accounts created without an invitation are not
 members and cannot be imported by sync.
 
 ## Invitations and manual applications
 
-The console sends and revokes pilot/dispatcher invitations through Clerk's
-Backend API. Invitation email stays in Clerk and in the admin-only live
-response; audit metadata records role and expiry without copying the address.
+The console sends and revokes pilot/dispatcher invitations through stem's
+directory API, and stem sends the email. The address stays in stem and in the
+admin-only live response; audit metadata records role and expiry without copying the address.
 The configured 7/14/30-day lifetime comes from organization settings.
 The tenant return URL always comes from the explicit `APP_ORIGIN` of the
 environment (`APP_ENV=production` or `preview`).
-Invited users return to the public `/{slug}/sign-in` Clerk flow, which consumes
-the organization ticket for existing users or transfers new users into sign-up.
+After accepting in stem, invited users return to `/{slug}`; signing in there
+creates their account on first use.
 After an organization invitation is accepted, first tenant access or directory
 sync creates the active local membership when no local record exists. An
 existing pending or disabled local record remains inactive for explicit
 administrator review.
 
-An application-wide invitation sent from Clerk Dashboard creates an account,
-not a tenant membership. After accepting it, the user must open
-`/{slug}/join`, request a pilot or dispatcher role, and receive administrator
+An account created without an invitation is not a tenant membership. The user
+must open `/{slug}/join`, request a pilot or dispatcher role, and receive administrator
 approval. This preserves tenant choice and the local approval audit trail.
 
-Self-service application is separate from Clerk organization membership:
+Self-service application is separate from stem organization membership:
 
-1. A verified signed-in Clerk user submits a pilot or dispatcher request for a
+1. A signed-in user with a verified email address submits a pilot or dispatcher request for a
    registered tenant slug.
 2. VA Dispatch stores that tenant/user pair as `invited`, with `role` holding
    the requested pilot/dispatcher role; the user still has no business-route
    access.
 3. An admin approves or rejects it in this console. Competing approve/reject/
    cancel decisions are serialized against the pending status.
-4. Approval creates or updates Clerk membership first, then atomically
+4. Approval creates or updates the stem membership first, then atomically
    activates the local role and audit. A local failure remains fail-closed and
-   can be retried safely. Rejection leaves Clerk untouched and closes the local
+   can be retried safely. Rejection leaves stem untouched and closes the local
    request.
 
 A returning disabled member can apply again. Historical membership identity
@@ -65,20 +64,20 @@ guards before changing an existing pilot to dispatcher.
 
 ## Role synchronization and removal
 
-Active role changes synchronize `org:pilot`, `org:dispatcher`, or `org:admin`
-to Clerk before the guarded local update. If the local update fails, the API
-attempts to restore the previous Clerk role; the local authorization record is
+Active role changes synchronize `pilot`, `dispatcher`, or `admin` to stem
+before the guarded local update. If the local update fails, the API attempts to
+restore the previous stem role; the local authorization record is
 unchanged and authoritative.
 
 **Remove from organization** is the complete offboarding action. It first runs
 the local disable/reassignment transaction and audit. Only after local access
-is denied does it delete Clerk organization membership. A Clerk outage returns
-`clerkSynchronized=false`: access remains safely disabled, the UI shows a
+is denied does it delete the stem organization membership. A stem outage
+returns `directorySynchronized=false`: access remains safely disabled, the UI shows a
 warning, and repeating removal retries only the provider step. Directory sync
 never reactivates disabled memberships. Do not use the plain status selector as
-a substitute when Clerk membership must also be removed.
+a substitute when the stem membership must also be removed.
 
-Clerk synchronization may update role and display name or create an active
+Directory synchronization may update role and display name or create an active
 membership. Each mutation and the aggregate sync result is audited. A failed
 per-member audit insert rolls back the corresponding membership mutation. If
 the final aggregate audit insert fails after those transactions, the response
@@ -92,13 +91,13 @@ will not demote or disable the last active application administrator. Promote a
 second active administrator first.
 
 The break-glass recovery path is deliberately narrower than normal sync: if a
-tenant has no active application administrator, a user presenting a valid Clerk
-session whose verified organization role maps to `admin` may repair only their
+tenant has no active application administrator, a user presenting a valid stem
+access token whose verified organization role maps to `admin` may repair only their
 own membership to active admin on authentication. The repair is tenant-scoped,
 atomic, and audited as `member.admin_recovered`. It cannot replace normal role
 management while any active application administrator remains.
 
-A verified Clerk member without an application membership is first provisioned
+A verified organization member without an application membership is first provisioned
 as active `pilot` or `dispatcher` according to the role assigned by VA Dispatch
 invitation/approval. Creation and the `member.self_provisioned` audit event are
 one transaction. Admin privilege requires an explicit application-admin change,

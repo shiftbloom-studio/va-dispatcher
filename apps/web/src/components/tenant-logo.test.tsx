@@ -28,17 +28,17 @@ describe("TenantLogo", () => {
     ).toHaveAttribute("src", "/tenants/vsas/logo.jpg");
   });
 
-  it("can display the active Clerk organization logo", () => {
+  it("can display the a configured remote logo", () => {
     render(
       <TenantLogo
         tenant={tenant}
-        src="https://img.clerk.com/org_vsas-logo"
+        src="https://logos.example.test/vsas.png"
         variant="wordmark"
       />,
     );
 
     const image = screen.getByRole("img", { name: "Virtual SAS logo" });
-    expect(image).toHaveAttribute("src", "https://img.clerk.com/org_vsas-logo");
+    expect(image).toHaveAttribute("src", "https://logos.example.test/vsas.png");
     expect(image).toHaveClass("object-cover");
   });
 

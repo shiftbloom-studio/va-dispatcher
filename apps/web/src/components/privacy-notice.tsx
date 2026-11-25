@@ -46,7 +46,7 @@ type Copy = {
   recipientsIntro: string;
   telemetryRecipients: string;
   providers: {
-    clerk: ReactNode;
+    accounts: ReactNode;
     cloudflare: ReactNode;
     hoppie: ReactNode;
     navigraph: ReactNode;
@@ -72,9 +72,10 @@ type Copy = {
 };
 
 const sessionCookies = (
-  <code key="clerk">
-    __session, __client_uat (and equivalent Clerk session keys)
-  </code>
+  <code key="session">__Host-va-session, __Host-va-auth</code>
+);
+const accountCookie = (
+  <code key="stem">stem session cookie (on stem.shiftbloom.studio)</code>
 );
 const botCookie = <code key="cf-bm">__cf_bm</code>;
 const rateCookie = <code key="cfuvid">_cfuvid</code>;
@@ -97,10 +98,10 @@ const copy: Record<LegalLocale, Copy> = {
     processingHeadings: ["Data", "Purpose", "Legal basis", "Retention"],
     processingRows: [
       [
-        "Account and waitlist identifiers, name, email or login/invitation identifier, organization, requested and assigned role, waitlist/application/invitation and membership status, display name, and pilot callsign",
-        "Manage the account-access waitlist, sign you in, review a tenant membership application, send invitations, maintain membership, authorize tenant and role access, and administer the service",
+        "Account identifier, name, email address, organization, requested and assigned role, application, invitation, and membership status, display name, and pilot callsign",
+        "Sign you in, review a tenant membership application, send invitations, maintain membership, authorize tenant and role access, and administer the service",
         "Art. 6(1)(b) GDPR where needed to provide the requested member service; otherwise Art. 6(1)(f) GDPR (operating and securing a voluntary service)",
-        "While a waitlist entry, account, or membership request is pending or active; afterwards only under the approved retention rules for unsuccessful applications, account closure, legal obligations, or legal claims",
+        "While an account or membership request is pending or active; afterwards only under the approved retention rules for unsuccessful applications, account closure, legal obligations, or legal claims",
       ],
       [
         "Availability windows, schedule requests, preferences, notes, assigned flights, timestamps, and operational status",
@@ -141,15 +142,12 @@ const copy: Record<LegalLocale, Copy> = {
     telemetryRecipients:
       "Simulator telemetry goes from the simulator client directly to this application. It is not passed to any map or simulator provider; Cloudflare processes it only as the hosting and database provider.",
     providers: {
-      clerk: (
+      accounts: (
         <>
-          <strong>Clerk, Inc.</strong>: account-access waitlist, sign-in, tenant
-          invitations, organization membership and roles, sessions, and abuse
-          protection. See the{" "}
-          <External href="https://clerk.com/legal/dpa">
-            Clerk Data Processing Addendum
-          </External>
-          .
+          <strong>stem</strong>: the shiftbloom account service, run by the same
+          controller on Cloudflare. It handles sign-in with one-time email
+          codes, your account, organization memberships and roles, and
+          invitation emails. No other company receives your account data.
         </>
       ),
       cloudflare: (
@@ -191,7 +189,7 @@ const copy: Record<LegalLocale, Copy> = {
     },
     transfersTitle: "5. International transfers",
     transfers:
-      "Clerk and Cloudflare are based in the United States and use subprocessors outside the European Economic Area. Where personal data goes to a country without an EU adequacy decision, the controller relies on the EU–US Data Privacy Framework where the provider is certified, or on the EU Standard Contractual Clauses with supplementary safeguards. The provider documents linked above list current subprocessors and transfer details.",
+      "Cloudflare is based in the United States and uses subprocessors outside the European Economic Area. Where personal data goes to a country without an EU adequacy decision, the controller relies on the EU–US Data Privacy Framework where the provider is certified, or on the EU Standard Contractual Clauses with supplementary safeguards. The provider documents linked above list current subprocessors and transfer details.",
     storageTitle: "6. Cookies and local storage",
     storageIntro:
       "The application uses no analytics, advertising, or marketing cookies and no tracking tools. It stores only what is needed to sign you in and to protect the service:",
@@ -200,9 +198,15 @@ const copy: Record<LegalLocale, Copy> = {
     storageRows: [
       [
         sessionCookies,
-        "Clerk",
-        "Sign-in, session continuity, organization selection, and security",
-        "Session or Clerk-configured lifetime",
+        "VA Dispatch",
+        "Keep you signed in (encrypted session) and protect the sign-in step",
+        "30 days for the session; 10 minutes for the sign-in step",
+      ],
+      [
+        accountCookie,
+        "stem (shiftbloom)",
+        "Remember your shiftbloom sign-in across shiftbloom apps",
+        "Until you sign out or the session expires",
       ],
       [
         botCookie,
@@ -212,7 +216,7 @@ const copy: Record<LegalLocale, Copy> = {
       ],
       [
         rateCookie,
-        "Cloudflare (as part of Clerk delivery)",
+        "Cloudflare",
         "Rate limiting and abuse protection",
         "End of the browser session",
       ],
@@ -264,10 +268,10 @@ const copy: Record<LegalLocale, Copy> = {
     processingHeadings: ["Daten", "Zweck", "Rechtsgrundlage", "Speicherdauer"],
     processingRows: [
       [
-        "Konto- und Wartelistenkennungen, Name, E-Mail oder Login-/Einladungskennung, Organisation, beantragte und zugewiesene Rolle, Status von Warteliste, Bewerbung, Einladung und Mitgliedschaft, Anzeigename und Pilot-Callsign",
-        "Warteliste für den Kontozugang führen, Anmeldung, Mitgliedsanträge prüfen, Einladungen versenden, Mitgliedschaften verwalten, Zugriff nach Mandant und Rolle steuern und den Dienst administrieren",
+        "Kontokennung, Name, E-Mail-Adresse, Organisation, beantragte und zugewiesene Rolle, Status von Bewerbung, Einladung und Mitgliedschaft, Anzeigename und Pilot-Callsign",
+        "Anmeldung, Mitgliedsanträge prüfen, Einladungen versenden, Mitgliedschaften verwalten, Zugriff nach Mandant und Rolle steuern und den Dienst administrieren",
         "Art. 6 Abs. 1 lit. b DSGVO, soweit für den angefragten Mitgliederdienst erforderlich; im Übrigen Art. 6 Abs. 1 lit. f DSGVO (Betrieb und Absicherung eines freiwilligen Dienstes)",
-        "Solange ein Wartelisteneintrag, Konto oder Mitgliedsantrag offen oder aktiv ist; danach nur nach den festgelegten Löschregeln für abgelehnte Anträge, Kontoschließung, gesetzliche Pflichten oder Rechtsansprüche",
+        "Solange ein Konto oder Mitgliedsantrag offen oder aktiv ist; danach nur nach den festgelegten Löschregeln für abgelehnte Anträge, Kontoschließung, gesetzliche Pflichten oder Rechtsansprüche",
       ],
       [
         "Verfügbarkeitsfenster, Flugplananfragen, Präferenzen, Notizen, zugewiesene Flüge, Zeitstempel und Betriebsstatus",
@@ -308,15 +312,13 @@ const copy: Record<LegalLocale, Copy> = {
     telemetryRecipients:
       "Simulator-Telemetrie geht direkt vom Simulator-Client an diese Anwendung. Sie wird an keinen Karten- oder Simulatoranbieter weitergegeben; Cloudflare verarbeitet sie nur als Hosting- und Datenbankanbieter.",
     providers: {
-      clerk: (
+      accounts: (
         <>
-          <strong>Clerk, Inc.</strong>: Warteliste für den Kontozugang,
-          Anmeldung, Einladungen, Organisationsmitgliedschaften und Rollen,
-          Sitzungen und Missbrauchsschutz. Siehe{" "}
-          <External href="https://clerk.com/legal/dpa">
-            Auftragsverarbeitungsvertrag von Clerk
-          </External>
-          .
+          <strong>stem</strong>: der Kontodienst von shiftbloom, betrieben vom
+          selben Verantwortlichen auf Cloudflare. Er übernimmt die Anmeldung mit
+          Einmalcodes per E-Mail, dein Konto, Organisationsmitgliedschaften und
+          Rollen sowie Einladungs-E-Mails. Kein anderes Unternehmen erhält deine
+          Kontodaten.
         </>
       ),
       cloudflare: (
@@ -359,7 +361,7 @@ const copy: Record<LegalLocale, Copy> = {
     },
     transfersTitle: "5. Übermittlung in Drittländer",
     transfers:
-      "Clerk und Cloudflare haben ihren Sitz in den USA und setzen Unterauftragsverarbeiter außerhalb des Europäischen Wirtschaftsraums ein. Werden personenbezogene Daten in ein Land ohne Angemessenheitsbeschluss der EU übermittelt, stützt sich der Verantwortliche auf das EU-US Data Privacy Framework, sofern der Anbieter zertifiziert ist, oder auf die EU-Standardvertragsklauseln mit ergänzenden Schutzmaßnahmen. Aktuelle Unterauftragsverarbeiter und Details zur Übermittlung findest du in den oben verlinkten Dokumenten der Anbieter.",
+      "Cloudflare hat seinen Sitz in den USA und setzt Unterauftragsverarbeiter außerhalb des Europäischen Wirtschaftsraums ein. Werden personenbezogene Daten in ein Land ohne Angemessenheitsbeschluss der EU übermittelt, stützt sich der Verantwortliche auf das EU-US Data Privacy Framework, sofern der Anbieter zertifiziert ist, oder auf die EU-Standardvertragsklauseln mit ergänzenden Schutzmaßnahmen. Aktuelle Unterauftragsverarbeiter und Details zur Übermittlung findest du in den oben verlinkten Dokumenten der Anbieter.",
     storageTitle: "6. Cookies und lokaler Speicher",
     storageIntro:
       "Die Anwendung verwendet keine Analyse-, Werbe- oder Marketing-Cookies und keine Tracking-Tools. Gespeichert wird nur, was für die Anmeldung und den Schutz des Dienstes nötig ist:",
@@ -368,9 +370,15 @@ const copy: Record<LegalLocale, Copy> = {
     storageRows: [
       [
         sessionCookies,
-        "Clerk",
-        "Anmeldung, Sitzung, Organisationsauswahl und Sicherheit",
-        "Sitzung bzw. von Clerk festgelegte Dauer",
+        "VA Dispatch",
+        "Angemeldet bleiben (verschlüsselte Sitzung) und den Anmeldeschritt absichern",
+        "30 Tage für die Sitzung; 10 Minuten für den Anmeldeschritt",
+      ],
+      [
+        accountCookie,
+        "stem (shiftbloom)",
+        "Deine shiftbloom-Anmeldung für alle shiftbloom-Apps merken",
+        "Bis zur Abmeldung oder zum Ablauf der Sitzung",
       ],
       [
         botCookie,
@@ -380,7 +388,7 @@ const copy: Record<LegalLocale, Copy> = {
       ],
       [
         rateCookie,
-        "Cloudflare (im Rahmen der Auslieferung von Clerk)",
+        "Cloudflare",
         "Begrenzung von Anfragen und Missbrauchsschutz",
         "Ende der Browsersitzung",
       ],
@@ -476,7 +484,7 @@ export function PrivacyNotice({
       <LegalSection title={t.recipientsTitle}>
         <p>{t.recipientsIntro}</p>
         <ul className="list-disc space-y-3 pl-6">
-          <li>{t.providers.clerk}</li>
+          <li>{t.providers.accounts}</li>
           <li>{t.providers.cloudflare}</li>
           <li>{t.providers.hoppie}</li>
           <li>{t.providers.navigraph}</li>

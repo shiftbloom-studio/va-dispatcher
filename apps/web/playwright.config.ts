@@ -25,10 +25,6 @@ export default defineConfig({
         url: localBaseUrl,
         reuseExistingServer: false,
         env: {
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
-            process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
-            "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
-          CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY ?? "sk_test_example",
           NEXT_PUBLIC_E2E_ROUTE_FIXTURE_MODE: "true",
           LEGAL_OPERATOR_NAME: "Example Aviation e.V.",
           LEGAL_OPERATOR_ADDRESS: "Example Street 1|10115 Berlin|Germany",

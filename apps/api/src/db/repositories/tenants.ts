@@ -2,14 +2,14 @@ import { eq, isNotNull } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { tenants, type BrandPresence, type Tenant } from "../schema.js";
 
-export async function findTenantByClerkOrgId(
-  clerkOrgId: string,
+export async function findTenantByAuthOrgId(
+  authOrgId: string,
 ): Promise<Tenant | null> {
   const db = getDb();
   const rows = await db
     .select()
     .from(tenants)
-    .where(eq(tenants.clerkOrgId, clerkOrgId))
+    .where(eq(tenants.authOrgId, authOrgId))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -47,13 +47,13 @@ export async function listHoppieTenants(): Promise<Tenant[]> {
 export async function upsertTenantBySlug(input: {
   slug: string;
   name: string;
-  clerkOrgId: string;
+  authOrgId: string;
   hoppieStation?: string | null;
 }): Promise<Tenant> {
   const db = getDb();
   const update = {
     name: input.name,
-    clerkOrgId: input.clerkOrgId,
+    authOrgId: input.authOrgId,
     updatedAt: new Date(),
     ...(input.hoppieStation == null
       ? {}
@@ -64,7 +64,7 @@ export async function upsertTenantBySlug(input: {
     .values({
       slug: input.slug,
       name: input.name,
-      clerkOrgId: input.clerkOrgId,
+      authOrgId: input.authOrgId,
       hoppieStation: input.hoppieStation ?? "VSAS",
     })
     .onConflictDoUpdate({ target: tenants.slug, set: update })

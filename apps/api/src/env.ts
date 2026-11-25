@@ -2,6 +2,12 @@ import { z } from "zod";
 
 const DEFAULT_CRON_SECRET = "dev-cron-secret-change-me";
 
+/** Deploy templates render unset optional values as empty strings. */
+const optionalUrl = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().url().optional(),
+);
+
 const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -13,10 +19,23 @@ const envSchema = z.object({
   APP_ENV: z.enum(["development", "preview", "production"]).optional(),
   PORT: z.coerce.number().int().positive().default(3001),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
-  /** Public web origin used for provider callbacks and Clerk invitations. */
+  /** Public web origin used for provider callbacks and invitation links. */
   APP_ORIGIN: z.string().url().optional(),
-  CLERK_SECRET_KEY: z.string().min(1).optional(),
-  CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
+  /** OIDC issuer of the identity provider (stem), for example https://stem.example.com. */
+  AUTH_ISSUER: z.string().url().optional(),
+  /** Expected `aud` claim of access tokens issued for this API. */
+  AUTH_AUDIENCE: z.string().min(1).optional(),
+  /** JWKS endpoint; defaults to the issuer's OIDC discovery document. */
+  AUTH_JWKS_URL: optionalUrl,
+  /**
+   * The app's confidential OIDC client. The API uses it with the client
+   * credentials grant for stem's directory API (invitations, member sync).
+   */
+  AUTH_CLIENT_ID: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  AUTH_CLIENT_SECRET: z.string().min(1).optional(),
   // Internal local/test transport selector. Production always resolves to
   // Hoppie and fails closed until the tenant credential is configured.
   ACARS_PROVIDER: z.enum(["mock", "hoppie"]).default("mock"),
@@ -45,8 +64,8 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
-  VSAS_CLERK_ORG_ID: z.string().optional(),
-  /** When true, skip Clerk and use X-Dev-* headers (local/dev only). */
+  VSAS_AUTH_ORG_ID: z.string().optional(),
+  /** When true, skip token verification and use X-Dev-* headers (local/dev only). */
   AUTH_DEV_BYPASS: z
     .enum(["true", "false"])
     .default("false")
@@ -112,7 +131,9 @@ function validateRuntimeEnvironment(config: Env): void {
     ...(productionDeployment
       ? ([["APP_ORIGIN", config.APP_ORIGIN]] as const)
       : []),
-    ["CLERK_SECRET_KEY", config.CLERK_SECRET_KEY],
+    ["AUTH_ISSUER", config.AUTH_ISSUER],
+    ["AUTH_AUDIENCE", config.AUTH_AUDIENCE],
+    ["AUTH_CLIENT_ID", config.AUTH_CLIENT_ID],
     ["TENANT_SECRETS_KEY", config.TENANT_SECRETS_KEY],
   ].flatMap(([name, value]) => (value ? [] : [name]));
   if (missing.length) {

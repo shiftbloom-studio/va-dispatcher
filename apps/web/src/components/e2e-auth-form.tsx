@@ -36,7 +36,7 @@ export function E2eAuthForm({
       </h2>
       <p className="mt-3 text-sm leading-6 text-slate-600">
         This isolated browser harness uses synthetic members in disposable
-        PostgreSQL. It never contacts Clerk or a live provider.
+        PostgreSQL. It never contacts the account service or a live provider.
       </p>
       <fieldset className="mt-6 space-y-2">
         <legend className="mb-2 text-sm font-bold text-slate-800">

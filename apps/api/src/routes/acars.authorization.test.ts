@@ -10,11 +10,11 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
     ...actual,
     requireAuth: createMiddleware(async (c, next) => {
       c.set("auth", {
-        clerkUserId: "user_test",
+        authUserId: "user_test",
         tenantId: "tenant_test",
         membershipId: "membership_test",
         role: actor.role,
-        clerkOrgId: "org_test",
+        authOrgId: "org_test",
       });
       await next();
     }),

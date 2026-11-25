@@ -98,12 +98,12 @@ describe("telemetry D1 atomicity contracts", () => {
       id: tenantId,
       slug: "vsas",
       name: "Virtual SAS",
-      clerkOrgId: "org_test",
+      authOrgId: "org_test",
     });
     await db.insert(memberships).values({
       id: membershipId,
       tenantId,
-      clerkUserId: "user_test",
+      authUserId: "user_test",
     });
     for (const flight of [
       {
@@ -516,7 +516,7 @@ describe("telemetry D1 atomicity contracts", () => {
     const replacementMembershipId = "10000000-0000-4000-8000-000000000002";
     await ingest({ phase: "preflight", sequence: 1, sampleAt: now });
     await sql`
-      INSERT INTO memberships (id, tenant_id, clerk_user_id)
+      INSERT INTO memberships (id, tenant_id, auth_user_id)
       VALUES (${replacementMembershipId}, ${tenantId}, 'replacement_user')
     `;
     await sql`
@@ -532,11 +532,11 @@ describe("telemetry D1 atomicity contracts", () => {
 
   it("rejects cross-tenant and wrong-member device resources without writes", async () => {
     await sql`
-      INSERT INTO tenants (id, slug, name, clerk_org_id)
+      INSERT INTO tenants (id, slug, name, auth_org_id)
       VALUES (${otherTenantId}, 'other', 'Other VA', 'org_other')
     `;
     await sql`
-      INSERT INTO memberships (id, tenant_id, clerk_user_id)
+      INSERT INTO memberships (id, tenant_id, auth_user_id)
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
     await sql`
@@ -591,11 +591,11 @@ describe("telemetry D1 atomicity contracts", () => {
   it("enforces tenant coherence for device, flight, member, and provenance edges", async () => {
     const otherDeviceId = "60000000-0000-4000-8000-000000000099";
     await sql`
-      INSERT INTO tenants (id, slug, name, clerk_org_id)
+      INSERT INTO tenants (id, slug, name, auth_org_id)
       VALUES (${otherTenantId}, 'other', 'Other VA', 'org_other')
     `;
     await sql`
-      INSERT INTO memberships (id, tenant_id, clerk_user_id)
+      INSERT INTO memberships (id, tenant_id, auth_user_id)
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
     await sql`
@@ -723,11 +723,11 @@ describe("telemetry D1 atomicity contracts", () => {
       WHERE id = ${deviceA}
     `;
     await sql`
-      INSERT INTO tenants (id, slug, name, clerk_org_id)
+      INSERT INTO tenants (id, slug, name, auth_org_id)
       VALUES (${otherTenantId}, 'other', 'Other VA', 'org_other')
     `;
     await sql`
-      INSERT INTO memberships (id, tenant_id, clerk_user_id)
+      INSERT INTO memberships (id, tenant_id, auth_user_id)
       VALUES (${otherMembershipId}, ${otherTenantId}, 'other_user')
     `;
     await sql`

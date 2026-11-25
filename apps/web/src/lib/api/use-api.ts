@@ -1,10 +1,11 @@
 "use client";
 
-import { useAuth } from "@clerk/nextjs";
+import { useParams } from "next/navigation";
 import { useCallback } from "react";
 import type { z } from "zod";
 
 import { requestJson } from "@/lib/api/http";
+import { getAccessToken } from "@/lib/auth/client-token";
 import {
   E2E_IDENTITY_COOKIE,
   E2E_IDENTITY_HEADER,
@@ -17,18 +18,24 @@ type ApiCaller = <TSchema extends z.ZodType>(
   options: Omit<Parameters<typeof requestJson<TSchema>>[1], "token">,
 ) => Promise<z.output<TSchema>>;
 
-function useClerkApi(): ApiCaller {
-  const { getToken } = useAuth();
+/** Header naming the Virtual Airline a call is about; the API checks it. */
+export const TENANT_SLUG_HEADER = "X-Tenant-Slug";
+
+function useSessionApi(): ApiCaller {
+  const params = useParams<{ slug?: string }>();
+  const slug = typeof params?.slug === "string" ? params.slug : null;
 
   return useCallback(
     async <TSchema extends z.ZodType>(
       path: string,
       options: Omit<Parameters<typeof requestJson<TSchema>>[1], "token">,
     ) => {
-      const token = await getToken();
-      return requestJson(`/api/v1${path}`, { ...options, token });
+      const token = (await getAccessToken()) ?? undefined;
+      const headers = new Headers(options.headers);
+      if (slug) headers.set(TENANT_SLUG_HEADER, slug);
+      return requestJson(`/api/v1${path}`, { ...options, headers, token });
     },
-    [getToken],
+    [slug],
   );
 }
 
@@ -56,7 +63,9 @@ function useFixtureApi(): ApiCaller {
   );
 }
 
-const useApiImplementation = e2eFixtureEnabled() ? useFixtureApi : useClerkApi;
+const useApiImplementation = e2eFixtureEnabled()
+  ? useFixtureApi
+  : useSessionApi;
 
 export function useApi(): ApiCaller {
   return useApiImplementation();

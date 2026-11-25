@@ -78,7 +78,7 @@ const now = new Date("2026-08-12T12:00:00.000Z");
 const membership: Membership = {
   id: "10000000-0000-4000-8000-000000000001",
   tenantId: "20000000-0000-4000-8000-000000000001",
-  clerkUserId: "user_test",
+  authUserId: "user_test",
   role: "pilot",
   displayName: "Test Pilot",
   pilotCallsign: "SAS123",

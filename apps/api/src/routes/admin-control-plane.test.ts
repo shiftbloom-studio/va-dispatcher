@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { ClerkAPIResponseError } from "@clerk/backend/errors";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -8,14 +7,12 @@ const mocks = vi.hoisted(() => ({
   getAdministrativeMemberImpact: vi.fn(),
   syncMembersFromDirectory: vi.fn(),
   updateMemberAsAdministrator: vi.fn(),
-  getClerkClient: vi.fn(),
-  getOrganizationMembershipList: vi.fn(),
-  createOrganizationMembership: vi.fn(),
-  updateOrganizationMembership: vi.fn(),
-  deleteOrganizationMembership: vi.fn(),
-  getOrganizationInvitationList: vi.fn(),
-  createOrganizationInvitation: vi.fn(),
-  revokeOrganizationInvitation: vi.fn(),
+  setMembershipRole: vi.fn(),
+  removeMembership: vi.fn(),
+  listDirectoryMemberships: vi.fn(),
+  listInvitations: vi.fn(),
+  createInvitation: vi.fn(),
+  revokeInvitation: vi.fn(),
   queryAuditEvents: vi.fn(),
   writeAudit: vi.fn(),
 }));
@@ -28,11 +25,11 @@ vi.mock("../middleware/auth.js", async () => {
       const role = (c.req.header("x-test-role") ??
         "pilot") as keyof typeof rank;
       c.set("auth", {
-        clerkUserId: "user-test",
+        authUserId: "user-test",
         tenantId: c.req.header("x-test-tenant") ?? "tenant-a",
         membershipId: "26000000-0000-4000-8000-000000000011",
         role,
-        clerkOrgId: "org-test",
+        authOrgId: "org-test",
         tenant: {
           id: c.req.header("x-test-tenant") ?? "tenant-a",
           slug: "vsas",
@@ -52,7 +49,21 @@ vi.mock("../middleware/auth.js", async () => {
         }
         await next();
       }),
-    getClerkClient: mocks.getClerkClient,
+  };
+});
+
+vi.mock("../auth/directory.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../auth/directory.js")>();
+  return {
+    ...actual,
+    getDirectory: () => ({
+      setMembershipRole: mocks.setMembershipRole,
+      removeMembership: mocks.removeMembership,
+      listMemberships: mocks.listDirectoryMemberships,
+      listInvitations: mocks.listInvitations,
+      createInvitation: mocks.createInvitation,
+      revokeInvitation: mocks.revokeInvitation,
+    }),
   };
 });
 
@@ -75,6 +86,7 @@ vi.mock("../db/repositories/audit.js", () => ({
 import { errorHandler } from "../middleware/error.js";
 import { loadEnv, resetEnvCache } from "../env.js";
 import { membersRoutes } from "./members.js";
+import { DirectoryError } from "../auth/directory.js";
 import { auditRoutes } from "./audit.js";
 
 const app = new Hono();
@@ -94,7 +106,7 @@ describe("admin control-plane routes", () => {
     mocks.listMemberships.mockResolvedValue({ items: [], nextCursor: null });
     mocks.findMembershipById.mockResolvedValue({
       id: "26000000-0000-4000-8000-000000000021",
-      clerkUserId: "user-pilot",
+      authUserId: "user-pilot",
       role: "pilot",
       status: "active",
     });
@@ -107,7 +119,7 @@ describe("admin control-plane routes", () => {
     mocks.updateMemberAsAdministrator.mockResolvedValue({
       membership: {
         id: "26000000-0000-4000-8000-000000000021",
-        clerkUserId: "user-pilot",
+        authUserId: "user-pilot",
         role: "pilot",
         displayName: "Pilot",
         pilotCallsign: "SAS101",
@@ -120,25 +132,9 @@ describe("admin control-plane routes", () => {
     });
     mocks.queryAuditEvents.mockResolvedValue({ items: [], nextCursor: null });
     mocks.writeAudit.mockResolvedValue(undefined);
-    mocks.getClerkClient.mockReturnValue({
-      organizations: {
-        getOrganizationMembershipList: mocks.getOrganizationMembershipList,
-        createOrganizationMembership: mocks.createOrganizationMembership,
-        updateOrganizationMembership: mocks.updateOrganizationMembership,
-        deleteOrganizationMembership: mocks.deleteOrganizationMembership,
-        getOrganizationInvitationList: mocks.getOrganizationInvitationList,
-        createOrganizationInvitation: mocks.createOrganizationInvitation,
-        revokeOrganizationInvitation: mocks.revokeOrganizationInvitation,
-      },
-    });
-    mocks.getOrganizationMembershipList.mockResolvedValue({
-      data: [{}],
-      totalCount: 1,
-    });
-    mocks.createOrganizationMembership.mockResolvedValue({});
-    mocks.updateOrganizationMembership.mockResolvedValue({});
-    mocks.deleteOrganizationMembership.mockResolvedValue({});
-    mocks.getOrganizationInvitationList.mockResolvedValue({
+    mocks.setMembershipRole.mockResolvedValue(undefined);
+    mocks.removeMembership.mockResolvedValue(undefined);
+    mocks.listInvitations.mockResolvedValue({
       data: [],
       totalCount: 0,
     });
@@ -223,7 +219,7 @@ describe("admin control-plane routes", () => {
   it("requires the explicit review action for pending applications", async () => {
     mocks.findMembershipById.mockResolvedValue({
       id: "26000000-0000-4000-8000-000000000021",
-      clerkUserId: "user-applicant",
+      authUserId: "user-applicant",
       role: "dispatcher",
       status: "invited",
     });
@@ -241,7 +237,7 @@ describe("admin control-plane routes", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(mocks.updateOrganizationMembership).not.toHaveBeenCalled();
+    expect(mocks.setMembershipRole).not.toHaveBeenCalled();
     expect(mocks.updateMemberAsAdministrator).not.toHaveBeenCalled();
   });
 
@@ -262,10 +258,10 @@ describe("admin control-plane routes", () => {
     expect(mocks.updateMemberAsAdministrator).not.toHaveBeenCalled();
   });
 
-  it("approves only tenant-scoped pending applications after Clerk synchronization", async () => {
+  it("approves only tenant-scoped pending applications after directory synchronization", async () => {
     mocks.findMembershipById.mockResolvedValue({
       id: "26000000-0000-4000-8000-000000000021",
-      clerkUserId: "user-applicant",
+      authUserId: "user-applicant",
       role: "dispatcher",
       displayName: "Applicant",
       pilotCallsign: null,
@@ -273,14 +269,10 @@ describe("admin control-plane routes", () => {
       createdAt: new Date("2026-08-01T00:00:00.000Z"),
       updatedAt: new Date("2026-08-12T00:00:00.000Z"),
     });
-    mocks.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-      totalCount: 0,
-    });
     mocks.updateMemberAsAdministrator.mockResolvedValue({
       membership: {
         id: "26000000-0000-4000-8000-000000000021",
-        clerkUserId: "user-applicant",
+        authUserId: "user-applicant",
         role: "dispatcher",
         displayName: "Applicant",
         pilotCallsign: null,
@@ -310,10 +302,10 @@ describe("admin control-plane routes", () => {
       "tenant-b",
       "26000000-0000-4000-8000-000000000021",
     );
-    expect(mocks.createOrganizationMembership).toHaveBeenCalledWith({
-      organizationId: "org-test",
+    expect(mocks.setMembershipRole).toHaveBeenCalledWith({
+      orgId: "org-test",
       userId: "user-applicant",
-      role: "org:dispatcher",
+      role: "dispatcher",
     });
     expect(mocks.updateMemberAsAdministrator).toHaveBeenCalledWith({
       tenantId: "tenant-b",
@@ -326,21 +318,19 @@ describe("admin control-plane routes", () => {
       },
       auditAction: "membership.application_approved",
     });
-    expect(
-      mocks.createOrganizationMembership.mock.invocationCallOrder[0],
-    ).toBeLessThan(
+    expect(mocks.setMembershipRole.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.updateMemberAsAdministrator.mock.invocationCallOrder[0]!,
     );
   });
 
-  it("disables application access before attempting to remove Clerk membership", async () => {
-    mocks.deleteOrganizationMembership.mockRejectedValue(
-      new Error("Clerk unavailable"),
+  it("disables application access before attempting to remove the directory membership", async () => {
+    mocks.removeMembership.mockRejectedValue(
+      new Error("Identity provider unavailable"),
     );
     mocks.updateMemberAsAdministrator.mockResolvedValue({
       membership: {
         id: "26000000-0000-4000-8000-000000000021",
-        clerkUserId: "user-pilot",
+        authUserId: "user-pilot",
         role: "pilot",
         displayName: "Pilot",
         pilotCallsign: "SAS101",
@@ -367,7 +357,7 @@ describe("admin control-plane routes", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       status: "disabled",
-      clerkSynchronized: false,
+      directorySynchronized: false,
       completionAuditRecorded: false,
     });
     expect(mocks.updateMemberAsAdministrator).toHaveBeenCalledWith(
@@ -378,9 +368,7 @@ describe("admin control-plane routes", () => {
     );
     expect(
       mocks.updateMemberAsAdministrator.mock.invocationCallOrder[0],
-    ).toBeLessThan(
-      mocks.deleteOrganizationMembership.mock.invocationCallOrder[0]!,
-    );
+    ).toBeLessThan(mocks.removeMembership.mock.invocationCallOrder[0]!);
   });
 
   it("keeps invitations and application decisions admin-only", async () => {
@@ -401,14 +389,14 @@ describe("admin control-plane routes", () => {
 
     expect(invitations.status).toBe(403);
     expect(approval.status).toBe(403);
-    expect(mocks.getOrganizationInvitationList).not.toHaveBeenCalled();
+    expect(mocks.listInvitations).not.toHaveBeenCalled();
     expect(mocks.updateMemberAsAdministrator).not.toHaveBeenCalled();
   });
 
-  it("creates a tenant invitation that returns through the public Clerk sign-in flow", async () => {
+  it("creates a tenant invitation that returns through a fresh sign-in", async () => {
     const createdAt = new Date("2026-08-18T10:00:00.000Z").getTime();
     const expiresAt = new Date("2026-09-17T10:00:00.000Z").getTime();
-    mocks.createOrganizationInvitation.mockResolvedValue({
+    mocks.createInvitation.mockResolvedValue({
       id: "orginv-test",
       emailAddress: "new-pilot@example.test",
       role: "org:pilot",
@@ -431,14 +419,14 @@ describe("admin control-plane routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(mocks.createOrganizationInvitation).toHaveBeenCalledWith({
-      organizationId: "org-test",
+    expect(mocks.createInvitation).toHaveBeenCalledWith({
+      orgId: "org-test",
       inviterUserId: "user-test",
       emailAddress: "new-pilot@example.test",
-      role: "org:pilot",
+      role: "pilot",
       expiresInDays: 30,
-      redirectUrl: "https://app.example.test/vsas/sign-in",
-      publicMetadata: {
+      redirectUrl: "https://app.example.test/auth/login?returnTo=%2Fvsas",
+      metadata: {
         vaDispatchRole: "pilot",
         tenantSlug: "vsas",
       },
@@ -476,7 +464,7 @@ describe("admin control-plane routes", () => {
       APP_ORIGIN: "https://preview-origin.example.test",
     });
     const createdAt = new Date("2026-08-18T10:00:00.000Z").getTime();
-    mocks.createOrganizationInvitation.mockResolvedValue({
+    mocks.createInvitation.mockResolvedValue({
       id: "orginv-preview",
       emailAddress: "preview-pilot@example.test",
       role: "org:pilot",
@@ -499,9 +487,10 @@ describe("admin control-plane routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(mocks.createOrganizationInvitation).toHaveBeenCalledWith(
+    expect(mocks.createInvitation).toHaveBeenCalledWith(
       expect.objectContaining({
-        redirectUrl: "https://preview-origin.example.test/vsas/sign-in",
+        redirectUrl:
+          "https://preview-origin.example.test/auth/login?returnTo=%2Fvsas",
       }),
     );
   });
@@ -523,7 +512,7 @@ describe("admin control-plane routes", () => {
     });
 
     expect(response.status).toBe(503);
-    expect(mocks.createOrganizationInvitation).not.toHaveBeenCalled();
+    expect(mocks.createInvitation).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -533,7 +522,7 @@ describe("admin control-plane routes", () => {
       providerCode: "organization_invitation_not_unique",
       code: "CONFLICT",
       message:
-        "Clerk already has a pending invitation or organization membership for this email",
+        "This email already has a pending invitation or organization membership",
     },
     {
       providerStatus: 403,
@@ -541,7 +530,7 @@ describe("admin control-plane routes", () => {
       providerCode: "invitations_not_supported_in_organization",
       code: "UNPROCESSABLE",
       message:
-        "Clerk does not allow this organization invitation. Verify organization invitation support, tenant role configuration, and membership capacity",
+        "The identity provider does not allow this invitation. Verify the tenant role configuration and membership capacity",
     },
     {
       providerStatus: 422,
@@ -549,28 +538,24 @@ describe("admin control-plane routes", () => {
       providerCode: "form_param_value_invalid",
       code: "UNPROCESSABLE",
       message:
-        "Clerk rejected the invitation. Verify that organization invitations are enabled, the selected tenant role exists, and the invitation return URL is allowed",
+        "The identity provider rejected the invitation. Verify that the selected tenant role exists and the invitation return URL is allowed",
     },
     {
       providerStatus: 429,
       responseStatus: 429,
       providerCode: "rate_limit_exceeded",
       code: "UPSTREAM",
-      message: "Clerk rate limit reached; try later",
+      message: "Identity provider rate limit reached; try later",
     },
   ])(
-    "maps a Clerk $providerStatus invitation failure to a safe actionable response",
+    "maps a provider $providerStatus invitation failure to a safe actionable response",
     async ({ providerStatus, responseStatus, providerCode, code, message }) => {
-      mocks.createOrganizationInvitation.mockRejectedValue(
-        new ClerkAPIResponseError("raw provider response", {
-          status: providerStatus,
-          data: [
-            {
-              code: providerCode,
-              message: "sensitive upstream detail",
-            },
-          ],
-        }),
+      mocks.createInvitation.mockRejectedValue(
+        new DirectoryError(
+          providerStatus,
+          providerCode,
+          "sensitive upstream detail",
+        ),
       );
 
       const response = await app.request("/members/invitations", {
@@ -593,7 +578,7 @@ describe("admin control-plane routes", () => {
     },
   );
 
-  it("makes live Clerk invitation and sync behavior explicit in auth-bypass mode", async () => {
+  it("makes live invitation and sync behavior explicit in auth-bypass mode", async () => {
     resetEnvCache();
     loadEnv({ NODE_ENV: "test", AUTH_DEV_BYPASS: "true" });
 
@@ -617,8 +602,7 @@ describe("admin control-plane routes", () => {
     await expect(invitation.json()).resolves.toEqual({
       error: {
         code: "UNPROCESSABLE",
-        message:
-          "Clerk invitations are unavailable in development auth-bypass mode",
+        message: "Invitations are unavailable in development auth-bypass mode",
       },
     });
     expect(sync.status).toBe(200);
@@ -626,9 +610,9 @@ describe("admin control-plane routes", () => {
       complete: true,
       seen: 0,
       created: 0,
-      note: "Dev bypass — no Clerk org sync",
+      note: "Dev bypass — no directory sync",
     });
-    expect(mocks.createOrganizationInvitation).not.toHaveBeenCalled();
+    expect(mocks.createInvitation).not.toHaveBeenCalled();
     expect(mocks.syncMembersFromDirectory).not.toHaveBeenCalled();
   });
 

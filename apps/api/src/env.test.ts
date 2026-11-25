@@ -4,7 +4,9 @@ import { loadEnv, resetEnvCache, resolveAppOrigin } from "./env.js";
 const productionEnvironment = {
   NODE_ENV: "production",
   APP_ORIGIN: "https://app.example.test",
-  CLERK_SECRET_KEY: "sk_test_configured",
+  AUTH_ISSUER: "https://auth.example.test",
+  AUTH_AUDIENCE: "va-dispatch-api",
+  AUTH_CLIENT_ID: "va-client",
   TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
   CRON_SECRET: "production-cron-secret",
 } as const;
@@ -12,9 +14,19 @@ const productionEnvironment = {
 afterEach(() => resetEnvCache());
 
 describe("runtime environment validation", () => {
+  it("treats empty optional identity settings from the deploy template as unset", () => {
+    const config = loadEnv({
+      NODE_ENV: "test",
+      AUTH_JWKS_URL: "",
+      AUTH_CLIENT_ID: "",
+    });
+    expect(config.AUTH_JWKS_URL).toBeUndefined();
+    expect(config.AUTH_CLIENT_ID).toBeUndefined();
+  });
+
   it("requires production credentials and a non-default cron secret", () => {
     expect(() => loadEnv({ NODE_ENV: "production" })).toThrow(
-      /APP_ORIGIN, CLERK_SECRET_KEY, TENANT_SECRETS_KEY/,
+      /APP_ORIGIN, AUTH_ISSUER, AUTH_AUDIENCE, AUTH_CLIENT_ID, TENANT_SECRETS_KEY/,
     );
     expect(() =>
       loadEnv({

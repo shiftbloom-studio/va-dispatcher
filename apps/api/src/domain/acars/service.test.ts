@@ -57,7 +57,7 @@ const tenant: Tenant = {
   id: "tenant_test",
   slug: "vsas",
   name: "Virtual SAS",
-  clerkOrgId: "org_test",
+  authOrgId: "org_test",
   hoppieStation: "SAS",
   hoppieLogonEnc: "encrypted",
   brandSeedColor: "#e64646",

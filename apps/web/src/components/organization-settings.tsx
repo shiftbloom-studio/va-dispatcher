@@ -162,7 +162,7 @@ function MemberAccessCard({
     <Card className="overflow-hidden">
       <CardHeader
         title="Membership access"
-        description="Control this tenant's organization name, direct-invitation lifetime, and manually approved pilot or dispatcher applications. These settings do not change global Clerk configuration."
+        description="Control this tenant's organization name, direct-invitation lifetime, and manually approved pilot or dispatcher applications. These settings do not change the shared account service."
         action={<UsersRound aria-hidden className="size-5 text-slate-700" />}
       />
       <form
@@ -183,8 +183,8 @@ function MemberAccessCard({
             onChange={(event) => setName(event.target.value)}
           />
           <HelpText>
-            Saved in VA Dispatch and synchronized to this Clerk organization.
-            The tenant URL slug remains fixed.
+            Saved in VA Dispatch and synchronized to this organization in the
+            account directory. The tenant URL slug remains fixed.
           </HelpText>
         </div>
 
@@ -249,8 +249,8 @@ function MemberAccessCard({
         {save.data ? (
           <p role="status" className="text-sm font-medium text-emerald-800">
             Membership access settings saved.
-            {!save.data.clerkSynchronized
-              ? " Clerk synchronization is skipped in local auth-bypass mode."
+            {!save.data.directorySynchronized
+              ? " Account directory synchronization is skipped in local auth-bypass mode."
               : ""}
           </p>
         ) : null}

@@ -12,16 +12,16 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
   return {
     ...actual,
     requireAuth: createMiddleware(async (c, next) => {
-      const orgId = c.req.header("X-Test-Clerk-Org") ?? "org_vsas";
+      const orgId = c.req.header("X-Test-Auth-Org") ?? "org_vsas";
       c.set("auth", {
-        clerkUserId: "user_dispatcher",
+        authUserId: "user_dispatcher",
         tenantId:
           orgId === "org_vsas"
             ? fixture.tenantId
             : "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         membershipId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         role: "dispatcher",
-        clerkOrgId: orgId,
+        authOrgId: orgId,
       });
       await next();
     }),
@@ -88,9 +88,9 @@ app.onError(errorHandler);
 app.route("/", flightRoutes);
 
 describe("API tenant isolation", () => {
-  it("does not expose a vSAS flight through another Clerk organization", async () => {
+  it("does not expose a vSAS flight through another identity organization", async () => {
     const ownerResponse = await app.request(`/flights/${fixture.flightId}`, {
-      headers: { "X-Test-Clerk-Org": "org_vsas" },
+      headers: { "X-Test-Auth-Org": "org_vsas" },
     });
     expect(ownerResponse.status).toBe(200);
     await expect(ownerResponse.json()).resolves.toMatchObject({
@@ -99,7 +99,7 @@ describe("API tenant isolation", () => {
 
     const otherTenantResponse = await app.request(
       `/flights/${fixture.flightId}`,
-      { headers: { "X-Test-Clerk-Org": "org_other_va" } },
+      { headers: { "X-Test-Auth-Org": "org_other_va" } },
     );
     expect(otherTenantResponse.status).toBe(404);
     await expect(otherTenantResponse.json()).resolves.toMatchObject({
@@ -111,12 +111,12 @@ describe("API tenant isolation", () => {
     );
   });
 
-  it("scopes list results to the active Clerk organization tenant", async () => {
+  it("scopes list results to the identity organization tenant", async () => {
     const ownerResponse = await app.request("/flights?limit=25", {
-      headers: { "X-Test-Clerk-Org": "org_vsas" },
+      headers: { "X-Test-Auth-Org": "org_vsas" },
     });
     const otherTenantResponse = await app.request("/flights?limit=25", {
-      headers: { "X-Test-Clerk-Org": "org_other_va" },
+      headers: { "X-Test-Auth-Org": "org_other_va" },
     });
 
     await expect(ownerResponse.json()).resolves.toMatchObject({
@@ -135,7 +135,7 @@ describe("API tenant isolation", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Test-Clerk-Org": "org_vsas",
+          "X-Test-Auth-Org": "org_vsas",
         },
         body: JSON.stringify({}),
       },
@@ -148,7 +148,7 @@ describe("API tenant isolation", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Test-Clerk-Org": "org_vsas",
+          "X-Test-Auth-Org": "org_vsas",
         },
         body: JSON.stringify({ expectedVersion: 2 }),
       },

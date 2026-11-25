@@ -335,7 +335,7 @@ test("dispatcher fulfills a request, publishes a release, plans, and exchanges A
   expect(crossTenant.status()).toBe(404);
   await page.goto("/vsas");
   await expect(
-    page.getByRole("heading", { name: "Select the correct organization" }),
+    page.getByRole("heading", { name: "This account does not match" }),
   ).toBeVisible();
 });
 

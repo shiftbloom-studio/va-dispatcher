@@ -2,13 +2,15 @@
 # is not committed. wrangler.jsonc already sets NODE_ENV, CORS_ORIGIN,
 # APP_ORIGIN, and ACARS_PROVIDER=mock for local development.
 
-# Local development without Clerk: X-Dev-* headers identify the caller.
+# Local development without an identity provider: X-Dev-* headers identify the caller.
 AUTH_DEV_BYPASS=true
-VSAS_CLERK_ORG_ID=org_vsas_dev
+VSAS_AUTH_ORG_ID=org_vsas_dev
 
-# Real Clerk mode (set AUTH_DEV_BYPASS=false).
-# CLERK_SECRET_KEY=sk_test_...
-# CLERK_PUBLISHABLE_KEY=pk_test_...
+# Real identity provider (set AUTH_DEV_BYPASS=false).
+# AUTH_ISSUER=https://auth.example.com
+# AUTH_AUDIENCE=https://www.example.com/api
+# AUTH_CLIENT_ID=...
+# AUTH_CLIENT_SECRET=...
 
 # 32 random bytes, base64 (openssl rand -base64 32). Never reuse production keys.
 # TENANT_SECRETS_KEY=

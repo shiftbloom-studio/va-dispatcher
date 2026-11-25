@@ -57,7 +57,7 @@ function botManagement(request: Request): BotManagement | null {
  * Rejects automated browser mutations using the bot score Cloudflare attaches
  * to each request. Zones without Bot Management attach no score; there the
  * zone's bot protection and WAF rules are the outer defence and requests pass.
- * Authenticated routes additionally require a verified Clerk session.
+ * Authenticated routes additionally require a verified user session.
  */
 export const requireHuman: MiddlewareHandler<{
   Variables: AppVariables;

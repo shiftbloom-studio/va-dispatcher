@@ -138,7 +138,7 @@ const request = {
 const activePilot = {
   id: pilotId,
   tenantId: actor.tenantId,
-  clerkUserId: "user_pilot",
+  authUserId: "user_pilot",
   role: "pilot" as const,
   displayName: "Test Pilot",
   pilotCallsign: null,
@@ -1101,7 +1101,7 @@ describe("flight server invariants", () => {
     findMembershipById.mockResolvedValueOnce({
       ...activePilot,
       id: newPilotId,
-      clerkUserId: "user_new_pilot",
+      authUserId: "user_new_pilot",
     });
     flightRepo.updateFlight.mockResolvedValueOnce({
       ...accepted,

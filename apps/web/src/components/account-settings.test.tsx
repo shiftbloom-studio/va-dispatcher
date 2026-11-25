@@ -16,7 +16,7 @@ vi.mock("@/lib/api/use-api", () => ({
 }));
 
 const me = {
-  user: { clerkUserId: "user_test" },
+  user: { authUserId: "user_test" },
   membership: {
     id: "membership_test",
     role: "dispatcher",

@@ -6,7 +6,7 @@ VA Dispatch includes defense-in-depth and privacy-by-default controls, but the r
 
 ```mermaid
 flowchart LR
-    B["Browser"] -->|"Clerk session + Cloudflare bot score"| W["Web/API boundary"]
+    B["Browser"] -->|"stem access token + Cloudflare bot score"| W["Web/API boundary"]
     W -->|"verified org -> tenant"| D["Tenant-scoped database"]
     W -->|"decrypted tenant credential"| H["Hoppie's ACARS"]
     V["Worker cron trigger"] -->|"scheduled handler"| W
@@ -19,12 +19,12 @@ Compromise or misconfiguration at one boundary must not be assumed safe because 
 
 ### Authentication and tenant isolation
 
-- Clerk JWT verification on business routes.
-- Active organization required for business data; the narrow application route
+- stem access-token (EdDSA JWT) verification on business routes.
+- Membership in the tenant's organization (`orgs` claim) required for business data; the narrow application route
   verifies a user without organization context and exposes no operational data.
-- Narrow trusted bootstrap for only `VSAS_CLERK_ORG_ID`.
+- Narrow trusted bootstrap for only `VSAS_AUTH_ORG_ID`.
 - Active local membership required.
-- Three-way web agreement among URL slug, Clerk organization, and API tenant.
+- Web agreement between URL slug and API tenant; the API checks organization membership.
 - Tenant-scoped repositories and explicit cross-tenant tests.
 
 ### Authorization
@@ -82,24 +82,24 @@ Actions are pinned to full commit SHAs. Keep `github/codeql-action/init` and `gi
 
 ## Personal and linkable data inventory
 
-| System              | Data                                                                                                                              |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Clerk               | Waitlist email/state, user/org IDs, login/invitation email, role/invitation state, name, sessions, IP/device/security events      |
-| Memberships         | Clerk ID, active or requested role (according to status), display name, callsign, SimBrief/Navigraph identity, application/status |
-| Schedule requests   | Availability, preferences, notes, status, reasons, timestamps                                                                     |
-| Flights             | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields                                                           |
-| Dispatch planning   | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP                                                            |
-| Simulator telemetry | Device identity, position/phase samples, recent track, OOOI provenance                                                            |
-| ACARS               | Station identifiers, message text, provider metadata, actor, timestamps                                                           |
-| Audit events        | Actor, action, entity IDs, metadata, time                                                                                         |
-| Privacy operations  | Policy, request/hold/task state, approvals, reports, export cursor                                                                |
-| Infrastructure      | Request IDs, IP and HTTP/security logs at providers                                                                               |
+| System              | Data                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| stem                | User/org IDs, email, name, role/invitation state, sign-in codes, sessions                                                             |
+| Memberships         | stem user ID, active or requested role (according to status), display name, callsign, SimBrief/Navigraph identity, application/status |
+| Schedule requests   | Availability, preferences, notes, status, reasons, timestamps                                                                         |
+| Flights             | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields                                                               |
+| Dispatch planning   | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP                                                                |
+| Simulator telemetry | Device identity, position/phase samples, recent track, OOOI provenance                                                                |
+| ACARS               | Station identifiers, message text, provider metadata, actor, timestamps                                                               |
+| Audit events        | Actor, action, entity IDs, metadata, time                                                                                             |
+| Privacy operations  | Policy, request/hold/task state, approvals, reports, export cursor                                                                    |
+| Infrastructure      | Request IDs, IP and HTTP/security logs at providers                                                                                   |
 
 Treat every free-text field as potentially personal. Do not solicit sensitive or unrelated information.
 
 ## Browser privacy controls
 
-Clerk authentication cookies and the Cloudflare security cookies `__cf_bm` and `_cfuvid` are strictly necessary (TDDDG §25(2) Nr. 2), so there is no consent banner. The app ships no analytics or tracking.
+The encrypted session cookies (`__Host-va-session`, `__Host-va-auth`), stem's session cookie on its own host, and the Cloudflare security cookies `__cf_bm` and `_cfuvid` are strictly necessary (TDDDG §25(2) Nr. 2), so there is no consent banner. The app ships no analytics or tracking.
 
 There is no advertising, marketing tracker, social plugin, remote font, map, or embedded-media service in the current user application.
 
@@ -114,7 +114,7 @@ Before adding an optional browser service:
 
 ## Public legal pages
 
-`/impressum` and `/privacy` are public and Clerk-free. Production rendering requires real legal operator, address, email, privacy contact, and supervisory-authority configuration. Placeholder or malformed values fail rather than being published.
+`/impressum` and `/privacy` are public and never read the session. Production rendering requires real legal operator, address, email, privacy contact, and supervisory-authority configuration. Placeholder or malformed values fail rather than being published.
 
 Hosted modified forks must set `NEXT_PUBLIC_SOURCE_URL` to the corresponding deployed source as required by AGPL-3.0-or-later.
 
@@ -142,7 +142,7 @@ backup. Before production, the controller must still establish:
 
 Before production, the controller must establish:
 
-- processor agreements for Clerk and Cloudflare;
+- the processor agreement with Cloudflare (stem is run by the same controller);
 - subprocessor and international-transfer assessment;
 - an approved retention schedule for every data store and backup;
 - approved retention and data-subject operating procedures around the software;

@@ -2,18 +2,18 @@ import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  verifyToken: vi.fn(),
+  verifyAccessToken: vi.fn(),
   findMembership: vi.fn(),
   provisionMembershipWithAudit: vi.fn(),
   recoverMembershipAsTenantAdmin: vi.fn(),
   upsertMembership: vi.fn(),
-  findTenantByClerkOrgId: vi.fn(),
+  findTenantByAuthOrgId: vi.fn(),
+  findTenantBySlug: vi.fn(),
   upsertTenantBySlug: vi.fn(),
 }));
 
-vi.mock("@clerk/backend", () => ({
-  createClerkClient: vi.fn(),
-  verifyToken: mocks.verifyToken,
+vi.mock("../auth/token.js", () => ({
+  verifyAccessToken: mocks.verifyAccessToken,
 }));
 
 vi.mock("../db/client.js", () => ({
@@ -21,7 +21,8 @@ vi.mock("../db/client.js", () => ({
 }));
 
 vi.mock("../db/repositories/tenants.js", () => ({
-  findTenantByClerkOrgId: mocks.findTenantByClerkOrgId,
+  findTenantByAuthOrgId: mocks.findTenantByAuthOrgId,
+  findTenantBySlug: mocks.findTenantBySlug,
   upsertTenantBySlug: mocks.upsertTenantBySlug,
 }));
 
@@ -34,28 +35,42 @@ vi.mock("../db/repositories/memberships.js", () => ({
 
 import { loadEnv, resetEnvCache } from "../env.js";
 import { errorHandler } from "./error.js";
-import { requireAuth, requireClerkUser, type AppVariables } from "./auth.js";
+import { requireAuth, requireUser, type AppVariables } from "./auth.js";
 
 const app = new Hono<{ Variables: AppVariables }>();
 app.onError(errorHandler);
 app.use("*", requireAuth);
 app.get("/", (c) => c.json(c.get("auth")));
 
-const clerkUserApp = new Hono<{ Variables: AppVariables }>();
-clerkUserApp.onError(errorHandler);
-clerkUserApp.use("*", requireClerkUser);
-clerkUserApp.get("/", (c) => c.json(c.get("clerkUser")));
+const userApp = new Hono<{ Variables: AppVariables }>();
+userApp.onError(errorHandler);
+userApp.use("*", requireUser);
+userApp.get("/", (c) => c.json(c.get("authUser")));
 
-describe("Clerk organization claims", () => {
+describe("identity organization claims", () => {
   beforeEach(() => {
     loadEnv({
       ...process.env,
       NODE_ENV: "test",
-      CLERK_SECRET_KEY: "test-clerk-secret",
       CRON_SECRET: "test-cron-secret",
     });
-    mocks.findTenantByClerkOrgId.mockResolvedValue({ id: "tenant_test" });
-    mocks.upsertTenantBySlug.mockResolvedValue({ id: "tenant_vsas" });
+    mocks.findTenantByAuthOrgId.mockImplementation(async (orgId: string) =>
+      orgId === "org_test"
+        ? { id: "tenant_test", slug: "test", authOrgId: "org_test" }
+        : null,
+    );
+    mocks.findTenantBySlug.mockImplementation(async (slug: string) =>
+      slug === "test"
+        ? { id: "tenant_test", slug: "test", authOrgId: "org_test" }
+        : slug === "other"
+          ? { id: "tenant_other", slug: "other", authOrgId: "org_other" }
+          : null,
+    );
+    mocks.upsertTenantBySlug.mockResolvedValue({
+      id: "tenant_vsas",
+      slug: "vsas",
+      authOrgId: "org_vsas",
+    });
     mocks.findMembership.mockResolvedValue(null);
     mocks.recoverMembershipAsTenantAdmin.mockImplementation(
       async ({ membershipId }) => ({
@@ -81,10 +96,13 @@ describe("Clerk organization claims", () => {
     resetEnvCache();
   });
 
-  it("maps Clerk's compact organization role claim", async () => {
-    mocks.verifyToken.mockResolvedValue({
-      sub: "user_test",
-      o: { id: "org_test", rol: "admin", slg: "vsas" },
+  it("maps the organization role claim", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_test",
+      orgs: { org_test: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
 
     const response = await app.request("/", {
@@ -93,32 +111,34 @@ describe("Clerk organization claims", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      clerkUserId: "user_test",
-      clerkOrgId: "org_test",
+      authUserId: "user_test",
+      authOrgId: "org_test",
       role: "admin",
     });
     expect(mocks.provisionMembershipWithAudit).toHaveBeenCalledWith({
       tenantId: "tenant_test",
-      clerkUserId: "user_test",
+      authUserId: "user_test",
       role: "pilot",
     });
     expect(mocks.upsertMembership).not.toHaveBeenCalled();
     expect(mocks.recoverMembershipAsTenantAdmin).toHaveBeenCalled();
   });
 
-  it("repairs the configured vSAS tenant when its Clerk org mapping is stale", async () => {
+  it("repairs the configured vSAS tenant when its org mapping is stale", async () => {
     loadEnv({
       ...process.env,
       NODE_ENV: "test",
-      CLERK_SECRET_KEY: "test-clerk-secret",
       CRON_SECRET: "test-cron-secret",
-      VSAS_CLERK_ORG_ID: "org_vsas",
+      VSAS_AUTH_ORG_ID: "org_vsas",
     });
-    mocks.verifyToken.mockResolvedValue({
-      sub: "user_test",
-      o: { id: "org_vsas", rol: "admin", slg: "vsas" },
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_test",
+      orgs: { org_vsas: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
-    mocks.findTenantByClerkOrgId.mockResolvedValue(null);
+    mocks.findTenantByAuthOrgId.mockResolvedValue(null);
 
     const response = await app.request("/", {
       headers: { Authorization: "Bearer session-token" },
@@ -128,29 +148,29 @@ describe("Clerk organization claims", () => {
     expect(mocks.upsertTenantBySlug).toHaveBeenCalledWith({
       slug: "vsas",
       name: "vSAS",
-      clerkOrgId: "org_vsas",
+      authOrgId: "org_vsas",
     });
     expect(mocks.provisionMembershipWithAudit).toHaveBeenCalledWith({
       tenantId: "tenant_vsas",
-      clerkUserId: "user_test",
+      authUserId: "user_test",
       role: "pilot",
     });
   });
 
-  it("does not provision an unconfigured Clerk organization", async () => {
+  it("does not provision an unconfigured organization", async () => {
     loadEnv({
       ...process.env,
       NODE_ENV: "test",
-      CLERK_SECRET_KEY: "test-clerk-secret",
       CRON_SECRET: "test-cron-secret",
-      VSAS_CLERK_ORG_ID: "org_vsas",
+      VSAS_AUTH_ORG_ID: "org_vsas",
     });
-    mocks.verifyToken.mockResolvedValue({
-      sub: "user_test",
-      o: { id: "org_other", rol: "admin", slg: "other" },
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_test",
+      orgs: { org_other: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
-    mocks.findTenantByClerkOrgId.mockResolvedValue(null);
-
     const response = await app.request("/", {
       headers: { Authorization: "Bearer session-token" },
     });
@@ -160,10 +180,13 @@ describe("Clerk organization claims", () => {
     expect(mocks.provisionMembershipWithAudit).not.toHaveBeenCalled();
   });
 
-  it("recovers a verified Clerk admin only through the no-active-admin seam", async () => {
-    mocks.verifyToken.mockResolvedValue({
-      sub: "user_recovery",
-      o: { id: "org_test", rol: "admin" },
+  it("recovers a verified org admin only through the no-active-admin seam", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_recovery",
+      orgs: { org_test: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
     mocks.findMembership.mockResolvedValue({
       id: "membership_recovery",
@@ -191,10 +214,13 @@ describe("Clerk organization claims", () => {
     });
   });
 
-  it("keeps a newly provisioned Clerk admin as pilot when recovery is not eligible", async () => {
-    mocks.verifyToken.mockResolvedValue({
-      sub: "user_additional_admin",
-      o: { id: "org_test", rol: "admin" },
+  it("keeps a newly provisioned org admin as pilot when recovery is not eligible", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_additional_admin",
+      orgs: { org_test: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
     mocks.recoverMembershipAsTenantAdmin.mockResolvedValue(null);
 
@@ -206,15 +232,18 @@ describe("Clerk organization claims", () => {
     await expect(response.json()).resolves.toMatchObject({ role: "pilot" });
     expect(mocks.provisionMembershipWithAudit).toHaveBeenCalledWith({
       tenantId: "tenant_test",
-      clerkUserId: "user_additional_admin",
+      authUserId: "user_additional_admin",
       role: "pilot",
     });
   });
 
-  it("provisions a dispatcher role assigned through Clerk tenant administration", async () => {
-    mocks.verifyToken.mockResolvedValue({
-      sub: "user_new_dispatcher",
-      o: { id: "org_test", rol: "dispatcher" },
+  it("provisions a dispatcher role assigned through tenant administration", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_new_dispatcher",
+      orgs: { org_test: "dispatcher" },
+      email: null,
+      emailVerified: false,
+      name: null,
     });
 
     const response = await app.request("/", {
@@ -227,7 +256,7 @@ describe("Clerk organization claims", () => {
     });
     expect(mocks.provisionMembershipWithAudit).toHaveBeenCalledWith({
       tenantId: "tenant_test",
-      clerkUserId: "user_new_dispatcher",
+      authUserId: "user_new_dispatcher",
       role: "dispatcher",
     });
     expect(mocks.recoverMembershipAsTenantAdmin).not.toHaveBeenCalled();
@@ -235,17 +264,103 @@ describe("Clerk organization claims", () => {
   });
 
   it("verifies a signed-in applicant without requiring an organization claim", async () => {
-    mocks.verifyToken.mockResolvedValue({ sub: "user_applicant" });
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_applicant",
+      orgs: {},
+      email: "applicant@example.test",
+      emailVerified: true,
+      name: "Applicant",
+    });
 
-    const response = await clerkUserApp.request("/", {
+    const response = await userApp.request("/", {
       headers: { Authorization: "Bearer session-token" },
     });
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      clerkUserId: "user_applicant",
+      authUserId: "user_applicant",
+      email: "applicant@example.test",
+      emailVerified: true,
+      name: "Applicant",
     });
-    expect(mocks.findTenantByClerkOrgId).not.toHaveBeenCalled();
+    expect(mocks.findTenantByAuthOrgId).not.toHaveBeenCalled();
     expect(mocks.findMembership).not.toHaveBeenCalled();
+  });
+
+  it("picks the tenant from the slug header and checks the orgs claim", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_multi",
+      orgs: { org_test: "member", org_other: "dispatcher" },
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: {
+        Authorization: "Bearer session-token",
+        "X-Tenant-Slug": "Other",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      tenantId: "tenant_other",
+      authOrgId: "org_other",
+      role: "dispatcher",
+    });
+  });
+
+  it("rejects a tenant the caller does not belong to", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_test",
+      orgs: { org_test: "admin" },
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: {
+        Authorization: "Bearer session-token",
+        "X-Tenant-Slug": "other",
+      },
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.findMembership).not.toHaveBeenCalled();
+  });
+
+  it("asks for a tenant when the token holds several organizations", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_multi",
+      orgs: { org_test: "member", org_other: "member" },
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.findMembership).not.toHaveBeenCalled();
+  });
+
+  it("treats an organization owner as a tenant admin", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_owner",
+      orgs: { org_test: "owner" },
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(mocks.recoverMembershipAsTenantAdmin).toHaveBeenCalled();
   });
 });

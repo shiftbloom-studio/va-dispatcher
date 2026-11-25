@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "02d92080-2cb9-4f28-ac29-b886edc9f083",
+  "id": "493b6c08-5015-4a05-8690-3efaefed86b5",
   "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
     {
@@ -1490,7 +1490,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "clerk_user_id",
+      "name": "auth_user_id",
       "entityType": "columns",
       "table": "memberships"
     },
@@ -3250,7 +3250,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "clerk_org_id",
+      "name": "auth_org_id",
       "entityType": "columns",
       "table": "tenants"
     },
@@ -4899,7 +4899,7 @@
           "isExpression": false
         },
         {
-          "value": "clerk_user_id",
+          "value": "auth_user_id",
           "isExpression": false
         }
       ],
@@ -5573,14 +5573,14 @@
     {
       "columns": [
         {
-          "value": "clerk_org_id",
+          "value": "auth_org_id",
           "isExpression": false
         }
       ],
       "isUnique": true,
       "where": null,
       "origin": "manual",
-      "name": "tenants_clerk_org_uidx",
+      "name": "tenants_auth_org_uidx",
       "entityType": "indexes",
       "table": "tenants"
     },
@@ -5735,7 +5735,7 @@
       "table": "mock_acars_queue"
     },
     {
-      "value": "\"provider\" in ('clerk', 'cloudflare', 'hoppie', 'backup', 'navigraph')",
+      "value": "\"provider\" in ('identity', 'cloudflare', 'hoppie', 'backup', 'navigraph')",
       "name": "privacy_external_tasks_provider_enum_check",
       "entityType": "checks",
       "table": "privacy_external_tasks"

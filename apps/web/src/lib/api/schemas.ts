@@ -93,13 +93,13 @@ export const tenantAdministrationResponseSchema = z.object({
   name: z.string(),
   settings: z.record(z.string(), z.unknown()),
   memberAccess: memberAccessSettingsSchema,
-  clerkSynchronized: z.boolean(),
+  directorySynchronized: z.boolean(),
 });
 
 export const meSchema = z.object({
   user: z
     .object({
-      clerkUserId: z.string(),
+      authUserId: z.string(),
     })
     .passthrough(),
   membership: z
@@ -413,7 +413,7 @@ export const dispatchTelemetrySchema = z.object({
 
 export const memberSchema = z.object({
   id: z.string(),
-  clerkUserId: z.string(),
+  authUserId: z.string(),
   role: roleSchema,
   requestedRole: roleSchema.nullable().default(null),
   pilotCallsign: z.string().nullish(),
@@ -440,7 +440,7 @@ export const memberImpactSchema = z.object({
 export const memberUpdateResponseSchema = memberSchema.extend({
   reassignedFlightCount: z.number().int().nonnegative(),
   reassignedScheduleRequestCount: z.number().int().nonnegative(),
-  clerkSynchronized: z.boolean().default(true),
+  directorySynchronized: z.boolean().default(true),
 });
 export const memberKickResponseSchema = memberUpdateResponseSchema.extend({
   completionAuditRecorded: z.boolean(),

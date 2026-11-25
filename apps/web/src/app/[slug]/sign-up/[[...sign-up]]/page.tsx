@@ -1,11 +1,8 @@
-import { SignUp } from "@clerk/nextjs";
 import { notFound } from "next/navigation";
 
-import {
-  TENANT_AUTH_APPEARANCE,
-  TenantAuthShell,
-} from "@/components/tenant-auth-shell";
 import { E2eAuthForm } from "@/components/e2e-auth-form";
+import { IdentitySignIn } from "@/components/identity-sign-in";
+import { TenantAuthShell } from "@/components/tenant-auth-shell";
 import { getTenantAuthRoutes } from "@/lib/auth-routes";
 import { e2eIntegratedFixtureEnabled } from "@/lib/e2e-fixture";
 import { getPublicTenantConfig } from "@/lib/public-tenant";
@@ -25,13 +22,11 @@ export default async function SignUpPage({
       {e2eIntegratedFixtureEnabled() ? (
         <E2eAuthForm slug={tenant.slug} mode="sign-up" />
       ) : (
-        <SignUp
-          path={routes.signUp}
-          routing="path"
-          fallbackRedirectUrl={routes.join}
-          signInFallbackRedirectUrl={routes.home}
-          signInUrl={routes.signIn}
-          appearance={TENANT_AUTH_APPEARANCE}
+        <IdentitySignIn
+          mode="sign-up"
+          returnTo={routes.join}
+          signInHref={routes.signIn}
+          signUpHref={routes.signUp}
         />
       )}
     </TenantAuthShell>

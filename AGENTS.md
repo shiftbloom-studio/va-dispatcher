@@ -72,8 +72,8 @@ Important implementation entry points:
 
 - Node.js: `>=24`; `.nvmrc` pins the preferred local version.
 - Package manager: pnpm `11.21.0` via the root `packageManager` field.
-- API: Hono, TypeScript, Drizzle ORM on Cloudflare D1, R2, Clerk, Zod, Vitest.
-- Web: Next.js 16 App Router, React 19, TanStack Query, Clerk, Zod, Vitest,
+- API: Hono, TypeScript, Drizzle ORM on Cloudflare D1, R2, jose (stem OIDC tokens), Zod, Vitest.
+- Web: Next.js 16 App Router, React 19, TanStack Query, stem OIDC sign-in, Zod, Vitest,
   Playwright. Production builds use vinext (`vite build`); `next dev` stays the
   local dev server.
 - Deployment: two Cloudflare Workers via Workers Builds, see
@@ -114,7 +114,7 @@ Production runs two Workers on one hostname. `va-dispatch-web` is the
 custom-domain origin; `va-dispatch-api` claims `<host>/api/*` with a zone route.
 Server components reach the API through the web Worker's `API` service binding
 (`apps/web/src/lib/api/service-binding.ts`); locally they use `API_ORIGIN`.
-Never put a per-user (Clerk-token) request through the shared data cache;
+Never put a per-user (access-token) request through the shared data cache;
 `serverPublicApi` is only for identical-for-everyone reads.
 
 The API supports both path shapes so it also works without the `/api` prefix:
@@ -131,15 +131,15 @@ The normal authenticated browser request path is:
 
 ```text
 URL tenant slug
-  -> Clerk active organization
-  -> server identity verification
-  -> Clerk bearer token
+  -> encrypted app session (stem tokens)
+  -> stem bearer token + X-Tenant-Slug
+  -> API token verification and orgs-claim check
   -> API tenant + membership resolution
   -> tenant-scoped repository query
 ```
 
-The UI must not render operational data when the URL tenant, active Clerk
-organization, and API-resolved tenant disagree.
+The UI must not render operational data when the URL tenant and the
+API-resolved tenant disagree.
 
 ## Tenancy and authorization invariants
 
@@ -147,17 +147,17 @@ Tenant isolation is a hard security boundary, not a UI filter.
 
 - Never accept a trusted `tenantId`, membership ID, or role from a request
   body, query string, URL slug, or browser storage.
-- Resolve tenant and membership from the verified Clerk organization and API
-  auth context.
+- Resolve tenant and membership from the verified token's `orgs` claim and
+  the API auth context. `X-Tenant-Slug` only selects the tenant.
 - Every tenant-owned repository read/update/delete must include `tenantId` in
   its predicate, including lookup-by-ID paths.
 - Return not-found/forbidden without leaking whether another tenant owns a
   record.
 - Add negative cross-tenant tests for every new tenant-owned endpoint.
-- Keep the URL slug, Clerk organization slug, and `/me`/`/tenant` identity
-  checks aligned in the web shell.
+- Keep the URL slug and the `/me`/`/tenant` identity checks aligned in the
+  web shell.
 
-The first vSAS organization is trusted through `VSAS_CLERK_ORG_ID`. On first
+The first vSAS organization is trusted through `VSAS_AUTH_ORG_ID`. On first
 authenticated access the API may create or repair the corresponding tenant,
 then auto-provision the user's membership. Do not generalize that bootstrap
 path to arbitrary organizations without a deliberate provisioning design.
@@ -347,7 +347,7 @@ Additional web rules:
 - Add or update tests for visible role/state behavior.
 
 The frontend tenant registry currently contains only `vsas`. Adding a tenant
-is not just a branding entry: Clerk provisioning, database tenancy,
+is not just a branding entry: stem organization provisioning, database tenancy,
 configuration, assets, legal/operator data, and isolation tests must agree.
 
 ## Security, privacy, and legal requirements
@@ -356,7 +356,7 @@ Read `SECURITY.md`, `docs/privacy-compliance.md`, and
 `docs/maintainer-setup.md` before changing authentication, telemetry, secrets,
 legal pages, or third-party services.
 
-- Never commit `.env` files, keys, Hoppie logons, Clerk secrets, production
+- Never commit `.env` files, keys, Hoppie logons, client or session secrets, production
   identifiers, personal data, or database exports.
 - Use synthetic data in tests, logs, screenshots, and issue reproductions.
 - Production legal pages fail closed when mandatory `LEGAL_*` configuration is
@@ -398,7 +398,7 @@ The fast Playwright suite uses deterministic route fixtures and proves focused
 UI behavior. The separate integrated suite starts the real web and API against
 an in-memory local D1 database, deterministic local
 provider adapters, and a production-hard-off auth fixture. It contains one
-pilot and one dispatcher journey. Neither suite proves live Hoppie, Clerk,
+pilot and one dispatcher journey. Neither suite proves live Hoppie, stem,
 Cloudflare bot scoring, SimBrief, Navigraph, or production routing; those require deployed
 acceptance.
 

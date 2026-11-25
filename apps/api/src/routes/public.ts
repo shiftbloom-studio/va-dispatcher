@@ -8,7 +8,7 @@ import { tenantLogoKey } from "../domain/tenants/logo-storage.js";
 
 export const publicRoutes = new Hono();
 
-/** Public, deliberately narrow identity used before Clerk sign-in. */
+/** Public, deliberately narrow identity used before sign-in. */
 publicRoutes.get("/public/tenants/:slug", async (c) => {
   const tenant = await findTenantBySlug(c.req.param("slug").toLowerCase());
   if (!tenant) throw new AppError("NOT_FOUND", "Virtual Airline not found");

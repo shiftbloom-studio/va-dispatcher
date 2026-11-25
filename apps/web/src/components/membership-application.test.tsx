@@ -7,16 +7,6 @@ import { TestQueryProvider } from "@/test/test-query-provider";
 
 const apiMock = vi.fn();
 
-vi.mock("@clerk/nextjs", () => ({
-  OrganizationList: (props: Record<string, unknown>) => (
-    <div
-      data-after-select={String(props.afterSelectOrganizationUrl)}
-      data-testid="organization-list"
-    />
-  ),
-  SignOutButton: ({ children }: { children: React.ReactNode }) => children,
-}));
-
 vi.mock("@/lib/api/use-api", () => ({
   useApi: () => apiMock,
   jsonBody: (value: unknown) => ({
@@ -85,10 +75,9 @@ describe("tenant membership application", () => {
       requestedRole: "dispatcher",
     });
     expect(await screen.findByText("Application pending")).toBeInTheDocument();
-    expect(screen.getByTestId("organization-list")).toHaveAttribute(
-      "data-after-select",
-      "/:slug",
-    );
+    expect(
+      screen.getByRole("button", { name: "Sign out" }),
+    ).toBeInTheDocument();
   });
 
   it("shows a closed policy without an access-granting action", async () => {

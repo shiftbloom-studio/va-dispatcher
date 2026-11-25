@@ -1721,7 +1721,7 @@ export async function anonymizePrivacySubject(
     sql`
       update memberships
       set
-        clerk_user_id = 'anon:' || ${uuidV4Sql},
+        auth_user_id = 'anon:' || ${uuidV4Sql},
         role = 'pilot',
         display_name = null,
         pilot_callsign = null,
@@ -2127,7 +2127,7 @@ function retentionClassSpec(input: {
           ${row}.tenant_id = ${tenantId}
           and ${row}.status = 'disabled'
           and ${row}.updated_at < ${cutoff}
-          and ${row}.clerk_user_id not like 'anon:%'
+          and ${row}.auth_user_id not like 'anon:%'
           and not exists (
             select 1 from flights f
             where f.tenant_id = ${row}.tenant_id
@@ -2152,7 +2152,7 @@ function retentionClassSpec(input: {
           membership: (ids, noHold) => sql`
             update memberships
             set
-              clerk_user_id = 'anon:' || ${uuidV4Sql},
+              auth_user_id = 'anon:' || ${uuidV4Sql},
               role = 'pilot',
               display_name = null,
               pilot_callsign = null,

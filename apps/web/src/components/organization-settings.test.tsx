@@ -53,7 +53,7 @@ describe("organization settings", () => {
             name: body.name,
             settings: tenant.settings,
             memberAccess: body.memberAccess,
-            clerkSynchronized: true,
+            directorySynchronized: true,
           });
         }
         if (path === "/tenant/acars-config" && options.method === "PUT") {
@@ -142,7 +142,7 @@ describe("organization settings", () => {
     ).toBeInTheDocument();
   });
 
-  it("configures manual applications and Clerk invitation lifetime", async () => {
+  it("configures manual applications and invitation lifetime", async () => {
     const user = userEvent.setup();
     render(
       <TestQueryProvider>

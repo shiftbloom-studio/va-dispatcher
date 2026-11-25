@@ -9,7 +9,7 @@ approve the deployment's schedule and procedures before activating them.
 
 | Class               | Application action                                                                           | Default template | Hold behavior                           | External follow-up                                                     |
 | ------------------- | -------------------------------------------------------------------------------------------- | ---------------: | --------------------------------------- | ---------------------------------------------------------------------- |
-| Memberships         | Anonymize disabled, inactive identities with no open work                                    |         730 days | Tenant/member holds exclude rows        | Clerk account and provider identities                                  |
+| Memberships         | Anonymize disabled, inactive identities with no open work                                    |         730 days | Tenant/member holds exclude rows        | stem account and provider identities                                   |
 | Schedule requests   | Delete terminal requests and their free text/preferences                                     |         730 days | Tenant/member holds exclude rows        | None normally                                                          |
 | Flights             | Delete terminal flights; cascades release, event, and SimBrief rows                          |       2,555 days | Tenant/member holds exclude rows        | Provider-generated artifacts as applicable                             |
 | Simulator telemetry | Delete expired current state, leases, and track points even when a client does not reconnect |            1 day | Tenant/member holds exclude rows        | None; device and OOOI identity links follow verified subject workflows |
@@ -67,7 +67,7 @@ documents in VA Dispatch.
 - Anonymization and erasure additionally require approval by an administrator
   different from the request creator, the subject to be disabled and non-admin,
   no open request/flight work, no active tenant/member legal hold, completion
-  of the Clerk offboarding task, and exact confirmation
+  of the stem offboarding task, and exact confirmation
   `ERASE VERIFIED SUBJECT DATA`.
 - A legal hold is initially pending and becomes active only after approval by a
   different administrator. Pending and active holds both conservatively block
@@ -114,7 +114,7 @@ Audit metadata is redacted through the same bounded redaction policy as the
 audit viewer. Export-page access is audited with counts and store names, never
 the exported payload. The response is `private, no-store`.
 
-Verifying an export creates provider/backup tasks for Clerk, Cloudflare (logs and
+Verifying an export creates provider/backup tasks for stem, Cloudflare (logs and
 D1 Time Travel), independent backups, Hoppie, and Navigraph/SimBrief. Finishing the local pages
 moves the request to `awaiting_external` while any task is pending or failed;
 the last completed or documented-not-applicable task finalizes it. Do not mark
@@ -122,11 +122,11 @@ the controller's response complete until every applicable task is closed.
 
 ## Provider and backup boundaries
 
-- **Clerk:** VA Dispatch creates tasks for known membership subjects; an
-  authorized operator uses Clerk's supported export/correction/disable/delete
-  process. A waitlist-only email has no local membership subject and must be
-  handled directly in Clerk. No broad Clerk deletion credential is held by the
-  lifecycle job.
+- **stem:** VA Dispatch creates tasks for known membership subjects; the stem
+  operator handles export, correction, disabling, and deletion of the account.
+  An account that never applied to a tenant has no local membership subject
+  and is handled directly in stem. The lifecycle job holds no account-deletion
+  credential.
 - **Cloudflare:** Workers logs follow the account's observability retention;
   use provider support or available tools for a verified request. VA Dispatch
   cannot prove provider deletion.

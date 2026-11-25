@@ -18,5 +18,5 @@ credentials and personal or operational data from logs and screenshots.
 - Follow [SECURITY.md](SECURITY.md) for vulnerabilities; never report them in a
   public issue.
 
-Questions about third-party services such as Clerk, Neon, Vercel, or Hoppies may
+Questions about third-party services such as Cloudflare or Hoppie may
 ultimately need to be handled by that provider's support channel.

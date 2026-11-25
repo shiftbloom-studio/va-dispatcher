@@ -560,7 +560,7 @@ describe("privacy lifecycle repository (D1)", () => {
       requestId: priorRequest!.id,
       tasks: [
         {
-          provider: "clerk",
+          provider: "identity",
           action: "synthetic_prior_task",
           operatorNote: "synthetic private provider note",
         },
@@ -598,13 +598,13 @@ describe("privacy lifecycle repository (D1)", () => {
       localRecords: { flights: 1, requests: 1, messages: 1, telemetry: 5 },
     });
     const member = await database.query<{
-      clerkUserId: string;
+      authUserId: string;
       displayName: string | null;
     }>(
-      'select clerk_user_id as "clerkUserId", display_name as "displayName" from memberships where id=?',
+      'select auth_user_id as "authUserId", display_name as "displayName" from memberships where id=?',
       SUBJECT_ONE,
     );
-    expect(member[0]?.clerkUserId).toMatch(/^anon:/);
+    expect(member[0]?.authUserId).toMatch(/^anon:/);
     expect(member[0]?.displayName).toBeNull();
     const retained = await database.query<{
       requestNotes: string | null;
@@ -805,21 +805,21 @@ async function seedFixtures({ db }: TestDatabase) {
       id: TENANT_ONE,
       slug: "privacy-one",
       name: "Privacy One",
-      clerkOrgId: "org_privacy_one",
+      authOrgId: "org_privacy_one",
       hoppieLogonEnc: "encrypted-hoppie",
     },
     {
       id: TENANT_TWO,
       slug: "privacy-two",
       name: "Privacy Two",
-      clerkOrgId: "org_privacy_two",
+      authOrgId: "org_privacy_two",
     },
   ]);
   await db.insert(memberships).values([
     {
       id: ADMIN_ONE,
       tenantId: TENANT_ONE,
-      clerkUserId: "admin_one",
+      authUserId: "admin_one",
       role: "admin",
       displayName: "Admin One",
       status: "active",
@@ -827,7 +827,7 @@ async function seedFixtures({ db }: TestDatabase) {
     {
       id: ADMIN_TWO,
       tenantId: TENANT_ONE,
-      clerkUserId: "admin_two",
+      authUserId: "admin_two",
       role: "admin",
       displayName: "Admin Two",
       status: "active",
@@ -835,7 +835,7 @@ async function seedFixtures({ db }: TestDatabase) {
     {
       id: SUBJECT_ONE,
       tenantId: TENANT_ONE,
-      clerkUserId: "subject_one",
+      authUserId: "subject_one",
       role: "pilot",
       displayName: "Subject One",
       status: "disabled",
@@ -843,7 +843,7 @@ async function seedFixtures({ db }: TestDatabase) {
     {
       id: SUBJECT_TWO,
       tenantId: TENANT_TWO,
-      clerkUserId: "subject_two",
+      authUserId: "subject_two",
       role: "pilot",
       displayName: "Subject Two",
       status: "disabled",
@@ -851,7 +851,7 @@ async function seedFixtures({ db }: TestDatabase) {
     {
       id: ADMIN_THREE,
       tenantId: TENANT_TWO,
-      clerkUserId: "admin_two_tenant",
+      authUserId: "admin_two_tenant",
       role: "admin",
       displayName: "Admin Two Tenant",
       status: "active",

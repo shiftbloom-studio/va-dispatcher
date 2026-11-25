@@ -18,7 +18,7 @@ wiki/                     Reviewable source mirror of this GitHub Wiki
 flowchart TB
     subgraph Browser
       UI["Next.js client components"]
-      CK["Clerk session cookies"]
+      CK["encrypted session cookie"]
     end
 
     subgraph Cloudflare
@@ -30,7 +30,7 @@ flowchart TB
       DB["D1 database"]
     end
 
-    CLERK["Clerk organizations"]
+    STEM["stem accounts<br/>and organizations"]
     HOPPIE["Hoppie's ACARS"]
     SIMBRIEF["SimBrief / Navigraph"]
     MSFS["MSFS client<br/>device token"]
@@ -40,8 +40,8 @@ flowchart TB
     WEB -->|"service binding"| API
     WEB --> KV
     UI -->|"same-origin typed JSON"| API
-    WEB --> CLERK
-    API --> CLERK
+    WEB --> STEM
+    API --> STEM
     API --> DB
     API --> R2
     API --> HOPPIE
@@ -59,19 +59,21 @@ Both Workers share one hostname. The web Worker is the custom-domain origin; the
 The Next.js App Router uses a tenant segment at `/:slug`.
 
 - The root layout owns public privacy controls and optional telemetry.
-- The tenant layout configures Clerk's sign-in, waitlist, approved-user sign-up,
-  join fallback, and task routes inside the current slug.
-- The join route verifies a Clerk user without requiring organization context,
+- `/auth/*` route handlers run the OIDC code flow with stem, keep the encrypted
+  session cookie, hand the browser its access token, and sign out. The proxy
+  refreshes the access token before pages render.
+- The tenant sign-in and sign-up pages hand off to stem inside the current slug.
+- The join route verifies a signed-in user without requiring membership,
   then exposes only that user's tenant application state.
-- The protected layout rejects unknown slugs, routes users without an
-  organization to join/approval, checks tenant agreement, and renders the
+- The protected layout rejects unknown slugs, routes users who are not
+  members to join/approval, checks tenant agreement, and renders the
   shared application shell.
 - Portal and dispatch layouts enforce the role-specific user experience.
 
-`getServerIdentity()` performs the important three-way agreement:
+`getServerIdentity()` performs the important agreement check:
 
-1. URL tenant slug;
-2. active Clerk organization slug; and
+1. URL tenant slug, sent to the API as `X-Tenant-Slug`;
+2. membership in that tenant's organization (the token's `orgs` claim, checked by the API); and
 3. tenant returned by authenticated API calls.
 
 No business data is requested until those values agree.
@@ -79,11 +81,11 @@ No business data is requested until those values agree.
 Membership application is intentionally outside this three-way business-data
 path. It resolves the known static tenant slug on the server, stores only the
 verified user/tenant membership application, and does not render the
-application shell until Clerk organization and active local membership agree.
+application shell until organization and active local membership agree.
 
 ### Client data layer
 
-Client components use TanStack Query for fetch state, caching, invalidation, and polling. `useApi()` obtains the current Clerk token and calls same-origin `/api/v1/*`. Every consumed response is parsed through a Zod schema in `apps/web/src/lib/api/schemas.ts`.
+Client components use TanStack Query for fetch state, caching, invalidation, and polling. `useApi()` obtains the current access token from `/auth/token`, adds `X-Tenant-Slug`, and calls same-origin `/api/v1/*`. Every consumed response is parsed through a Zod schema in `apps/web/src/lib/api/schemas.ts`.
 
 This means a successful HTTP response with a drifted shape fails as `INVALID_RESPONSE` rather than being trusted by the UI.
 
@@ -113,9 +115,9 @@ At the application level:
 4. Public docs and health routes are mounted.
 5. Secret-authenticated internal routes are mounted before business middleware.
 6. The Cloudflare bot-score check guards mutations under the versioned business API.
-7. The narrow application route verifies a Clerk user; every business route
-   group additionally resolves active organization, tenant, membership, and
-   role requirements.
+7. The narrow application route verifies a signed-in user; every business route
+   group additionally resolves tenant, organization membership, local
+   membership, and role requirements.
 
 ### Route layer
 
@@ -155,23 +157,23 @@ pending migrations before the new code goes live. See [Data Model](https://githu
 
 ## Security boundaries
 
-- **Identity boundary:** Clerk JWT and active organization claims.
-- **Tenant boundary:** Clerk organization maps to exactly one database tenant; all reads and mutations scope by it.
+- **Identity boundary:** stem access token (EdDSA JWT) and its `orgs` claim.
+- **Tenant boundary:** a stem organization maps to exactly one database tenant; all reads and mutations scope by it.
 - **Authorization boundary:** role hierarchy plus resource ownership checks.
 - **Automation boundary:** Cloudflare bot score for mutations, cron triggers for scheduled jobs, and `CRON_SECRET` for manual internal runs.
 - **Secret boundary:** tenant Hoppie logons encrypted with AES-256-GCM using `TENANT_SECRETS_KEY`.
 - **Contract boundary:** Zod at API input and web response consumption.
-- **Privacy boundary:** no analytics or tracking; legal pages are public and Clerk-free.
+- **Privacy boundary:** no analytics or tracking; legal pages are public and never read the session.
 
 ## Design decisions
 
 ### Path-based tenancy
 
-The URL exposes the active Virtual Airline and lets branding, Clerk organization selection, and backend tenant identity be checked together. The backend is tenant-capable, but the current static web tenant registry contains only vSAS.
+The URL exposes the active Virtual Airline and lets branding, organization membership, and backend tenant identity be checked together. The backend is tenant-capable, but the current static web tenant registry contains only vSAS.
 
 ### Scale to zero
 
-Workers, D1, R2, and Clerk avoid an always-on application server. No Redis or external queue is required for the current workload. The one-minute Hoppie cron trigger is the only regular production wake-up.
+Workers, D1, R2, and stem (itself on Workers) avoid an always-on application server. No Redis or external queue is required for the current workload. The one-minute Hoppie cron trigger is the only regular production wake-up.
 
 ### Explicit state machines
 

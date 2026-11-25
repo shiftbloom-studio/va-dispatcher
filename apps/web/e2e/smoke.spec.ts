@@ -10,7 +10,7 @@ const brand = {
 
 const pilot = {
   id: "11111111-1111-4111-8111-111111111111",
-  clerkUserId: "user_e2e_pilot",
+  authUserId: "user_e2e_pilot",
   role: "pilot",
   pilotCallsign: "SAS101",
   displayName: "Test Pilot",
@@ -1136,7 +1136,7 @@ test("admin configures the tenant Hoppie ground station", async ({
   await baseFixtures(page);
   await page.route("**/api/v1/me", (route) =>
     json(route, {
-      user: { clerkUserId: "admin-test" },
+      user: { authUserId: "admin-test" },
       membership: {
         ...pilot,
         id: "admin-membership",
@@ -1178,7 +1178,7 @@ test("admin configures the tenant Hoppie ground station", async ({
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
 });
 
-test("admin invites, approves, and removes tenant members without Clerk UI", async ({
+test("admin invites, approves, and removes tenant members without identity-provider UI", async ({
   page,
   context,
 }) => {
@@ -1189,7 +1189,7 @@ test("admin invites, approves, and removes tenant members without Clerk UI", asy
   const applicant = {
     ...pilot,
     id: "26000000-0000-4000-8000-000000000031",
-    clerkUserId: "user-applicant",
+    authUserId: "user-applicant",
     role: "pilot",
     requestedRole: "dispatcher",
     displayName: "Dispatcher Applicant",
@@ -1212,7 +1212,7 @@ test("admin invites, approves, and removes tenant members without Clerk UI", asy
 
   await page.route("**/api/v1/me", (route) =>
     json(route, {
-      user: { clerkUserId: "admin-test" },
+      user: { authUserId: "admin-test" },
       membership: {
         ...pilot,
         id: "admin-membership",
@@ -1258,7 +1258,7 @@ test("admin invites, approves, and removes tenant members without Clerk UI", asy
         ...activeApplicant,
         reassignedFlightCount: 0,
         reassignedScheduleRequestCount: 0,
-        clerkSynchronized: true,
+        directorySynchronized: true,
       });
     },
   );
@@ -1271,7 +1271,7 @@ test("admin invites, approves, and removes tenant members without Clerk UI", asy
       status: "disabled",
       reassignedFlightCount: 0,
       reassignedScheduleRequestCount: 0,
-      clerkSynchronized: true,
+      directorySynchronized: true,
       completionAuditRecorded: true,
     });
   });

@@ -25,6 +25,13 @@ const LEGAL_VARIABLES = [
   "LEGAL_SUPERVISORY_AUTHORITY_URL",
 ] as const;
 
+/** Public identity-provider settings (stem); secrets are set separately. */
+const AUTH_VARIABLES = [
+  "AUTH_ISSUER",
+  "AUTH_CLIENT_ID",
+  "AUTH_AUDIENCE",
+] as const;
+
 /** Local and test overrides; never set them in a production build. */
 const LOCAL_OVERRIDE_VARIABLES = [
   "API_ORIGIN",
@@ -74,7 +81,14 @@ export default defineConfig({
         ...(production
           ? { API: bindings.worker({ worker: "va-dispatch-api" }) }
           : {}),
-        CLERK_SECRET_KEY: bindings.secret(),
+        // Secrets: the OIDC client secret and the key that encrypts the
+        // session cookie (32+ random characters).
+        AUTH_CLIENT_SECRET: bindings.secret(),
+        AUTH_SESSION_SECRET: bindings.secret(),
+        ...(production && hostname
+          ? { APP_ORIGIN: bindings.text(`https://${hostname}`) }
+          : {}),
+        ...textVariables(AUTH_VARIABLES),
         ...textVariables(LEGAL_VARIABLES),
         ...textVariables(LOCAL_OVERRIDE_VARIABLES),
       },

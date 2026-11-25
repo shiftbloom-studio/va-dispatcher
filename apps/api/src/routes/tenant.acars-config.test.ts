@@ -20,19 +20,19 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
     ...actual,
     requireAuth: createMiddleware(async (c, next) => {
       c.set("auth", {
-        clerkUserId: "user_test",
+        authUserId: "user_test",
         tenantId: "tenant_test",
         membershipId: "membership_test",
         role: state.role,
-        clerkOrgId: "org_test",
+        authOrgId: "org_test",
       });
       await next();
     }),
-    getClerkClient: () => ({
-      organizations: { updateOrganization: state.updateOrganization },
-    }),
   };
 });
+vi.mock("../auth/directory.js", () => ({
+  getDirectory: () => ({ renameOrganization: state.updateOrganization }),
+}));
 vi.mock("../db/repositories/tenants.js", () => ({
   findTenantById: state.findTenantById,
   updateTenant: state.updateTenant,
@@ -63,7 +63,7 @@ const baseTenant: Tenant = {
   id: "tenant_test",
   slug: "vsas",
   name: "Virtual SAS",
-  clerkOrgId: "org_test",
+  authOrgId: "org_test",
   hoppieStation: "VSAS",
   hoppieLogonEnc: null,
   brandSeedColor: "#e64646",
@@ -188,7 +188,7 @@ describe("tenant organization configuration", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       memberAccess: payload.memberAccess,
-      clerkSynchronized: true,
+      directorySynchronized: true,
     });
     expect(state.updateTenant).toHaveBeenCalledWith("tenant_test", {
       settings: { memberAccess: payload.memberAccess },
@@ -240,7 +240,7 @@ describe("tenant organization configuration", () => {
     expect(state.updateTenant).not.toHaveBeenCalled();
   });
 
-  it("synchronizes the tenant name to Clerk before persisting it locally", async () => {
+  it("synchronizes the tenant name to the identity provider before persisting it locally", async () => {
     state.role = "admin";
     const response = await app.request("/tenant", {
       method: "PATCH",
@@ -249,7 +249,8 @@ describe("tenant organization configuration", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(state.updateOrganization).toHaveBeenCalledWith("org_test", {
+    expect(state.updateOrganization).toHaveBeenCalledWith({
+      orgId: "org_test",
       name: "Scandinavian Virtual",
     });
     expect(state.updateOrganization.mock.invocationCallOrder[0]).toBeLessThan(

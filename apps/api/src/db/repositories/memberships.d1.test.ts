@@ -506,12 +506,12 @@ describe("administrative member transactions (D1)", () => {
     const created = await createDirectoryMembershipWithAudit({
       tenantId: TENANT_ONE,
       actorMembershipId: actor.rows[0]!.id,
-      clerkUserId: "user_directory_atomic",
+      authUserId: "user_directory_atomic",
       role: "pilot",
       displayName: "Directory Pilot",
     });
     expect(created).toMatchObject({
-      clerkUserId: "user_directory_atomic",
+      authUserId: "user_directory_atomic",
       role: "pilot",
     });
     const audit = await pool.query<{ count: number }>(
@@ -525,11 +525,11 @@ describe("administrative member transactions (D1)", () => {
   it("provisions first-login membership as pilot with a self-attributed audit", async () => {
     const created = await provisionPilotMembershipWithAudit({
       tenantId: TENANT_ONE,
-      clerkUserId: "user_first_login",
+      authUserId: "user_first_login",
     });
 
     expect(created).toMatchObject({
-      clerkUserId: "user_first_login",
+      authUserId: "user_first_login",
       role: "pilot",
       status: "active",
     });
@@ -549,7 +549,7 @@ describe("administrative member transactions (D1)", () => {
     expect(audit.rows).toEqual([
       {
         actorMembershipId: created.id,
-        authority: "verified_clerk_membership",
+        authority: "verified_identity_membership",
       },
     ]);
   });
@@ -564,24 +564,24 @@ describe("administrative member transactions (D1)", () => {
     await expect(
       provisionPilotMembershipWithAudit({
         tenantId: TENANT_ONE,
-        clerkUserId: "user_unaudited_first_login",
+        authUserId: "user_unaudited_first_login",
       }),
     ).rejects.toThrow("synthetic self-provision audit failure");
 
     const membership = await pool.query<{ count: number }>(
       `select count(*) as count
        from memberships
-       where tenant_id = ?1 and clerk_user_id = ?2`,
+       where tenant_id = ?1 and auth_user_id = ?2`,
       [TENANT_ONE, "user_unaudited_first_login"],
     );
     expect(membership.rows[0]?.count).toBe(0);
   });
 
   it("submits, updates, and cancels a tenant-scoped membership application atomically", async () => {
-    const clerkUserId = "user_membership_applicant";
+    const authUserId = "user_membership_applicant";
     const submitted = await submitMembershipApplicationWithAudit({
       tenantId: TENANT_ONE,
-      clerkUserId,
+      authUserId,
       requestedRole: "dispatcher",
       displayName: "Applicant",
     });
@@ -589,7 +589,7 @@ describe("administrative member transactions (D1)", () => {
       submitted: true,
       membership: {
         tenantId: TENANT_ONE,
-        clerkUserId,
+        authUserId,
         role: "dispatcher",
         status: "invited",
       },
@@ -597,7 +597,7 @@ describe("administrative member transactions (D1)", () => {
 
     const revised = await submitMembershipApplicationWithAudit({
       tenantId: TENANT_ONE,
-      clerkUserId,
+      authUserId,
       requestedRole: "pilot",
       displayName: "Applicant Updated",
     });
@@ -611,13 +611,13 @@ describe("administrative member transactions (D1)", () => {
     await expect(
       cancelMembershipApplicationWithAudit({
         tenantId: TENANT_TWO,
-        clerkUserId,
+        authUserId,
       }),
     ).resolves.toBeNull();
     await expect(
       cancelMembershipApplicationWithAudit({
         tenantId: TENANT_ONE,
-        clerkUserId,
+        authUserId,
       }),
     ).resolves.toMatchObject({
       id: submitted.membership.id,
@@ -641,7 +641,7 @@ describe("administrative member transactions (D1)", () => {
   it("never downgrades an active member through membership application submission", async () => {
     const result = await submitMembershipApplicationWithAudit({
       tenantId: TENANT_ONE,
-      clerkUserId: "pilot_one",
+      authUserId: "pilot_one",
       requestedRole: "dispatcher",
       displayName: "Attempted Application",
     });
@@ -667,7 +667,7 @@ describe("administrative member transactions (D1)", () => {
   it("accepts only the first decision for a pending membership application", async () => {
     const submitted = await submitMembershipApplicationWithAudit({
       tenantId: TENANT_ONE,
-      clerkUserId: "user_decision_race",
+      authUserId: "user_decision_race",
       requestedRole: "dispatcher",
       displayName: "Decision Race",
     });
@@ -724,20 +724,20 @@ async function seedFixtures({ db }: TestDatabase): Promise<void> {
       id: TENANT_ONE,
       slug: "admin-test-one",
       name: "Admin Test One",
-      clerkOrgId: "org_admin_test_one",
+      authOrgId: "org_admin_test_one",
     },
     {
       id: TENANT_TWO,
       slug: "admin-test-two",
       name: "Admin Test Two",
-      clerkOrgId: "org_admin_test_two",
+      authOrgId: "org_admin_test_two",
     },
   ]);
   await db.insert(memberships).values([
     {
       id: ADMIN_ONE,
       tenantId: TENANT_ONE,
-      clerkUserId: "admin_one",
+      authUserId: "admin_one",
       role: "admin",
       displayName: "Admin One",
       status: "active",
@@ -745,7 +745,7 @@ async function seedFixtures({ db }: TestDatabase): Promise<void> {
     {
       id: ADMIN_TWO,
       tenantId: TENANT_ONE,
-      clerkUserId: "admin_two",
+      authUserId: "admin_two",
       role: "admin",
       displayName: "Admin Two",
       status: "active",
@@ -753,7 +753,7 @@ async function seedFixtures({ db }: TestDatabase): Promise<void> {
     {
       id: PILOT_ONE,
       tenantId: TENANT_ONE,
-      clerkUserId: "pilot_one",
+      authUserId: "pilot_one",
       role: "pilot",
       displayName: "Pilot One",
       status: "active",
@@ -761,7 +761,7 @@ async function seedFixtures({ db }: TestDatabase): Promise<void> {
     {
       id: PILOT_TWO,
       tenantId: TENANT_ONE,
-      clerkUserId: "pilot_two",
+      authUserId: "pilot_two",
       role: "pilot",
       displayName: "Pilot Two",
       status: "active",
@@ -769,7 +769,7 @@ async function seedFixtures({ db }: TestDatabase): Promise<void> {
     {
       id: OUTSIDE_PILOT,
       tenantId: TENANT_TWO,
-      clerkUserId: "outside_pilot",
+      authUserId: "outside_pilot",
       role: "pilot",
       displayName: "Outside Pilot",
       status: "active",

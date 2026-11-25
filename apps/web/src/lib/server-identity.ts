@@ -1,6 +1,5 @@
 import "server-only";
 
-import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
@@ -13,6 +12,7 @@ import {
   type TenantDetail,
 } from "@/lib/api/schemas";
 import { serverApi } from "@/lib/api/server";
+import { getSession } from "@/lib/auth/server-session";
 import {
   E2E_IDENTITY_COOKIE,
   E2E_IDENTITY_HEADER,
@@ -86,7 +86,7 @@ export const getServerIdentity = cache(
         kind: "ready",
         role,
         me: {
-          user: { clerkUserId: `e2e-${role}` },
+          user: { authUserId: `e2e-${role}` },
           membership: {
             id: `membership-${role}`,
             role,
@@ -118,31 +118,23 @@ export const getServerIdentity = cache(
       };
     }
 
-    const session = await auth();
-    if (!session.userId) return { kind: "signed-out" };
-    if (!session.orgSlug) return { kind: "join-required" };
-    if (session.orgSlug.toLowerCase() !== slug.toLowerCase()) {
-      return {
-        kind: "mismatch",
-        reason: "Select the organization matching this Virtual Airline URL.",
-      };
-    }
-
-    const token = await session.getToken();
-    if (!token) return { kind: "signed-out" };
+    const session = await getSession();
+    if (!session) return { kind: "signed-out" };
+    const token = session.accessToken;
+    // The API picks the tenant from this header and checks the caller's
+    // organization roles in the token against it.
+    const tenantHeaders = { "X-Tenant-Slug": slug };
 
     let me: Me;
     try {
-      me = await serverApi("/me", token, meSchema);
+      me = await serverApi("/me", token, meSchema, tenantHeaders);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401)
         return { kind: "signed-out" };
+      // Not a member of this Virtual Airline (yet), or the membership is
+      // not active: the join page shows the application state.
       if (error instanceof ApiError && error.status === 403) {
-        return {
-          kind: "mismatch",
-          reason:
-            "Your active organization is not registered for this Virtual Airline.",
-        };
+        return { kind: "join-required" };
       }
       throw error;
     }
@@ -158,9 +150,14 @@ export const getServerIdentity = cache(
       };
     }
 
-    // Only read tenant configuration after the URL, Clerk organization, and
-    // local /me tenant agree. A mismatched session performs no business reads.
-    const tenant = await serverApi("/tenant", token, tenantDetailSchema);
+    // Only read tenant configuration after the URL and the local /me tenant
+    // agree. A mismatched session performs no business reads.
+    const tenant = await serverApi(
+      "/tenant",
+      token,
+      tenantDetailSchema,
+      tenantHeaders,
+    );
     if (tenant.slug.toLowerCase() !== slug.toLowerCase()) {
       return {
         kind: "mismatch",

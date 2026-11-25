@@ -40,7 +40,7 @@ const keys = new Set(
   ),
 );
 // May be empty; everything else is required.
-const optional = new Set(["VSAS_CLERK_ORG_ID"]);
+const optional = new Set(["VSAS_AUTH_ORG_ID", "AUTH_CLIENT_ID"]);
 const missing = [...keys].filter((key) => !env[key] && !optional.has(key));
 if (missing.length) {
   console.error(

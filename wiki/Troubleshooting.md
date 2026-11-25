@@ -6,7 +6,7 @@ Start with the visible error and its `X-Request-Id`. Avoid changing credentials,
 
 1. `GET /health` and record `env`, `database`, and `acarsProvider`.
 2. Check browser network response status, error code, and `X-Request-Id`.
-3. Confirm the URL slug and active Clerk organization slug.
+3. Confirm the URL slug and that the account belongs to that tenant's stem organization.
 4. Confirm `/me` and `/tenant` return the same tenant.
 5. Confirm membership status and role.
 6. Check the specific API/service logs by request ID.
@@ -14,35 +14,29 @@ Start with the visible error and its `X-Request-Id`. Avoid changing credentials,
 
 ## Authentication and tenant errors
 
-### A new email is reported as unknown instead of showing sign-up
+### Sign-in ends on "Sign-in failed"
 
-In Clerk Waitlist mode, public sign-up is intentionally invitation-only. New
-users without a valid direct invitation must open `/:slug/waitlist` and submit
-their email there. Confirm that the tenant `ClerkProvider` points `waitlistUrl`
-to that route and that Clerk email delivery is enabled. After a global Clerk
-administrator invites the entry, the
-Dashboard approval email opens Clerk's Account Portal sign-up page by default;
-configure the Account Portal sign-up fallback redirect to `/:slug/join` for the
-separate pilot/dispatcher membership application. `/:slug/sign-up` is used only
-when an invitation flow explicitly redirects into the tenant application.
+- `state`: the sign-in step took longer than 10 minutes or was opened in another browser. Start again from `/:slug/sign-in`.
+- `provider`: stem rejected the code exchange or the ID token. Check that the web Worker's `AUTH_ISSUER`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`, and `AUTH_AUDIENCE` match the registered client, that `APP_ORIGIN` matches the registered redirect URI, and that the resource is listed in stem's `RESOURCES`.
 
 ### Redirected to sign-in repeatedly
 
-- Confirm the Clerk publishable and secret keys belong to the same instance.
+- Confirm `AUTH_SESSION_SECRET` is set and stable; changing it signs everyone out.
+- Confirm the access token's `aud` matches the API's `AUTH_AUDIENCE`.
 - Confirm tenant auth routes are inside `/:slug`.
 - Confirm session cookies are not blocked.
 - Confirm `API_INTERNAL_URL` or `API_ORIGIN` reaches the API.
 - Check `/me` for 401 and its request ID.
 
-### “Select the organization matching this Virtual Airline URL”
+### Sent to the join page although the account is a member
 
-The active Clerk organization slug differs from the URL. Select the vSAS organization for `/vsas`; do not bypass this by weakening the slug check.
+The access token's `orgs` claim does not contain the tenant's organization yet. Role and membership changes reach the token at the next refresh, within 10 minutes; signing in again picks them up at once. Do not bypass this by weakening the organization check.
 
 ### “This organization is not registered as a VA tenant”
 
-- Verify the Clerk organization ID, not only its name or slug.
-- Verify `VSAS_CLERK_ORG_ID` in the API.
-- Inspect the `tenants.clerk_org_id` mapping.
+- Verify the stem organization ID, not only its name or slug.
+- Verify `VSAS_AUTH_ORG_ID` in the API.
+- Inspect the `tenants.auth_org_id` mapping.
 - Sign in through the exact trusted vSAS organization to allow repair; the
   production seed endpoint deliberately returns not found.
 
@@ -50,44 +44,45 @@ The active Clerk organization slug differs from the URL. Select the vSAS organiz
 
 The local membership is `invited` or `disabled`. Check `/vsas/join` for a
 pending application. An administrator must approve it or restore/remove the
-member through the authorized tenant workflow. Clerk directory presence alone
+member through the authorized tenant workflow. Directory presence alone
 never reactivates local access.
 
 ### Invitation was accepted but access is still denied
 
-Confirm the invitation role is `org:pilot` or `org:dispatcher`, its organization
-slug matches the tenant URL, and the user selected that active organization. If
+Confirm the invitation role is `pilot` or `dispatcher` and its organization
+belongs to the tenant URL. A role granted moments ago appears in the token at
+the next refresh or sign-in. If
 the user already has a disabled/invited local record, review it in VA Dispatch;
 do not delete application history or bypass local status. A failed removal can
-also leave a safe disabled record plus a stale Clerk membership—repeat **Remove
+also leave a safe disabled record plus a stale stem membership—repeat **Remove
 from organization** to finish provider synchronization.
 
 ### Invitation sends an error or sync finds no new member
 
 - Record the visible status, message, and request ID. A provider rejection can
-  indicate a missing `org:pilot`/`org:dispatcher` role or an invalid
-  invitation redirect configuration. Verify the Worker's explicit `APP_ORIGIN`
-  and that Clerk allowlists it.
-- In local auth-bypass mode, live Clerk invitations are intentionally disabled
+  indicate a missing `pilot`/`dispatcher` entry in stem's `ORG_ROLES` or an invitation
+  return URL outside the registered redirect origins. Verify the Worker's
+  explicit `APP_ORIGIN`.
+- In local auth-bypass mode, live invitations are intentionally disabled
   and directory sync is a no-op. Set `AUTH_DEV_BYPASS=false` only in a safe
-  environment configured with matching Clerk keys when testing this flow.
+  environment configured with a registered stem client when testing this flow.
 - Pending invitations cannot be synchronized. The recipient must accept a
-  tenant organization invitation before first tenant access or **Sync Clerk
+  tenant organization invitation before first tenant access or **Sync account
   directory** can create the local row.
-- An application-wide user invitation from Clerk Dashboard is not a tenant
-  invitation. After account creation, send the user to `/:slug/join` and
-  approve their pilot/dispatcher request in VA Dispatch.
-- Treat a sync result with skipped entries as incomplete; Clerk did not return
+- An account created without an invitation is not a tenant member. Send the
+  user to `/:slug/join` and approve their pilot/dispatcher request in VA
+  Dispatch.
+- Treat a sync result with skipped entries as incomplete; stem did not return
   the stable user ID needed for a tenant-scoped membership row, or an existing
   pending/disabled local member requires explicit administrator review.
 
-### Wrong role after a Clerk change
+### Wrong role after a stem change
 
-Runtime authorization uses the local membership. Run the paged Clerk directory
+Runtime authorization uses the local membership. Run the paged stem directory
 synchronization or update the membership as an Admin, then verify the
 conservative mapping. First provisioning is audited as pilot or dispatcher. The sole
-authentication-time exception promotes a verified Clerk organization Admin
-when the tenant has no active application Admin; it does not keep syncing Clerk
+authentication-time exception promotes a verified organization owner or admin
+when the tenant has no active application Admin; it does not keep syncing token
 claims on later requests.
 
 ## API and web contract errors
@@ -97,7 +92,7 @@ claims on later requests.
 The health endpoint can still respond without a schema. Locally, run
 `pnpm db:migrate:local`. In production, confirm the `DB` binding points at the
 `va-dispatch` database and that the API build applied its migrations, then
-authenticate through the trusted Clerk organization.
+authenticate through the trusted stem organization.
 
 ### `INVALID_RESPONSE` in the web UI
 

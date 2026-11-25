@@ -18,11 +18,11 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
     ...actual,
     requireAuth: createMiddleware(async (c, next) => {
       c.set("auth", {
-        clerkUserId: "user_test",
+        authUserId: "user_test",
         tenantId: "20000000-0000-4000-8000-000000000001",
         membershipId: "10000000-0000-4000-8000-000000000001",
         role: c.req.header("X-Test-Role") ?? "dispatcher",
-        clerkOrgId: "org_test",
+        authOrgId: "org_test",
       });
       await next();
     }),

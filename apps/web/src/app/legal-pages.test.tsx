@@ -32,11 +32,11 @@ describe("public legal pages", () => {
     for (const page of [PrivacyPage, DatenschutzPage]) {
       const copy = await copyOf(page);
       expect(copy).toContain("Cloudflare, Inc.");
-      expect(copy).toContain("Clerk, Inc.");
-      expect(copy).toContain("__session, __client_uat");
+      expect(copy).toContain("stem");
+      expect(copy).toContain("__Host-va-session, __Host-va-auth");
       expect(copy).toContain("__cf_bm");
       expect(copy).toContain("TDDDG");
-      expect(copy).not.toMatch(/Vercel|Neon|BotID|Speed Insights/);
+      expect(copy).not.toMatch(/Vercel|Neon|BotID|Speed Insights|Clerk/);
     }
     expect(await copyOf(PrivacyPage)).toContain(
       "review a tenant membership application",

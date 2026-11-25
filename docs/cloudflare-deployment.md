@@ -13,8 +13,9 @@ domain, so the browser only ever talks to one origin. Server components call the
 API through the `API` service binding, because a Worker cannot `fetch()` a zone
 route on its own zone.
 
-Clerk stays the identity provider. Everything else (hosting, database, logo
-storage, logs, bot scoring) is on Cloudflare.
+Sign-in uses stem, the shiftbloom account service, which also runs on
+Cloudflare Workers. Hosting, database, logo storage, logs, and bot scoring are
+all on Cloudflare.
 
 ## What runs where
 
@@ -33,7 +34,7 @@ storage, logs, bot scoring) is on Cloudflare.
 - **Caching (web):** vinext stores the data cache in Workers KV. Only
   unauthenticated, identical-for-everyone reads (`serverPublicApi`, for example
   public tenant branding) use it, with a 60-second revalidation. Per-user
-  requests made with a Clerk token never enter a shared cache. Static assets
+  requests made with an access token never enter a shared cache. Static assets
   under `/_next/static` are served from Workers static assets with immutable
   caching, and `next/image` uses Cloudflare Images.
 
@@ -63,24 +64,26 @@ storage, logs, bot scoring) is on Cloudflare.
    placeholders in `apps/api/wrangler.jsonc` and the web Worker config, so
    installation-specific values never live in the repository:
 
-   | Variable                            | Worker | Meaning                                                                          |
-   | ----------------------------------- | ------ | -------------------------------------------------------------------------------- |
-   | `VA_HOSTNAME`                       | both   | Public hostname, for example `dispatch.example.com`                              |
-   | `VA_ZONE_NAME`                      | API    | Cloudflare zone of that hostname                                                 |
-   | `VA_D1_DATABASE_ID`                 | API    | ID of the `va-dispatch` D1 database                                              |
-   | `CLERK_PUBLISHABLE_KEY`             | API    | Clerk publishable key                                                            |
-   | `VSAS_CLERK_ORG_ID`                 | API    | Immutable ID of the first tenant's Clerk organization (optional)                 |
-   | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | web    | Same Clerk publishable key, inlined at build                                     |
-   | `NEXT_PUBLIC_SOURCE_URL`            | web    | Corresponding-source URL for hosted forks                                        |
-   | `LEGAL_*`                           | web    | Operator details for the imprint and privacy notice, see `apps/web/.env.example` |
+   | Variable                 | Worker | Meaning                                                                          |
+   | ------------------------ | ------ | -------------------------------------------------------------------------------- |
+   | `VA_HOSTNAME`            | both   | Public hostname, for example `dispatch.example.com`                              |
+   | `VA_ZONE_NAME`           | API    | Cloudflare zone of that hostname                                                 |
+   | `VA_D1_DATABASE_ID`      | API    | ID of the `va-dispatch` D1 database                                              |
+   | `AUTH_ISSUER`            | both   | OIDC issuer of the identity provider (stem)                                      |
+   | `AUTH_AUDIENCE`          | both   | API resource `https://<host>/api`; the `aud` of access tokens                    |
+   | `AUTH_CLIENT_ID`         | both   | OIDC client ID: sign-in on the web, directory API (invitations, sync) on the API |
+   | `VSAS_AUTH_ORG_ID`       | API    | Immutable ID of the first tenant's identity-provider organization (optional)     |
+   | `NEXT_PUBLIC_SOURCE_URL` | web    | Corresponding-source URL for hosted forks                                        |
+   | `LEGAL_*`                | web    | Operator details for the imprint and privacy notice, see `apps/web/.env.example` |
 
    For a manual deploy from a workstation, put the same values in an untracked
    `.env.deploy` at the repository root or in the app directory.
 
 4. **Secrets** (Settings → Variables and Secrets, or `wrangler secret put`):
-   - API: `CLERK_SECRET_KEY`, `TENANT_SECRETS_KEY`, `CRON_SECRET`,
+   - API: `AUTH_CLIENT_SECRET`, `TENANT_SECRETS_KEY`, `CRON_SECRET`,
      `SIMBRIEF_API_KEY`, `NAVIGRAPH_CLIENT_ID`, `NAVIGRAPH_CLIENT_SECRET`
-   - Web: `CLERK_SECRET_KEY`
+   - Web: `AUTH_CLIENT_SECRET` (same value as the API) and `AUTH_SESSION_SECRET`
+     (32+ random characters; encrypts the session cookie)
 
 5. **Third-party callbacks:** register
    `https://<host>/api/v1/simbrief/oauth/callback` with Navigraph and use

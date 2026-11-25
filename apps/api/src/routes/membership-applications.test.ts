@@ -6,17 +6,21 @@ const mocks = vi.hoisted(() => ({
   submitMembershipApplicationWithAudit: vi.fn(),
   cancelMembershipApplicationWithAudit: vi.fn(),
   findTenantBySlug: vi.fn(),
-  getClerkClient: vi.fn(),
+  authUser: {
+    authUserId: "user-applicant",
+    email: "applicant@example.test" as string | null,
+    emailVerified: true,
+    name: "Verified Applicant" as string | null,
+  },
 }));
 
 vi.mock("../middleware/auth.js", async () => {
   const { createMiddleware: middleware } = await import("hono/factory");
   return {
-    requireClerkUser: middleware(async (c, next) => {
-      c.set("clerkUser", { clerkUserId: "user-applicant" });
+    requireUser: middleware(async (c, next) => {
+      c.set("authUser", { ...mocks.authUser });
       await next();
     }),
-    getClerkClient: mocks.getClerkClient,
   };
 });
 
@@ -42,7 +46,7 @@ app.route("/", membershipApplicationRoutes);
 const pendingMembership = {
   id: "27000000-0000-4000-8000-000000000001",
   tenantId: "tenant-vsas",
-  clerkUserId: "user-applicant",
+  authUserId: "user-applicant",
   role: "dispatcher" as const,
   displayName: "Verified Applicant",
   pilotCallsign: null,
@@ -72,17 +76,9 @@ describe("membership application routes", () => {
         : null,
     );
     mocks.findMembership.mockResolvedValue(null);
-    mocks.getClerkClient.mockReturnValue({
-      users: {
-        getUser: vi.fn().mockResolvedValue({
-          fullName: "Verified Applicant",
-          primaryEmailAddress: {
-            emailAddress: "applicant@example.test",
-            verification: { status: "verified" },
-          },
-        }),
-      },
-    });
+    mocks.authUser.email = "applicant@example.test";
+    mocks.authUser.emailVerified = true;
+    mocks.authUser.name = "Verified Applicant";
     mocks.submitMembershipApplicationWithAudit.mockResolvedValue({
       membership: pendingMembership,
       submitted: true,
@@ -102,7 +98,7 @@ describe("membership application routes", () => {
         tenantSlug: "VSAS",
         requestedRole: "dispatcher",
         tenantId: "attacker-controlled",
-        clerkUserId: "attacker-controlled",
+        authUserId: "attacker-controlled",
       }),
     });
 
@@ -111,7 +107,7 @@ describe("membership application routes", () => {
     expect(mocks.findTenantBySlug).toHaveBeenCalledWith("vsas");
     expect(mocks.submitMembershipApplicationWithAudit).toHaveBeenCalledWith({
       tenantId: "tenant-vsas",
-      clerkUserId: "user-applicant",
+      authUserId: "user-applicant",
       requestedRole: "dispatcher",
       displayName: "Verified Applicant",
     });
@@ -159,7 +155,6 @@ describe("membership application routes", () => {
     });
 
     expect(response.status).toBe(403);
-    expect(mocks.getClerkClient).not.toHaveBeenCalled();
     expect(mocks.submitMembershipApplicationWithAudit).not.toHaveBeenCalled();
   });
 
@@ -172,10 +167,38 @@ describe("membership application routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.cancelMembershipApplicationWithAudit).toHaveBeenCalledWith({
       tenantId: "tenant-vsas",
-      clerkUserId: "user-applicant",
+      authUserId: "user-applicant",
     });
     await expect(response.json()).resolves.toMatchObject({
       application: { state: "closed", requestedRole: "dispatcher" },
     });
+  });
+
+  it("requires a verified email claim before storing an application", async () => {
+    mocks.authUser.emailVerified = false;
+
+    const response = await app.request("/membership-application", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tenantSlug: "vsas", requestedRole: "pilot" }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(mocks.submitMembershipApplicationWithAudit).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the email when the token has no name", async () => {
+    mocks.authUser.name = null;
+
+    const response = await app.request("/membership-application", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tenantSlug: "vsas", requestedRole: "pilot" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.submitMembershipApplicationWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ displayName: "applicant@example.test" }),
+    );
   });
 });

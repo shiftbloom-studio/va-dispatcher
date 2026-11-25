@@ -594,11 +594,11 @@ export async function processSubjectRequest(input: {
         pilotCallsign: correction.pilotCallsign,
       });
       if (!corrected) throw new AppError("NOT_FOUND", "Membership not found");
-      if (correction.clerkCorrectionRequested) {
+      if (correction.identityCorrectionRequested) {
         await privacyRepo.createExternalRequestTasks({
           tenantId: input.tenantId,
           requestId: request.id,
-          tasks: [{ provider: "clerk", action: "correct_identity_record" }],
+          tasks: [{ provider: "identity", action: "correct_identity_record" }],
         });
       }
       const tasks = await privacyRepo.listExternalRequestTasks(
@@ -619,7 +619,7 @@ export async function processSubjectRequest(input: {
               ? ["pilotCallsign"]
               : []),
           ],
-          clerkTaskCreated: correction.clerkCorrectionRequested,
+          identityTaskCreated: correction.identityCorrectionRequested,
         },
         scrubPayload: true,
       });
@@ -704,14 +704,14 @@ export async function processSubjectRequest(input: {
         input.tenantId,
         request.id,
       );
-      const clerkTask = tasks.find((task) => task.provider === "clerk");
+      const identityTask = tasks.find((task) => task.provider === "identity");
       if (
-        !clerkTask ||
-        !["completed", "not_applicable"].includes(clerkTask.status)
+        !identityTask ||
+        !["completed", "not_applicable"].includes(identityTask.status)
       ) {
         throw new AppError(
           "CONFLICT",
-          "Complete the Clerk disable/deletion task before local destruction",
+          "Complete the identity-provider disable/deletion task before local destruction",
         );
       }
       const remainingTasks = tasks.filter(
@@ -889,7 +889,7 @@ export async function exportPrivacyRequestPage(input: {
     manifest: {
       stores: privacyRepo.PRIVACY_EXPORT_STORES,
       externalSystems: [
-        "Clerk",
+        "Identity provider (stem)",
         "Cloudflare Workers logs and security telemetry",
         "Cloudflare D1 Time Travel (point-in-time recovery)",
         "Hoppie provider queue",
@@ -1031,7 +1031,7 @@ async function ensureDestructiveExternalTasks(
     requestId: request.id,
     tasks: [
       {
-        provider: "clerk",
+        provider: "identity",
         action: "disable_or_delete_account_before_local_destruction",
       },
       { provider: "cloudflare", action: "review_subject_log_deletion" },
@@ -1060,7 +1060,7 @@ async function ensureExportExternalTasks(
     tenantId: request.tenantId,
     requestId: request.id,
     tasks: [
-      { provider: "clerk", action: "export_verified_identity_record" },
+      { provider: "identity", action: "export_verified_identity_record" },
       { provider: "cloudflare", action: "export_or_assess_subject_logs" },
       { provider: "cloudflare", action: "assess_d1_time_travel_scope" },
       { provider: "backup", action: "assess_independent_backup_scope" },
