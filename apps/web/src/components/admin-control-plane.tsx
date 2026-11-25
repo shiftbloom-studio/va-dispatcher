@@ -253,7 +253,7 @@ export function AdminControlPlane({ slug }: { slug: string }) {
               <Card key={member.id} className="overflow-hidden">
                 <CardHeader
                   title={member.displayName ?? "Unnamed applicant"}
-                  description="Pending application — use the review queue above to approve or reject this request."
+                  description="Pending application - use the review queue above to approve or reject this request."
                   action={
                     <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-900">
                       {member.requestedRole ?? "pilot"}

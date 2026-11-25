@@ -15,7 +15,7 @@ VA Dispatch is AGPL-3.0-or-later open-source software. Contributions of code, te
 
 Prefer the smallest coherent, production-quality change that follows existing routes, services, repositories, components, and tests. Fix a regression at its introducing change before adding a compensating layer elsewhere.
 
-Broader refactoring is appropriate when a narrow change would violate correctness, security, privacy, tenant isolation, operational safety, or maintainability—not merely because debugging is inconvenient.
+Broader refactoring is appropriate when a narrow change would violate correctness, security, privacy, tenant isolation, operational safety, or maintainability - not merely because debugging is inconvenient.
 
 ## Pull request expectations
 

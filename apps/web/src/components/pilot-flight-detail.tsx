@@ -166,7 +166,7 @@ export function PilotFlightDetail({
             <p className="font-black">Your assignment changed</p>
             <p className="mt-1 text-sm leading-6">
               Review revision {flight.assignmentRevision}: {flight.flightNumber}{" "}
-              · {flight.depIcao}—{flight.arrIcao} · ETD {formatUtc(flight.etd)}.
+              · {flight.depIcao}-{flight.arrIcao} · ETD {formatUtc(flight.etd)}.
               Confirm it below. Starting the flight also confirms the current
               revision.
             </p>

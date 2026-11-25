@@ -208,7 +208,7 @@ objection, anonymization/erasure, holds, and auditable external-provider tasks.
 Operators still define the lawful policy and complete stem, Cloudflare,
 Hoppie, backup, and legal work that the application cannot perform itself.
 
-Free-text fields—including notes, rejection/cancellation reasons, ACARS bodies, audit metadata, and settings JSON—can contain personal data even when the schema does not require it.
+Free-text fields - including notes, rejection/cancellation reasons, ACARS bodies, audit metadata, and settings JSON - can contain personal data even when the schema does not require it.
 
 ## Schema deployment status
 

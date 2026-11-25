@@ -1,4 +1,4 @@
-# VA Dispatch — Live Dispatch & ACARS
+# VA Dispatch - Live Dispatch & ACARS
 
 [![CI](https://github.com/shiftbloom-studio/va-dispatcher/actions/workflows/ci.yml/badge.svg)](https://github.com/shiftbloom-studio/va-dispatcher/actions/workflows/ci.yml)
 [![Security](https://github.com/shiftbloom-studio/va-dispatcher/actions/workflows/security.yml/badge.svg)](https://github.com/shiftbloom-studio/va-dispatcher/actions/workflows/security.yml)
@@ -18,8 +18,8 @@ and current limitations, see the
 ## Monorepo
 
 ```text
-apps/api   — Hono REST API (/api/v1)
-apps/web   — Next.js frontend (path tenancy at /vsas)
+apps/api   - Hono REST API (/api/v1)
+apps/web   - Next.js frontend (path tenancy at /vsas)
 ```
 
 ## Prerequisites

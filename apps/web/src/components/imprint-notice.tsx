@@ -119,9 +119,9 @@ export function ImprintNotice({
       {config.registerName || config.registerNumber ? (
         <LegalSection title={t.register}>
           <p>
-            {t.registerName}: {config.registerName ?? "—"}
+            {t.registerName}: {config.registerName ?? "-"}
             <br />
-            {t.registerNumber}: {config.registerNumber ?? "—"}
+            {t.registerNumber}: {config.registerNumber ?? "-"}
           </p>
         </LegalSection>
       ) : null}

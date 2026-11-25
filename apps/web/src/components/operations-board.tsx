@@ -137,7 +137,7 @@ function BoardCard({
             <p className="mt-0.5 font-display text-[1.4rem] font-black tracking-tight text-[#17213d]">
               {flight.depIcao}
               <span className="mx-2 text-base font-normal text-slate-400">
-                —
+                -
               </span>
               {flight.arrIcao}
             </p>
@@ -483,7 +483,7 @@ function KpiStrip({
           label="Pilots online"
           value={
             pilotPresencePending || pilotPresenceError || !pilotPresence
-              ? "—"
+              ? "-"
               : String(pilotPresence.onlinePilots)
           }
           supporting={
@@ -564,5 +564,5 @@ function timeOnly(value: string): string {
 }
 
 function formatRatio(value: number | null): string {
-  return value === null ? "—" : `${Math.round(value * 100)}%`;
+  return value === null ? "-" : `${Math.round(value * 100)}%`;
 }

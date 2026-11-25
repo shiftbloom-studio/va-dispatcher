@@ -610,7 +610,7 @@ describe("admin control-plane routes", () => {
       complete: true,
       seen: 0,
       created: 0,
-      note: "Dev bypass — no directory sync",
+      note: "Dev bypass - no directory sync",
     });
     expect(mocks.createInvitation).not.toHaveBeenCalled();
     expect(mocks.syncMembersFromDirectory).not.toHaveBeenCalled();

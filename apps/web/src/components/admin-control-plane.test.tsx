@@ -486,7 +486,7 @@ describe("admin member console", () => {
       skipped: 0,
       failed: 0,
       failures: [],
-      note: "Dev bypass — no directory sync",
+      note: "Dev bypass - no directory sync",
     };
     const user = userEvent.setup();
     render(
@@ -500,7 +500,7 @@ describe("admin member console", () => {
     );
 
     const result = await screen.findByRole("alert");
-    expect(result).toHaveTextContent("Dev bypass — no directory sync");
+    expect(result).toHaveTextContent("Dev bypass - no directory sync");
     expect(result).toHaveTextContent("0 seen");
   });
 
