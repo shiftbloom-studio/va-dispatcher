@@ -2,6 +2,7 @@ import type { MemberRole } from "../db/schema.js";
 import type { DirectoryPage } from "../domain/members/service.js";
 import { env } from "../env.js";
 import { AppError } from "../lib/errors.js";
+import { identityFetch } from "../platform.js";
 
 /** A pending or settled organization invitation at the identity provider. */
 export type DirectoryInvitation = {
@@ -114,7 +115,7 @@ function withSlash(url: string) {
 }
 
 async function tokenEndpoint(issuer: string): Promise<string> {
-  const response = await fetch(
+  const response = await identityFetch(issuer)(
     new URL(".well-known/openid-configuration", withSlash(issuer)),
   );
   const document = response.ok
@@ -138,23 +139,26 @@ async function directoryToken(credentials: Credentials): Promise<string> {
   if (cachedToken?.key === key && cachedToken.expiresAt > Date.now()) {
     return cachedToken.token;
   }
-  const response = await fetch(await tokenEndpoint(credentials.issuer), {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${btoa(
-        `${encodeURIComponent(credentials.clientId)}:${encodeURIComponent(
-          credentials.clientSecret,
+  const response = await identityFetch(credentials.issuer)(
+    await tokenEndpoint(credentials.issuer),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${btoa(
+          `${encodeURIComponent(credentials.clientId)}:${encodeURIComponent(
+            credentials.clientSecret,
+          )}`,
         )}`,
-      )}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        scope: "directory",
+        resource: directoryBase(credentials.issuer),
+      }),
     },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      scope: "directory",
-      resource: directoryBase(credentials.issuer),
-    }),
-  });
+  );
   const payload = (await response.json().catch(() => null)) as {
     access_token?: unknown;
     expires_in?: unknown;
@@ -250,15 +254,18 @@ function stemDirectory(credentials: Credentials): IdentityDirectory {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const response = await fetch(new URL(path, base), {
-      method,
-      headers: {
-        Authorization: `Bearer ${await directoryToken(credentials)}`,
-        Accept: "application/json",
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    const response = await identityFetch(credentials.issuer)(
+      new URL(path, base),
+      {
+        method,
+        headers: {
+          Authorization: `Bearer ${await directoryToken(credentials)}`,
+          Accept: "application/json",
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    );
     if (response.status === 204) return undefined as T;
     const payload = (await response.json().catch(() => null)) as unknown;
     if (!response.ok) {

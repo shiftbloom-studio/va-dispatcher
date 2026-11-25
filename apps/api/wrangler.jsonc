@@ -38,6 +38,12 @@
       "routes": [
         { "pattern": "<VA_HOSTNAME>/api/*", "zone_name": "<VA_ZONE_NAME>" },
       ],
+      // Optional: the identity provider's Worker in the same account. Calls to
+      // the issuer then skip the zone's bot protection. The entry is dropped
+      // when AUTH_IDENTITY_WORKER is unset.
+      "services": [
+        { "binding": "IDENTITY", "service": "<AUTH_IDENTITY_WORKER>" },
+      ],
       "d1_databases": [
         {
           "binding": "DB",

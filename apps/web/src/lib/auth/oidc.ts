@@ -1,8 +1,9 @@
 import "server-only";
 
-import { createRemoteJWKSet, decodeJwt, jwtVerify } from "jose";
+import { createRemoteJWKSet, customFetch, decodeJwt, jwtVerify } from "jose";
 
 import type { AuthConfig } from "@/lib/auth/config";
+import { identityFetch } from "@/lib/auth/identity-fetch";
 
 type Discovery = {
   authorization_endpoint: string;
@@ -20,9 +21,12 @@ const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 export function discover(issuer: string): Promise<Discovery> {
   let pending = discoveryCache.get(issuer);
   if (!pending) {
-    pending = fetch(`${issuer}/.well-known/openid-configuration`, {
-      headers: { Accept: "application/json" },
-    }).then(async (response) => {
+    pending = identityFetch(issuer)(
+      `${issuer}/.well-known/openid-configuration`,
+      {
+        headers: { Accept: "application/json" },
+      },
+    ).then(async (response) => {
       const document = (await response
         .json()
         .catch(() => null)) as Partial<Discovery> | null;
@@ -72,7 +76,7 @@ async function tokenRequest(
   params: Record<string, string>,
 ): Promise<TokenSet> {
   const { token_endpoint } = await discover(config.issuer);
-  const response = await fetch(token_endpoint, {
+  const response = await identityFetch(config.issuer)(token_endpoint, {
     method: "POST",
     headers: {
       Authorization: basicAuth(config),
@@ -171,7 +175,9 @@ export async function verifyIdToken(
   const { jwks_uri } = await discover(config.issuer);
   let jwks = jwksCache.get(jwks_uri);
   if (!jwks) {
-    jwks = createRemoteJWKSet(new URL(jwks_uri));
+    jwks = createRemoteJWKSet(new URL(jwks_uri), {
+      [customFetch]: identityFetch(config.issuer),
+    });
     jwksCache.set(jwks_uri, jwks);
   }
   const { payload } = await jwtVerify(idToken, jwks, {
@@ -200,7 +206,7 @@ export async function revokeRefreshToken(
 ): Promise<boolean> {
   const { revocation_endpoint } = await discover(config.issuer);
   if (!revocation_endpoint) return false;
-  const response = await fetch(revocation_endpoint, {
+  const response = await identityFetch(config.issuer)(revocation_endpoint, {
     method: "POST",
     headers: {
       Authorization: basicAuth(config),
