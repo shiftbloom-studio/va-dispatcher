@@ -3,3 +3,6 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/shiftbloom-studio/va-dispatcher/security/policy
     about: Read the private reporting instructions; do not create a public issue.
+  - name: How to contribute
+    url: https://github.com/shiftbloom-studio/va-dispatcher/blob/main/CONTRIBUTING.md
+    about: Read this before you pick up an issue. Comment first, get assigned, then open a pull request.
