@@ -159,7 +159,7 @@ evident external ledger.
 
 ## Security reporting
 
-Do not open a public issue for a vulnerability. Follow [`SECURITY.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/SECURITY.md) and email `hello@shiftbloom.studio` with the documented subject and a redacted reproduction.
+Do not open a public issue for a vulnerability. Follow [`SECURITY.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/SECURITY.md) and email `safety@shiftbloom.studio` with the documented subject and a redacted reproduction.
 
 Never include real credentials, personal data, production database content, or destructive payloads in a report.
 

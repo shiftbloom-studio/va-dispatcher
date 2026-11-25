@@ -93,7 +93,7 @@ controller response.
 
 After private vulnerability reporting is enabled, confirm that the **Report a
 vulnerability** button appears on the repository Security page. Keep
-`hello@shiftbloom.studio` working as the fallback private contact published in
+`safety@shiftbloom.studio` working as the fallback private contact published in
 `SECURITY.md`, and ensure at least two maintainers can receive and triage its
 mail.
 
