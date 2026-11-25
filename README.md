@@ -18,8 +18,8 @@ and current limitations, see the
 ## Monorepo
 
 ```text
-apps/api - Hono REST API (/api/v1)
-apps/web - Next.js frontend (path tenancy at /vsas)
+apps/api   - Hono REST API (/api/v1)
+apps/web   - Next.js frontend (path tenancy at /vsas)
 ```
 
 ## Prerequisites

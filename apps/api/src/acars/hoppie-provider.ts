@@ -191,7 +191,7 @@ export function parseHoppiePollResponse(
   if (!payload) return [];
 
   const messages: InboundMessage[] = [];
-  // Match blocks: {FROM type {body}} - nested braces for body
+  // Match blocks: {FROM type {body}}  - nested braces for body
   const messageBlockPattern =
     /\{([A-Z0-9-]+)\s+([a-z]+)\s+\{([\s\S]*?)\}\s*\}/gi;
   let match: RegExpExecArray | null;
