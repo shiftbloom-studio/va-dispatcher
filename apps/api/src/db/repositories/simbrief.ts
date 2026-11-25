@@ -1,5 +1,13 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../client.js";
+import {
+  guard,
+  isoTimestampSql,
+  json,
+  jsonBooleanSql,
+  ms,
+  runAtomic,
+} from "../atomic.js";
 import { simbriefDispatches, type SimbriefDispatch } from "../schema.js";
 
 export type SimbriefFlightSnapshot = {
@@ -16,15 +24,9 @@ export type SimbriefFlightSnapshot = {
   aircraftType: string | null;
 };
 
-type AtomicDispatchEnvelope = {
-  result_status?: "started" | "superseded" | "stale" | "unavailable";
-  latest_id?: string | null;
-  dispatch_row: Record<string, unknown> | string | null;
-};
-
 /**
- * Uses the flight version as a database compare-and-set linearization point,
- * then atomically persists a release-bound preparation and its audit event.
+ * Uses the flight version as a compare-and-set linearization point, then
+ * atomically persists a release-bound preparation and its audit event.
  */
 export async function createSimbriefDispatchAtomic(input: {
   id: string;
@@ -39,26 +41,34 @@ export async function createSimbriefDispatchAtomic(input: {
   releaseRevision: number;
   preparedAt: Date;
 }): Promise<SimbriefDispatch | null> {
-  const db = getDb();
-  const preparedAt = input.preparedAt.toISOString();
-  const result = await db.execute<AtomicDispatchEnvelope>(sql`
-    WITH linearized_flight AS (
-      UPDATE flights f
-      SET version = f.version
-      WHERE f.id = ${input.flightId}::uuid
-        AND f.tenant_id = ${input.tenantId}::uuid
+  const preparedAt = ms(input.preparedAt);
+  const dispatcherName = sql`(
+    SELECT coalesce(
+      nullif(trim(membership.display_name), ''),
+      nullif(trim(membership.pilot_callsign), ''),
+      'VA Dispatcher'
+    )
+    FROM memberships membership
+    WHERE membership.id = ${input.createdByMembershipId}
+      AND membership.tenant_id = ${input.tenantId}
+  )`;
+  const result = await runAtomic([
+    guard(sql`EXISTS (
+      SELECT 1
+      FROM flights f
+      WHERE f.id = ${input.flightId}
+        AND f.tenant_id = ${input.tenantId}
         AND f.version = ${input.expectedFlightVersion}
         AND f.assignment_revision = ${input.expectedAssignmentRevision}
         AND f.status IN ('accepted', 'briefed')
-      RETURNING f.*
-    ),
-    current_release AS MATERIALIZED (
-      SELECT release.*
+        AND f.pilot_membership_id IS NOT NULL
+    )`),
+    guard(sql`EXISTS (
+      SELECT 1
       FROM dispatch_releases release
-      JOIN linearized_flight flight
-        ON flight.id = release.flight_id
-       AND flight.tenant_id = release.tenant_id
-      WHERE release.id = ${input.releaseId}::uuid
+      WHERE release.id = ${input.releaseId}
+        AND release.tenant_id = ${input.tenantId}
+        AND release.flight_id = ${input.flightId}
         AND release.revision = ${input.releaseRevision}
         AND NOT EXISTS (
           SELECT 1
@@ -67,108 +77,322 @@ export async function createSimbriefDispatchAtomic(input: {
             AND newer.flight_id = release.flight_id
             AND newer.revision > release.revision
         )
-    ),
-    locked_dispatcher AS MATERIALIZED (
-      SELECT membership.id, membership.display_name, membership.pilot_callsign
+    )`),
+    guard(sql`EXISTS (
+      SELECT 1
       FROM memberships membership
-      WHERE membership.id = ${input.createdByMembershipId}::uuid
-        AND membership.tenant_id = ${input.tenantId}::uuid
+      WHERE membership.id = ${input.createdByMembershipId}
+        AND membership.tenant_id = ${input.tenantId}
         AND membership.role IN ('dispatcher', 'admin')
         AND membership.status = 'active'
-      FOR UPDATE
-    ),
-    current_flight AS MATERIALIZED (
-      SELECT f.*,
-             dispatcher.id AS dispatcher_id,
-             COALESCE(
-               NULLIF(BTRIM(dispatcher.display_name), ''),
-               NULLIF(BTRIM(dispatcher.pilot_callsign), ''),
-               'VA Dispatcher'
-             ) AS dispatcher_name
-      FROM linearized_flight f
-      JOIN current_release release
-        ON release.flight_id = f.id
-       AND release.tenant_id = f.tenant_id
-      CROSS JOIN locked_dispatcher dispatcher
-      WHERE f.pilot_membership_id IS NOT NULL
-    ),
-    advanced_head AS (
+    )`),
+    // A head row owned by another tenant is never advanced.
+    guard(sql`NOT EXISTS (
+      SELECT 1
+      FROM simbrief_flight_heads head
+      WHERE head.flight_id = ${input.flightId}
+        AND head.tenant_id <> ${input.tenantId}
+    )`),
+    sql`
       INSERT INTO simbrief_flight_heads (
         flight_id, tenant_id, revision, created_at, updated_at
       )
-      SELECT current_flight.id, ${input.tenantId}::uuid, 1,
-             ${preparedAt}, ${preparedAt}
-      FROM current_flight
+      VALUES (${input.flightId}, ${input.tenantId}, 1, ${preparedAt}, ${preparedAt})
       ON CONFLICT (flight_id) DO UPDATE
       SET revision = simbrief_flight_heads.revision + 1,
-          updated_at = EXCLUDED.updated_at
-      WHERE simbrief_flight_heads.tenant_id = EXCLUDED.tenant_id
-      RETURNING flight_id, tenant_id, revision
-    ),
-    created AS (
+          updated_at = excluded.updated_at
+    `,
+    sql`
       INSERT INTO simbrief_dispatches (
         id, tenant_id, flight_id, created_by_membership_id, static_id,
         status, revision, request, flight_snapshot, created_at, updated_at
       )
-      SELECT ${input.id}::uuid, ${input.tenantId}::uuid,
-             current_flight.id, current_flight.dispatcher_id,
-             ${input.staticId}, 'prepared', advanced_head.revision,
-             jsonb_set(
-               ${JSON.stringify(input.request)}::jsonb,
-               '{dxname}',
-               to_jsonb(current_flight.dispatcher_name),
-               true
-             ),
-             jsonb_build_object(
-               'flightVersion', current_flight.version,
-               'assignmentRevision', current_flight.assignment_revision,
-               'dispatchReleaseId', ${input.releaseId}::text,
-               'dispatchReleaseRevision', ${input.releaseRevision}::integer,
-               'pilotMembershipId', current_flight.pilot_membership_id,
-               'flightNumber', current_flight.flight_number,
-               'depIcao', current_flight.dep_icao,
-               'arrIcao', current_flight.arr_icao,
-               'etd', to_char(
-                 current_flight.etd AT TIME ZONE 'UTC',
-                 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
-               ),
-               'eta', to_char(
-                 current_flight.eta AT TIME ZONE 'UTC',
-                 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
-               ),
-               'aircraftType', current_flight.aircraft_type
-             ),
-             ${preparedAt}, ${preparedAt}
-      FROM current_flight
-      JOIN advanced_head ON advanced_head.flight_id = current_flight.id
-      RETURNING *
-    ),
-    inserted_audit AS (
+      SELECT ${input.id}, ${input.tenantId}, f.id,
+        ${input.createdByMembershipId}, ${input.staticId}, 'prepared',
+        head.revision,
+        json_set(json(${json(input.request)}), '$.dxname', ${dispatcherName}),
+        json_object(
+          'flightVersion', f.version,
+          'assignmentRevision', f.assignment_revision,
+          'dispatchReleaseId', ${input.releaseId},
+          'dispatchReleaseRevision', ${input.releaseRevision},
+          'pilotMembershipId', f.pilot_membership_id,
+          'flightNumber', f.flight_number,
+          'depIcao', f.dep_icao,
+          'arrIcao', f.arr_icao,
+          'etd', ${isoTimestampSql(sql`f.etd`)},
+          'eta', ${isoTimestampSql(sql`f.eta`)},
+          'aircraftType', f.aircraft_type
+        ),
+        ${preparedAt}, ${preparedAt}
+      FROM flights f
+      JOIN simbrief_flight_heads head ON head.flight_id = f.id
+      WHERE f.id = ${input.flightId}
+        AND f.tenant_id = ${input.tenantId}
+    `,
+    sql`
       INSERT INTO audit_events (
         tenant_id, actor_membership_id, action, entity_type, entity_id,
         meta, created_at
       )
-      SELECT created.tenant_id, ${input.createdByMembershipId}::uuid,
-             'simbrief.dispatch_prepare', 'simbrief_dispatch',
-             created.id::text,
-             jsonb_build_object(
-               'flightId', created.flight_id,
-               'staticId', created.static_id,
-               'flightVersion', created.flight_snapshot -> 'flightVersion',
-               'assignmentRevision', created.flight_snapshot -> 'assignmentRevision',
-               'dispatchReleaseId', created.flight_snapshot -> 'dispatchReleaseId',
-               'dispatchReleaseRevision', created.flight_snapshot -> 'dispatchReleaseRevision',
-               'hasRemarks', created.request ? 'manualrmk'
-             ),
-             ${preparedAt}
-      FROM created
-      RETURNING id
+      SELECT created.tenant_id, ${input.createdByMembershipId},
+        'simbrief.dispatch_prepare', 'simbrief_dispatch', created.id,
+        json_object(
+          'flightId', created.flight_id,
+          'staticId', created.static_id,
+          'flightVersion', created.flight_snapshot -> '$.flightVersion',
+          'assignmentRevision', created.flight_snapshot -> '$.assignmentRevision',
+          'dispatchReleaseId', created.flight_snapshot -> '$.dispatchReleaseId',
+          'dispatchReleaseRevision', created.flight_snapshot -> '$.dispatchReleaseRevision',
+          'hasRemarks', ${jsonBooleanSql(sql`json_type(created.request, '$.manualrmk') IS NOT NULL`)}
+        ),
+        ${preparedAt}
+      FROM simbrief_dispatches created
+      WHERE created.id = ${input.id}
+    `,
+  ]);
+  if (!result) return null;
+  return findSimbriefDispatch(input.tenantId, input.flightId, input.id);
+}
+
+export async function startSimbriefDispatchAtomic(input: {
+  id: string;
+  tenantId: string;
+  flightId: string;
+  generatedByMembershipId: string;
+  simbriefUserId: string;
+  callbackTokenMac: string;
+  callbackExpiresAt: Date;
+  startedAt: Date;
+}): Promise<{
+  status: "started" | "superseded" | "stale" | "unavailable";
+  dispatch: SimbriefDispatch | null;
+  latestId: string | null;
+}> {
+  const startedAt = ms(input.startedAt);
+  const snapshot = (key: string) =>
+    sql.raw(`json_extract(target.flight_snapshot, '$.${key}')`);
+  // The coarse flight version is intentionally not compared: notes-only edits
+  // advance it, while the material snapshot checks protect planning.
+  const flightMatches = sql`EXISTS (
+    SELECT 1
+    FROM flights flight
+    WHERE flight.id = target.flight_id
+      AND flight.tenant_id = target.tenant_id
+      AND flight.assignment_revision = ${snapshot("assignmentRevision")}
+      AND flight.status IN ('accepted', 'briefed')
+  )`;
+  const releaseCurrent = sql`EXISTS (
+    SELECT 1
+    FROM dispatch_releases release
+    WHERE release.tenant_id = target.tenant_id
+      AND release.flight_id = target.flight_id
+      AND release.id = ${snapshot("dispatchReleaseId")}
+      AND release.revision = ${snapshot("dispatchReleaseRevision")}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM dispatch_releases newer
+        WHERE newer.tenant_id = release.tenant_id
+          AND newer.flight_id = release.flight_id
+          AND newer.revision > release.revision
+      )
+  )`;
+  const materialMatches = sql`(
+    target.status = 'prepared'
+    AND EXISTS (
+      SELECT 1
+      FROM flights flight
+      JOIN memberships pilot
+        ON pilot.id = flight.pilot_membership_id
+       AND pilot.tenant_id = flight.tenant_id
+      WHERE flight.id = target.flight_id
+        AND flight.tenant_id = target.tenant_id
+        AND pilot.id = ${input.generatedByMembershipId}
+        AND pilot.role = 'pilot'
+        AND pilot.status = 'active'
+        AND pilot.simbrief_user_id = ${input.simbriefUserId}
+        AND flight.assignment_revision = ${snapshot("assignmentRevision")}
+        AND flight.pilot_membership_id = ${snapshot("pilotMembershipId")}
+        AND flight.flight_number = ${snapshot("flightNumber")}
+        AND flight.dep_icao = ${snapshot("depIcao")}
+        AND flight.arr_icao = ${snapshot("arrIcao")}
+        AND ${isoTimestampSql(sql`flight.etd`)} = ${snapshot("etd")}
+        AND ${isoTimestampSql(sql`flight.eta`)} = ${snapshot("eta")}
+        AND flight.aircraft_type IS ${snapshot("aircraftType")}
     )
-    SELECT to_jsonb(created) AS dispatch_row
-    FROM created
-    JOIN inserted_audit ON TRUE
-  `);
-  return dispatchFromEnvelope(result.rows[0]);
+  )`;
+  const headClaimed = sql`EXISTS (
+    SELECT 1
+    FROM simbrief_flight_heads head
+    WHERE head.flight_id = target.flight_id
+      AND head.tenant_id = target.tenant_id
+      AND head.revision = target.revision
+  )`;
+  const targetRow = sql`
+    FROM simbrief_dispatches target
+    WHERE target.id = ${input.id}
+      AND target.tenant_id = ${input.tenantId}
+      AND target.flight_id = ${input.flightId}
+  `;
+  const startable = sql`${flightMatches} AND ${releaseCurrent} AND ${materialMatches} AND ${headClaimed}`;
+
+  const result = await runAtomic<{
+    result_status: "started" | "superseded" | "stale" | "unavailable";
+    latest_id: string | null;
+  }>([
+    // Classify against the pre-state; the writes below use the same predicate
+    // inside the same serialized transaction.
+    sql`
+      SELECT
+        CASE
+          WHEN EXISTS (SELECT 1 ${targetRow} AND ${startable}) THEN 'started'
+          WHEN EXISTS (
+            SELECT 1 ${targetRow}
+              AND ${flightMatches} AND ${releaseCurrent}
+              AND target.status <> 'prepared'
+          ) THEN 'unavailable'
+          WHEN NOT EXISTS (
+            SELECT 1 ${targetRow}
+              AND ${flightMatches} AND ${releaseCurrent} AND ${materialMatches}
+          ) THEN 'stale'
+          WHEN NOT EXISTS (SELECT 1 ${targetRow} AND ${headClaimed})
+            THEN 'superseded'
+          ELSE 'unavailable'
+        END AS result_status,
+        (
+          SELECT target.id ${targetRow}
+            AND ${flightMatches} AND ${releaseCurrent}
+        ) AS latest_id
+    `,
+    sql`
+      INSERT INTO audit_events (
+        tenant_id, actor_membership_id, action, entity_type, entity_id,
+        meta, created_at
+      )
+      SELECT target.tenant_id, ${input.generatedByMembershipId},
+        'simbrief.dispatch_generate', 'simbrief_dispatch', target.id,
+        json_object(
+          'flightId', target.flight_id,
+          'staticId', target.static_id,
+          'flightVersion', target.flight_snapshot -> '$.flightVersion',
+          'assignmentRevision', target.flight_snapshot -> '$.assignmentRevision',
+          'dispatchReleaseId', target.flight_snapshot -> '$.dispatchReleaseId',
+          'dispatchReleaseRevision', target.flight_snapshot -> '$.dispatchReleaseRevision',
+          'preparedByMembershipId', target.created_by_membership_id,
+          'callbackExpiresAt', ${input.callbackExpiresAt.toISOString()}
+        ),
+        ${startedAt}
+      ${targetRow}
+        AND ${startable}
+    `,
+    sql`
+      UPDATE simbrief_dispatches AS target
+      SET generated_by_membership_id = ${input.generatedByMembershipId},
+          simbrief_user_id = ${input.simbriefUserId},
+          callback_token_mac = ${input.callbackTokenMac},
+          callback_expires_at = ${ms(input.callbackExpiresAt)},
+          request = json_set(
+            target.request,
+            '$.userid', ${input.simbriefUserId},
+            '$.pid', ${input.simbriefUserId}
+          ),
+          status = 'pending',
+          last_error = NULL,
+          updated_at = ${startedAt}
+      WHERE target.id = ${input.id}
+        AND target.tenant_id = ${input.tenantId}
+        AND target.flight_id = ${input.flightId}
+        AND ${startable}
+    `,
+  ]);
+  const row = result?.[0]?.[0];
+  if (!row?.result_status) {
+    throw new Error("Atomic SimBrief generation returned no result");
+  }
+  const dispatch =
+    row.result_status === "started"
+      ? await findSimbriefDispatch(input.tenantId, input.flightId, input.id)
+      : null;
+  const latest =
+    row.result_status === "superseded"
+      ? await findLatestSimbriefDispatch(input.tenantId, input.flightId)
+      : null;
+  return {
+    status: row.result_status,
+    dispatch,
+    latestId: latest?.id ?? row.latest_id ?? null,
+  };
+}
+
+/** Atomically stores the OFP, verifies the pilot link, and records ready audit. */
+export async function completeSimbriefDispatchAtomic(input: {
+  id: string;
+  tenantId: string;
+  flightId: string;
+  simbriefUserId: string;
+  ofp: Record<string, unknown>;
+  simbriefRequestId: string | null;
+  generatedAt: Date | null;
+  syncedAt: Date;
+}): Promise<SimbriefDispatch | null> {
+  const syncedAt = ms(input.syncedAt);
+  const pending = sql`
+    dispatch.id = ${input.id}
+    AND dispatch.tenant_id = ${input.tenantId}
+    AND dispatch.flight_id = ${input.flightId}
+    AND dispatch.status = 'pending'
+    AND dispatch.simbrief_user_id = ${input.simbriefUserId}
+  `;
+  const linkedPilot = sql`
+    membership.id = dispatch.generated_by_membership_id
+    AND membership.tenant_id = dispatch.tenant_id
+    AND membership.simbrief_user_id = dispatch.simbrief_user_id
+  `;
+  const result = await runAtomic([
+    guard(
+      sql`EXISTS (SELECT 1 FROM simbrief_dispatches dispatch WHERE ${pending})`,
+    ),
+    sql`
+      INSERT INTO audit_events (
+        tenant_id, actor_membership_id, action, entity_type, entity_id,
+        meta, created_at
+      )
+      SELECT dispatch.tenant_id, dispatch.generated_by_membership_id,
+        'simbrief.dispatch_ready', 'simbrief_dispatch', dispatch.id,
+        json_object(
+          'flightId', dispatch.flight_id,
+          'simbriefRequestId', ${input.simbriefRequestId},
+          'pilotVerified', ${jsonBooleanSql(sql`EXISTS (SELECT 1 FROM memberships membership WHERE ${linkedPilot})`)}
+        ),
+        ${syncedAt}
+      FROM simbrief_dispatches dispatch
+      WHERE ${pending}
+    `,
+    sql`
+      UPDATE memberships AS membership
+      SET simbrief_verified_at = ${syncedAt},
+          updated_at = ${syncedAt}
+      WHERE EXISTS (
+        SELECT 1
+        FROM simbrief_dispatches dispatch
+        WHERE ${pending} AND ${linkedPilot}
+      )
+    `,
+    sql`
+      UPDATE simbrief_dispatches AS dispatch
+      SET status = 'ready',
+          ofp = json(${json(input.ofp)}),
+          simbrief_request_id = ${input.simbriefRequestId},
+          generated_at = ${input.generatedAt ? ms(input.generatedAt) : null},
+          synced_at = ${syncedAt},
+          callback_token_mac = NULL,
+          last_error = NULL,
+          updated_at = ${syncedAt}
+      WHERE ${pending}
+    `,
+  ]);
+  if (!result) return null;
+  return findSimbriefDispatch(input.tenantId, input.flightId, input.id);
 }
 
 export async function listSimbriefDispatches(
@@ -186,199 +410,6 @@ export async function listSimbriefDispatches(
       ),
     )
     .orderBy(desc(simbriefDispatches.revision), desc(simbriefDispatches.id));
-}
-
-export async function startSimbriefDispatchAtomic(input: {
-  id: string;
-  tenantId: string;
-  flightId: string;
-  generatedByMembershipId: string;
-  simbriefUserId: string;
-  callbackTokenMac: string;
-  callbackExpiresAt: Date;
-  startedAt: Date;
-}): Promise<{
-  status: "started" | "superseded" | "stale" | "unavailable";
-  dispatch: SimbriefDispatch | null;
-  latestId: string | null;
-}> {
-  const db = getDb();
-  const startedAt = input.startedAt.toISOString();
-  const callbackExpiresAt = input.callbackExpiresAt.toISOString();
-  const result = await db.execute<AtomicDispatchEnvelope>(sql`
-    WITH target_input AS MATERIALIZED (
-      SELECT dispatch.*
-      FROM simbrief_dispatches dispatch
-      WHERE dispatch.id = ${input.id}::uuid
-        AND dispatch.tenant_id = ${input.tenantId}::uuid
-        AND dispatch.flight_id = ${input.flightId}::uuid
-    ),
-    -- Lock the flight at the launch linearization point. The coarse flight
-    -- version is intentionally not compared here: notes-only edits advance it,
-    -- while the material snapshot checks below protect planning correctness.
-    linearized_flight AS (
-      UPDATE flights f
-      SET version = f.version
-      FROM target_input target
-      WHERE f.id = target.flight_id
-        AND f.id = ${input.flightId}::uuid
-        AND f.tenant_id = ${input.tenantId}::uuid
-        AND f.assignment_revision =
-            (target.flight_snapshot ->> 'assignmentRevision')::integer
-        AND f.status IN ('accepted', 'briefed')
-      RETURNING f.*
-    ),
-    current_release AS MATERIALIZED (
-      SELECT release.*
-      FROM dispatch_releases release
-      JOIN target_input target
-        ON target.flight_id = release.flight_id
-       AND target.tenant_id = release.tenant_id
-      JOIN linearized_flight flight
-        ON flight.id = release.flight_id
-       AND flight.tenant_id = release.tenant_id
-      WHERE release.id =
-            (target.flight_snapshot ->> 'dispatchReleaseId')::uuid
-        AND release.revision =
-            (target.flight_snapshot ->> 'dispatchReleaseRevision')::integer
-        AND NOT EXISTS (
-          SELECT 1
-          FROM dispatch_releases newer
-          WHERE newer.tenant_id = release.tenant_id
-            AND newer.flight_id = release.flight_id
-            AND newer.revision > release.revision
-        )
-    ),
-    locked_pilot AS MATERIALIZED (
-      SELECT membership.id, membership.simbrief_user_id
-      FROM memberships membership
-      JOIN linearized_flight flight
-        ON flight.pilot_membership_id = membership.id
-       AND flight.tenant_id = membership.tenant_id
-      WHERE membership.id = ${input.generatedByMembershipId}::uuid
-        AND membership.role = 'pilot'
-        AND membership.status = 'active'
-        AND membership.simbrief_user_id = ${input.simbriefUserId}
-      FOR UPDATE OF membership
-    ),
-    target AS MATERIALIZED (
-      SELECT dispatch.*
-      FROM simbrief_dispatches dispatch
-      JOIN linearized_flight flight
-        ON flight.id = dispatch.flight_id
-       AND flight.tenant_id = dispatch.tenant_id
-      JOIN current_release release
-        ON release.flight_id = dispatch.flight_id
-       AND release.tenant_id = dispatch.tenant_id
-      WHERE dispatch.id = ${input.id}::uuid
-        AND dispatch.tenant_id = ${input.tenantId}::uuid
-        AND dispatch.flight_id = ${input.flightId}::uuid
-      FOR UPDATE OF dispatch
-    ),
-    material_target AS MATERIALIZED (
-      SELECT target.*
-      FROM target
-      JOIN linearized_flight flight ON flight.id = target.flight_id
-      JOIN current_release release
-        ON release.flight_id = target.flight_id
-       AND release.tenant_id = target.tenant_id
-      JOIN locked_pilot pilot
-        ON pilot.id = flight.pilot_membership_id
-       AND pilot.simbrief_user_id = ${input.simbriefUserId}
-      WHERE target.status = 'prepared'
-        AND flight.status NOT IN ('declined', 'active', 'completed', 'cancelled')
-        AND (target.flight_snapshot ->> 'assignmentRevision')::integer =
-            flight.assignment_revision
-        AND (target.flight_snapshot ->> 'dispatchReleaseId')::uuid =
-            release.id
-        AND (target.flight_snapshot ->> 'dispatchReleaseRevision')::integer =
-            release.revision
-        AND (target.flight_snapshot ->> 'pilotMembershipId')::uuid =
-            flight.pilot_membership_id
-        AND target.flight_snapshot ->> 'flightNumber' = flight.flight_number
-        AND target.flight_snapshot ->> 'depIcao' = flight.dep_icao
-        AND target.flight_snapshot ->> 'arrIcao' = flight.arr_icao
-        AND (target.flight_snapshot ->> 'etd')::timestamptz = flight.etd
-        AND (target.flight_snapshot ->> 'eta')::timestamptz = flight.eta
-        AND target.flight_snapshot ->> 'aircraftType'
-            IS NOT DISTINCT FROM flight.aircraft_type
-    ),
-    claimed_head AS (
-      UPDATE simbrief_flight_heads head
-      SET revision = head.revision
-      FROM material_target
-      WHERE head.flight_id = material_target.flight_id
-        AND head.tenant_id = material_target.tenant_id
-        AND head.revision = material_target.revision
-      RETURNING head.flight_id, head.revision
-    ),
-    updated AS (
-      UPDATE simbrief_dispatches dispatch
-      SET generated_by_membership_id = ${input.generatedByMembershipId}::uuid,
-          simbrief_user_id = ${input.simbriefUserId},
-          callback_token_mac = ${input.callbackTokenMac},
-          callback_expires_at = ${callbackExpiresAt},
-          request = material_target.request || jsonb_build_object(
-            'userid', ${input.simbriefUserId}::text,
-            'pid', ${input.simbriefUserId}::text
-          ),
-          status = 'pending',
-          last_error = NULL,
-          updated_at = ${startedAt}
-      FROM material_target
-      JOIN claimed_head ON claimed_head.flight_id = material_target.flight_id
-      WHERE dispatch.id = material_target.id
-      RETURNING dispatch.*
-    ),
-    inserted_audit AS (
-      INSERT INTO audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id,
-        meta, created_at
-      )
-      SELECT updated.tenant_id, ${input.generatedByMembershipId}::uuid,
-             'simbrief.dispatch_generate', 'simbrief_dispatch',
-             updated.id::text,
-             jsonb_build_object(
-               'flightId', updated.flight_id,
-               'staticId', updated.static_id,
-               'flightVersion', updated.flight_snapshot -> 'flightVersion',
-               'assignmentRevision', updated.flight_snapshot -> 'assignmentRevision',
-               'dispatchReleaseId', updated.flight_snapshot -> 'dispatchReleaseId',
-               'dispatchReleaseRevision', updated.flight_snapshot -> 'dispatchReleaseRevision',
-               'preparedByMembershipId', updated.created_by_membership_id,
-               'callbackExpiresAt', updated.callback_expires_at
-             ),
-             ${startedAt}
-      FROM updated
-      RETURNING id
-    )
-    SELECT
-      CASE
-        WHEN EXISTS (SELECT 1 FROM updated) THEN 'started'
-        WHEN EXISTS (
-          SELECT 1 FROM target WHERE status <> 'prepared'
-        ) THEN 'unavailable'
-        WHEN NOT EXISTS (SELECT 1 FROM material_target) THEN 'stale'
-        WHEN NOT EXISTS (SELECT 1 FROM claimed_head) THEN 'superseded'
-        ELSE 'unavailable'
-      END AS result_status,
-      (SELECT id::text FROM target LIMIT 1) AS latest_id,
-      (SELECT to_jsonb(updated) FROM updated LIMIT 1) AS dispatch_row
-    FROM (SELECT 1) singleton
-  `);
-  const row = result.rows[0];
-  if (!row?.result_status) {
-    throw new Error("Atomic SimBrief generation returned no result");
-  }
-  const latest =
-    row.result_status === "superseded"
-      ? await findLatestSimbriefDispatch(input.tenantId, input.flightId)
-      : null;
-  return {
-    status: row.result_status,
-    dispatch: dispatchFromEnvelope(row),
-    latestId: latest?.id ?? row.latest_id ?? null,
-  };
 }
 
 export async function findSimbriefDispatch(
@@ -430,172 +461,6 @@ export async function findLatestSimbriefDispatch(
     .orderBy(desc(simbriefDispatches.revision), desc(simbriefDispatches.id))
     .limit(1);
   return rows[0] ?? null;
-}
-
-/** Atomically stores the OFP, verifies the pilot link, and records ready audit. */
-export async function completeSimbriefDispatchAtomic(input: {
-  id: string;
-  tenantId: string;
-  flightId: string;
-  simbriefUserId: string;
-  ofp: Record<string, unknown>;
-  simbriefRequestId: string | null;
-  generatedAt: Date | null;
-  syncedAt: Date;
-}): Promise<SimbriefDispatch | null> {
-  const db = getDb();
-  const syncedAt = input.syncedAt.toISOString();
-  const generatedAt = input.generatedAt?.toISOString() ?? null;
-  const result = await db.execute<AtomicDispatchEnvelope>(sql`
-    WITH updated AS (
-      UPDATE simbrief_dispatches dispatch
-      SET status = 'ready',
-          ofp = ${JSON.stringify(input.ofp)}::jsonb,
-          simbrief_request_id = ${input.simbriefRequestId},
-          generated_at = ${generatedAt}::timestamptz,
-          synced_at = ${syncedAt},
-          callback_token_mac = NULL,
-          last_error = NULL,
-          updated_at = ${syncedAt}
-      WHERE dispatch.id = ${input.id}::uuid
-        AND dispatch.tenant_id = ${input.tenantId}::uuid
-        AND dispatch.flight_id = ${input.flightId}::uuid
-        AND dispatch.status = 'pending'
-        AND dispatch.simbrief_user_id = ${input.simbriefUserId}
-      RETURNING dispatch.*
-    ),
-    verified_pilot AS (
-      UPDATE memberships membership
-      SET simbrief_verified_at = ${syncedAt},
-          updated_at = ${syncedAt}
-      FROM updated
-      WHERE membership.id = updated.generated_by_membership_id
-        AND membership.tenant_id = updated.tenant_id
-        AND membership.simbrief_user_id = updated.simbrief_user_id
-      RETURNING membership.id
-    ),
-    inserted_audit AS (
-      INSERT INTO audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id,
-        meta, created_at
-      )
-      SELECT updated.tenant_id, updated.generated_by_membership_id,
-             'simbrief.dispatch_ready', 'simbrief_dispatch',
-             updated.id::text,
-             jsonb_build_object(
-               'flightId', updated.flight_id,
-               'simbriefRequestId', updated.simbrief_request_id,
-               'pilotVerified', EXISTS (SELECT 1 FROM verified_pilot)
-             ),
-             ${syncedAt}
-      FROM updated
-      RETURNING id
-    )
-    SELECT to_jsonb(updated) AS dispatch_row
-    FROM updated
-    JOIN inserted_audit ON TRUE
-  `);
-  return dispatchFromEnvelope(result.rows[0]);
-}
-
-function dispatchFromEnvelope(
-  envelope: AtomicDispatchEnvelope | undefined,
-): SimbriefDispatch | null {
-  if (!envelope?.dispatch_row) return null;
-  const row =
-    typeof envelope.dispatch_row === "string"
-      ? (JSON.parse(envelope.dispatch_row) as Record<string, unknown>)
-      : envelope.dispatch_row;
-  return {
-    id: requiredString(row.id, "id"),
-    tenantId: requiredString(row.tenant_id, "tenant_id"),
-    flightId: requiredString(row.flight_id, "flight_id"),
-    createdByMembershipId: nullableString(row.created_by_membership_id),
-    generatedByMembershipId: nullableString(row.generated_by_membership_id),
-    simbriefUserId: nullableString(row.simbrief_user_id),
-    staticId: requiredString(row.static_id, "static_id"),
-    callbackTokenMac: nullableString(row.callback_token_mac),
-    callbackExpiresAt: nullableDate(row.callback_expires_at),
-    status: requiredString(row.status, "status") as SimbriefDispatch["status"],
-    revision: requiredInteger(row.revision, "revision"),
-    flightSnapshot: flightSnapshotValue(row.flight_snapshot),
-    request: stringRecord(row.request),
-    ofp: row.ofp === null ? null : objectValue(row.ofp),
-    simbriefRequestId: nullableString(row.simbrief_request_id),
-    generatedAt: nullableDate(row.generated_at),
-    syncedAt: nullableDate(row.synced_at),
-    lastError: nullableString(row.last_error),
-    createdAt: requiredDate(row.created_at, "created_at"),
-    updatedAt: requiredDate(row.updated_at, "updated_at"),
-  };
-}
-
-function objectValue(value: unknown): Record<string, unknown> {
-  if (typeof value === "string") {
-    const parsed: unknown = JSON.parse(value);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  }
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
-}
-
-function stringRecord(value: unknown): Record<string, string> {
-  const record = objectValue(value);
-  return Object.fromEntries(
-    Object.entries(record).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    ),
-  );
-}
-
-function flightSnapshotValue(
-  value: unknown,
-): Record<string, string | number | null> {
-  const record = objectValue(value);
-  return Object.fromEntries(
-    Object.entries(record).filter(
-      (entry): entry is [string, string | number | null] =>
-        typeof entry[1] === "string" ||
-        typeof entry[1] === "number" ||
-        entry[1] === null,
-    ),
-  );
-}
-
-function nullableString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function requiredString(value: unknown, field: string): string {
-  if (typeof value !== "string") {
-    throw new Error(`Atomic SimBrief result omitted ${field}`);
-  }
-  return value;
-}
-
-function nullableDate(value: unknown): Date | null {
-  if (value === null || value === undefined) return null;
-  const date = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
-}
-
-function requiredDate(value: unknown, field: string): Date {
-  const date = nullableDate(value);
-  if (!date) throw new Error(`Atomic SimBrief result omitted ${field}`);
-  return date;
-}
-
-function requiredInteger(value: unknown, field: string): number {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(parsed)) {
-    throw new Error(`Atomic SimBrief result omitted ${field}`);
-  }
-  return parsed;
 }
 
 export async function recordSimbriefSyncError(

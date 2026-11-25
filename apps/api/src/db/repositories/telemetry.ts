@@ -1,15 +1,19 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
 import { getDb } from "../client.js";
+import { guard, insertAudit, ms, runAtomic } from "../atomic.js";
 import {
   flightOooiEvents,
   flightTelemetryCurrent,
+  flightTelemetryLeases,
   flightTelemetryTrack,
   flights,
   memberships,
   simulatorDevices,
+  type Flight,
   type FlightOooiEvent,
   type FlightTelemetryCurrent,
+  type FlightTelemetryLease,
   type FlightTelemetryTrack,
   type SimulatorDevice,
   type TelemetryPhase,
@@ -30,21 +34,6 @@ export type TelemetrySample = {
   sequence: number;
 };
 
-type AtomicSimulatorDeviceRow = {
-  id: string;
-  tenant_id: string;
-  membership_id: string;
-  name: string;
-  token_mac: string;
-  status: "active" | "revoked";
-  last_sequence: number | null;
-  last_ingest_at: Date | string | null;
-  last_seen_at: Date | string | null;
-  revoked_at: Date | string | null;
-  created_at: Date | string;
-  updated_at: Date | string;
-};
-
 /** Atomically creates the credential verifier and its issuance audit record. */
 export async function createSimulatorDeviceAtomic(input: {
   id: string;
@@ -54,33 +43,30 @@ export async function createSimulatorDeviceAtomic(input: {
   tokenMac: string;
 }): Promise<SimulatorDevice> {
   const db = getDb();
-  const result = await db.execute<AtomicSimulatorDeviceRow>(sql`
-    WITH created AS (
-      INSERT INTO simulator_devices (
-        id, tenant_id, membership_id, name, token_mac
-      ) VALUES (
-        ${input.id}::uuid, ${input.tenantId}::uuid,
-        ${input.membershipId}::uuid, ${input.name}, ${input.tokenMac}
-      )
-      RETURNING *
-    ),
-    inserted_audit AS (
-      INSERT INTO audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta
-      )
-      SELECT created.tenant_id, created.membership_id,
-             'telemetry.device_create', 'simulator_device', created.id::text,
-             jsonb_build_object('name', created.name)
-      FROM created
-      RETURNING id
-    )
-    SELECT created.*
-    FROM created
-    JOIN inserted_audit ON TRUE
-  `);
-  const row = result.rows[0];
-  if (!row) throw new Error("Atomic simulator-device creation returned no row");
-  return simulatorDeviceFromRow(row);
+  const now = new Date();
+  await runAtomic([
+    db.insert(simulatorDevices).values({
+      id: input.id,
+      tenantId: input.tenantId,
+      membershipId: input.membershipId,
+      name: input.name,
+      tokenMac: input.tokenMac,
+      createdAt: now,
+      updatedAt: now,
+    }),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.membershipId,
+      action: "telemetry.device_create",
+      entityType: "simulator_device",
+      entityId: input.id,
+      meta: { name: input.name },
+      createdAt: now,
+    }),
+  ]);
+  const created = await findSimulatorDeviceById(input.id);
+  if (!created) throw new Error("Atomic simulator-device creation returned no row");
+  return created;
 }
 
 export async function findSimulatorDeviceById(
@@ -119,47 +105,48 @@ export async function revokeSimulatorDeviceAtomic(input: {
   revokedAt: Date;
 }): Promise<SimulatorDevice | null> {
   const db = getDb();
-  const revokedAt = input.revokedAt.toISOString();
-  const result = await db.execute<AtomicSimulatorDeviceRow>(sql`
-    WITH revoked AS (
-      UPDATE simulator_devices
-      SET status = 'revoked', token_mac = 'revoked', revoked_at = ${revokedAt},
-          updated_at = ${revokedAt}
-      WHERE id = ${input.id}::uuid
-        AND tenant_id = ${input.tenantId}::uuid
-        AND membership_id = ${input.membershipId}::uuid
-        AND status = 'active'
-      RETURNING *
-    ),
-    released_pairings AS (
-      DELETE FROM flight_telemetry_leases lease
-      USING revoked
-      WHERE lease.device_id = revoked.id
-        AND lease.tenant_id = revoked.tenant_id
-      RETURNING lease.flight_id
-    ),
-    inserted_audit AS (
-      INSERT INTO audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id,
-        meta, created_at
-      )
-      SELECT revoked.tenant_id, revoked.membership_id,
-             'telemetry.device_revoke', 'simulator_device', revoked.id::text,
-             jsonb_build_object(
-               'releasedPairings',
-               (SELECT COUNT(*) FROM released_pairings)
-             ),
-             ${revokedAt}
-      FROM revoked
-      RETURNING id
-    )
-    SELECT revoked.*
-    FROM revoked
-    JOIN inserted_audit ON TRUE
-  `);
-  const row = result.rows[0];
-  if (!row) return null;
-  return simulatorDeviceFromRow(row);
+  const owned = and(
+    eq(simulatorDevices.id, input.id),
+    eq(simulatorDevices.tenantId, input.tenantId),
+    eq(simulatorDevices.membershipId, input.membershipId),
+    eq(simulatorDevices.status, "active"),
+  )!;
+  const result = await runAtomic([
+    guard(sql`EXISTS (SELECT 1 FROM ${simulatorDevices} WHERE ${owned})`),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.membershipId,
+      action: "telemetry.device_revoke",
+      entityType: "simulator_device",
+      entityId: input.id,
+      meta: sql`json_object('releasedPairings', (
+        SELECT count(*)
+        FROM flight_telemetry_leases lease
+        WHERE lease.device_id = ${input.id}
+          AND lease.tenant_id = ${input.tenantId}
+      ))`,
+      createdAt: input.revokedAt,
+    }),
+    db
+      .delete(flightTelemetryLeases)
+      .where(
+        and(
+          eq(flightTelemetryLeases.deviceId, input.id),
+          eq(flightTelemetryLeases.tenantId, input.tenantId),
+        ),
+      ),
+    db
+      .update(simulatorDevices)
+      .set({
+        status: "revoked",
+        tokenMac: "revoked",
+        revokedAt: input.revokedAt,
+        updatedAt: input.revokedAt,
+      })
+      .where(owned),
+  ]);
+  if (!result) return null;
+  return findSimulatorDeviceById(input.id);
 }
 
 export async function findCurrentFlightTelemetry(
@@ -260,34 +247,16 @@ export type AtomicTelemetryStatus =
   | "lease_conflict"
   | "replay_or_rate";
 
-type AtomicTelemetryRow = {
-  status: AtomicTelemetryStatus;
-  event_id: string | null;
-  event_type: "out" | "off" | "on" | "in" | null;
-  event_occurred_at: Date | string | null;
-  event_created_at: Date | string | null;
-  current_flight_id: string | null;
-  current_tenant_id: string | null;
-  current_membership_id: string | null;
-  current_device_id: string | null;
-  current_phase: TelemetryPhase | null;
-  current_latitude: number | null;
-  current_longitude: number | null;
-  current_altitude_feet: number | null;
-  current_ground_speed_knots: number | null;
-  current_heading_degrees: number | null;
-  current_simulator_time: Date | string | null;
-  current_sample_at: Date | string | null;
-  current_sequence: number | null;
-  current_created_at: Date | string | null;
-  current_updated_at: Date | string | null;
-};
-
 /**
  * Atomically claims the device sequence and single-writer flight lease, stores
  * current/track telemetry, applies one deterministic OOOI transition, and
  * records both provenance and audit. A rejected claim performs no telemetry or
  * OOOI writes.
+ *
+ * D1 has no row locks, so the decision is made from one consistent read and
+ * then committed by a batch whose guards re-assert every value the decision
+ * depended on. A concurrent writer makes a guard fail; the ingest is then
+ * re-evaluated against the new state.
  */
 export async function ingestFlightTelemetryAtomic(input: {
   tenantId: string;
@@ -302,385 +271,427 @@ export async function ingestFlightTelemetryAtomic(input: {
   current: FlightTelemetryCurrent | null;
   oooiEvent: FlightOooiEvent | null;
 }> {
-  const db = getDb();
-  const sampleAt = input.sample.sampleAt.toISOString();
-  const simulatorTime = input.sample.simulatorTime.toISOString();
-  const rateCutoff = new Date(
-    input.sample.sampleAt.getTime() - input.minimumIntervalMs,
-  ).toISOString();
-  const leaseExpiresAt = new Date(
-    input.sample.sampleAt.getTime() + input.leaseMs,
-  ).toISOString();
-  const trackCutoff = new Date(
-    input.sample.sampleAt.getTime() - TRACK_RETENTION_MS,
-  ).toISOString();
+  for (let attempt = 0; attempt < INGEST_ATTEMPTS; attempt += 1) {
+    const outcome = await tryIngestFlightTelemetry(input);
+    if (outcome) return outcome;
+  }
+  throw new Error("Telemetry ingest lost every optimistic-concurrency attempt");
+}
 
-  const result = await db.execute<AtomicTelemetryRow>(sql`
-    WITH assigned_device AS MATERIALIZED (
-      SELECT sd.id, sd.tenant_id, sd.membership_id,
-             sd.last_sequence, sd.last_ingest_at,
-             f.status AS flight_status,
-             member.role AS membership_role,
-             member.status AS membership_status
-      FROM simulator_devices sd
-      JOIN flights f
-        ON f.id = ${input.flightId}::uuid
-       AND f.tenant_id = sd.tenant_id
-       AND f.pilot_membership_id = sd.membership_id
-      JOIN memberships member
-        ON member.id = sd.membership_id
-       AND member.tenant_id = sd.tenant_id
-      WHERE sd.id = ${input.deviceId}::uuid
-        AND sd.tenant_id = ${input.tenantId}::uuid
-        AND sd.membership_id = ${input.membershipId}::uuid
-        AND sd.status = 'active'
-      FOR UPDATE OF sd, f, member
-    ),
-    eligible_device AS MATERIALIZED (
-      SELECT id, tenant_id, membership_id
-      FROM assigned_device
-      WHERE flight_status IN ('accepted', 'briefed', 'active')
-        AND membership_role = 'pilot'
-        AND membership_status = 'active'
-        AND (last_sequence IS NULL OR last_sequence < ${input.sample.sequence})
-        AND (last_ingest_at IS NULL OR last_ingest_at <= ${rateCutoff})
-    ),
-    released_expired_pairing AS (
-      DELETE FROM flight_telemetry_leases lease
-      USING eligible_device eligible
-      WHERE lease.device_id = eligible.id
-        AND lease.flight_id <> ${input.flightId}::uuid
-        AND lease.lease_expires_at <= ${sampleAt}
-      RETURNING lease.device_id
-    ),
-    pairable_device AS MATERIALIZED (
-      SELECT eligible.*
-      FROM eligible_device eligible
-      CROSS JOIN (
-        SELECT COUNT(*) AS released FROM released_expired_pairing
-      ) release_barrier
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM flight_telemetry_leases active
-        WHERE active.device_id = eligible.id
-          AND active.flight_id <> ${input.flightId}::uuid
-          AND active.lease_expires_at > ${sampleAt}
+const INGEST_ATTEMPTS = 3;
+
+type IngestState = {
+  device: SimulatorDevice;
+  flight: Flight;
+  member: { role: string; status: string };
+  deviceLeases: FlightTelemetryLease[];
+  flightLease: FlightTelemetryLease | null;
+  previousPhase: TelemetryPhase | null;
+};
+
+async function readIngestState(input: {
+  tenantId: string;
+  membershipId: string;
+  deviceId: string;
+  flightId: string;
+}): Promise<IngestState | null> {
+  const db = getDb();
+  const [assigned, deviceLeases, flightLeases, previous] = await db.batch([
+    db
+      .select({
+        device: simulatorDevices,
+        flight: flights,
+        memberRole: memberships.role,
+        memberStatus: memberships.status,
+      })
+      .from(simulatorDevices)
+      .innerJoin(
+        flights,
+        and(
+          eq(flights.id, input.flightId),
+          eq(flights.tenantId, simulatorDevices.tenantId),
+          eq(flights.pilotMembershipId, simulatorDevices.membershipId),
+        ),
       )
+      .innerJoin(
+        memberships,
+        and(
+          eq(memberships.id, simulatorDevices.membershipId),
+          eq(memberships.tenantId, simulatorDevices.tenantId),
+        ),
+      )
+      .where(
+        and(
+          eq(simulatorDevices.id, input.deviceId),
+          eq(simulatorDevices.tenantId, input.tenantId),
+          eq(simulatorDevices.membershipId, input.membershipId),
+          eq(simulatorDevices.status, "active"),
+        ),
+      )
+      .limit(1),
+    db
+      .select()
+      .from(flightTelemetryLeases)
+      .where(eq(flightTelemetryLeases.deviceId, input.deviceId)),
+    db
+      .select()
+      .from(flightTelemetryLeases)
+      .where(eq(flightTelemetryLeases.flightId, input.flightId))
+      .limit(1),
+    db
+      .select({ phase: flightTelemetryCurrent.phase })
+      .from(flightTelemetryCurrent)
+      .where(
+        and(
+          eq(flightTelemetryCurrent.flightId, input.flightId),
+          eq(flightTelemetryCurrent.tenantId, input.tenantId),
+        ),
+      )
+      .limit(1),
+  ]);
+  const row = assigned[0];
+  if (!row) return null;
+  return {
+    device: row.device,
+    flight: row.flight,
+    member: { role: row.memberRole, status: row.memberStatus },
+    deviceLeases,
+    flightLease: flightLeases[0] ?? null,
+    previousPhase: previous[0]?.phase ?? null,
+  };
+}
+
+function detectOooiTransition(
+  previous: TelemetryPhase | null,
+  next: TelemetryPhase,
+  flight: Flight,
+  sampleAt: Date,
+): "out" | "off" | "on" | "in" | null {
+  const at = sampleAt.getTime();
+  const notAfter = (value: Date | null) => value === null || at <= value.getTime();
+  const notBefore = (value: Date | null) =>
+    value === null || value.getTime() <= at;
+  if (
+    previous === "preflight" &&
+    next === "taxi_out" &&
+    flight.outAt === null &&
+    !flight.outManualOverride &&
+    notAfter(flight.offAt) &&
+    notAfter(flight.onAt) &&
+    notAfter(flight.inAt)
+  ) {
+    return "out";
+  }
+  if (
+    (previous === "preflight" || previous === "taxi_out") &&
+    next === "airborne" &&
+    flight.offAt === null &&
+    !flight.offManualOverride &&
+    notBefore(flight.outAt) &&
+    notAfter(flight.onAt) &&
+    notAfter(flight.inAt)
+  ) {
+    return "off";
+  }
+  if (
+    previous === "airborne" &&
+    next === "taxi_in" &&
+    flight.onAt === null &&
+    !flight.onManualOverride &&
+    notBefore(flight.outAt) &&
+    notBefore(flight.offAt) &&
+    notAfter(flight.inAt)
+  ) {
+    return "on";
+  }
+  if (
+    previous === "taxi_in" &&
+    next === "parked" &&
+    flight.inAt === null &&
+    !flight.inManualOverride &&
+    notBefore(flight.outAt) &&
+    notBefore(flight.offAt) &&
+    notBefore(flight.onAt)
+  ) {
+    return "in";
+  }
+  return null;
+}
+
+const OOOI_COLUMN = {
+  out: "out_at",
+  off: "off_at",
+  on: "on_at",
+  in: "in_at",
+} as const;
+
+async function tryIngestFlightTelemetry(input: {
+  tenantId: string;
+  membershipId: string;
+  deviceId: string;
+  flightId: string;
+  minimumIntervalMs: number;
+  leaseMs: number;
+  sample: TelemetrySample;
+}): Promise<{
+  status: AtomicTelemetryStatus;
+  current: FlightTelemetryCurrent | null;
+  oooiEvent: FlightOooiEvent | null;
+} | null> {
+  const db = getDb();
+  const rejected = (status: AtomicTelemetryStatus) => ({
+    status,
+    current: null,
+    oooiEvent: null,
+  });
+  const state = await readIngestState(input);
+  if (!state) return rejected("credential_invalid");
+
+  const { device, flight, sample } = { ...state, sample: input.sample };
+  const sampleAt = sample.sampleAt;
+  if (
+    !["accepted", "briefed", "active"].includes(flight.status) ||
+    state.member.role !== "pilot" ||
+    state.member.status !== "active"
+  ) {
+    return rejected("ineligible");
+  }
+  const rateCutoff = sampleAt.getTime() - input.minimumIntervalMs;
+  if (
+    (device.lastSequence !== null && device.lastSequence >= sample.sequence) ||
+    (device.lastIngestAt !== null && device.lastIngestAt.getTime() > rateCutoff)
+  ) {
+    return rejected("replay_or_rate");
+  }
+  const otherLeases = state.deviceLeases.filter(
+    (lease) => lease.flightId !== input.flightId,
+  );
+  if (
+    otherLeases.some(
+      (lease) => lease.leaseExpiresAt.getTime() > sampleAt.getTime(),
+    )
+  ) {
+    return rejected("lease_conflict");
+  }
+  const flightLease = state.flightLease;
+  if (
+    flightLease &&
+    flightLease.deviceId !== input.deviceId &&
+    flightLease.leaseExpiresAt.getTime() > sampleAt.getTime()
+  ) {
+    return rejected("lease_conflict");
+  }
+
+  const leaseExpiresAt = new Date(sampleAt.getTime() + input.leaseMs);
+  const trackCutoff = new Date(sampleAt.getTime() - TRACK_RETENTION_MS);
+  const transition = detectOooiTransition(
+    state.previousPhase,
+    sample.phase,
+    flight,
+    sampleAt,
+  );
+  const eventId = transition ? crypto.randomUUID() : null;
+
+  const statements = [
+    // Re-assert every value the decision above was based on.
+    guard(sql`EXISTS (
+      SELECT 1
+      FROM simulator_devices sd
+      WHERE sd.id = ${device.id}
+        AND sd.status = 'active'
+        AND sd.last_sequence IS ${device.lastSequence}
+        AND sd.last_ingest_at IS ${device.lastIngestAt ? ms(device.lastIngestAt) : null}
+    )`),
+    guard(sql`EXISTS (
+      SELECT 1
+      FROM flights f
+      JOIN memberships member
+        ON member.id = f.pilot_membership_id
+       AND member.tenant_id = f.tenant_id
+      WHERE f.id = ${flight.id}
+        AND f.tenant_id = ${input.tenantId}
+        AND f.version = ${flight.version}
+        AND f.pilot_membership_id = ${input.membershipId}
+        AND f.status IN ('accepted', 'briefed', 'active')
+        AND member.role = 'pilot'
+        AND member.status = 'active'
+    )`),
+    guard(
+      flightLease
+        ? sql`EXISTS (
+            SELECT 1 FROM flight_telemetry_leases lease
+            WHERE lease.flight_id = ${input.flightId}
+              AND lease.device_id = ${flightLease.deviceId}
+              AND lease.lease_expires_at = ${ms(flightLease.leaseExpiresAt)}
+          )`
+        : sql`NOT EXISTS (
+            SELECT 1 FROM flight_telemetry_leases lease
+            WHERE lease.flight_id = ${input.flightId}
+          )`,
     ),
-    renewed_lease AS (
-      UPDATE flight_telemetry_leases lease
-      SET tenant_id = pairable.tenant_id,
-          membership_id = pairable.membership_id,
-          device_id = pairable.id,
-          lease_expires_at = ${leaseExpiresAt},
-          updated_at = ${sampleAt}
-      FROM pairable_device pairable
-      WHERE lease.flight_id = ${input.flightId}::uuid
-        AND (
-          lease.device_id = pairable.id
-          OR lease.lease_expires_at <= ${sampleAt}
-        )
-      RETURNING lease.flight_id, lease.tenant_id, lease.membership_id,
-                lease.device_id, lease.lease_expires_at
-    ),
-    inserted_lease AS (
+    guard(sql`NOT EXISTS (
+      SELECT 1 FROM flight_telemetry_leases active
+      WHERE active.device_id = ${input.deviceId}
+        AND active.flight_id <> ${input.flightId}
+        AND active.lease_expires_at > ${ms(sampleAt)}
+    )`),
+    guard(sql`(
+      SELECT current.phase FROM flight_telemetry_current current
+      WHERE current.flight_id = ${input.flightId}
+        AND current.tenant_id = ${input.tenantId}
+    ) IS ${state.previousPhase}`),
+    // Release this device's expired pairing with another flight.
+    sql`
+      DELETE FROM flight_telemetry_leases
+      WHERE device_id = ${input.deviceId}
+        AND flight_id <> ${input.flightId}
+        AND lease_expires_at <= ${ms(sampleAt)}
+    `,
+    sql`
       INSERT INTO flight_telemetry_leases (
         flight_id, tenant_id, membership_id, device_id, lease_expires_at,
         created_at, updated_at
       )
-      SELECT ${input.flightId}::uuid, tenant_id, membership_id, id,
-             ${leaseExpiresAt}, ${sampleAt}, ${sampleAt}
-      FROM pairable_device
-      WHERE NOT EXISTS (SELECT 1 FROM renewed_lease)
-      ON CONFLICT DO NOTHING
-      RETURNING flight_id, tenant_id, membership_id, device_id, lease_expires_at
-    ),
-    acquired_lease AS MATERIALIZED (
-      SELECT * FROM renewed_lease
-      UNION ALL
-      SELECT * FROM inserted_lease
-    ),
-    owned_lease AS MATERIALIZED (
-      SELECT * FROM acquired_lease
-      WHERE device_id = ${input.deviceId}::uuid
-    ),
-    claimed_device AS (
-      UPDATE simulator_devices sd
-      SET last_sequence = ${input.sample.sequence},
-          last_ingest_at = ${sampleAt},
-          last_seen_at = ${sampleAt},
-          updated_at = ${sampleAt}
-      FROM eligible_device eligible
-      JOIN owned_lease lease ON lease.device_id = eligible.id
-      WHERE sd.id = eligible.id
-      RETURNING sd.id, sd.tenant_id, sd.membership_id
-    ),
-    accepted_lease AS MATERIALIZED (
-      SELECT lease.*
-      FROM owned_lease lease
-      JOIN claimed_device claimed ON claimed.id = lease.device_id
-    ),
-    locked_flight AS MATERIALIZED (
-      SELECT f.*
-      FROM flights f
-      JOIN accepted_lease lease
-        ON lease.flight_id = f.id
-       AND lease.tenant_id = f.tenant_id
-      FOR UPDATE OF f
-    ),
-    previous AS MATERIALIZED (
-      SELECT current.phase
-      FROM flight_telemetry_current current
-      JOIN accepted_lease lease ON lease.flight_id = current.flight_id
-      WHERE current.tenant_id = ${input.tenantId}::uuid
-    ),
-    detected_transition AS MATERIALIZED (
-      SELECT CASE
-        WHEN previous.phase = 'preflight'
-         AND ${input.sample.phase}::telemetry_phase = 'taxi_out'
-         AND f.out_at IS NULL
-         AND NOT f.out_manual_override
-         AND (f.off_at IS NULL OR ${sampleAt}::timestamptz <= f.off_at)
-         AND (f.on_at IS NULL OR ${sampleAt}::timestamptz <= f.on_at)
-         AND (f.in_at IS NULL OR ${sampleAt}::timestamptz <= f.in_at)
-         THEN 'out'::oooi_event_type
-        WHEN previous.phase IN ('preflight', 'taxi_out')
-         AND ${input.sample.phase}::telemetry_phase = 'airborne'
-         AND f.off_at IS NULL
-         AND NOT f.off_manual_override
-         AND (f.out_at IS NULL OR f.out_at <= ${sampleAt}::timestamptz)
-         AND (f.on_at IS NULL OR ${sampleAt}::timestamptz <= f.on_at)
-         AND (f.in_at IS NULL OR ${sampleAt}::timestamptz <= f.in_at)
-         THEN 'off'::oooi_event_type
-        WHEN previous.phase = 'airborne'
-         AND ${input.sample.phase}::telemetry_phase = 'taxi_in'
-         AND f.on_at IS NULL
-         AND NOT f.on_manual_override
-         AND (f.out_at IS NULL OR f.out_at <= ${sampleAt}::timestamptz)
-         AND (f.off_at IS NULL OR f.off_at <= ${sampleAt}::timestamptz)
-         AND (f.in_at IS NULL OR ${sampleAt}::timestamptz <= f.in_at)
-         THEN 'on'::oooi_event_type
-        WHEN previous.phase = 'taxi_in'
-         AND ${input.sample.phase}::telemetry_phase = 'parked'
-         AND f.in_at IS NULL
-         AND NOT f.in_manual_override
-         AND (f.out_at IS NULL OR f.out_at <= ${sampleAt}::timestamptz)
-         AND (f.off_at IS NULL OR f.off_at <= ${sampleAt}::timestamptz)
-         AND (f.on_at IS NULL OR f.on_at <= ${sampleAt}::timestamptz)
-         THEN 'in'::oooi_event_type
-        ELSE NULL
-      END AS event_type,
-      f.version AS from_version
-      FROM accepted_lease lease
-      JOIN locked_flight f ON f.id = lease.flight_id
-      LEFT JOIN previous ON TRUE
-    ),
-    updated_flight AS (
-      UPDATE flights f
-      SET out_at = CASE WHEN transition.event_type = 'out'
-                        THEN ${sampleAt} ELSE f.out_at END,
-          off_at = CASE WHEN transition.event_type = 'off'
-                        THEN ${sampleAt} ELSE f.off_at END,
-          on_at = CASE WHEN transition.event_type = 'on'
-                       THEN ${sampleAt} ELSE f.on_at END,
-          in_at = CASE WHEN transition.event_type = 'in'
-                       THEN ${sampleAt} ELSE f.in_at END,
-          version = f.version + 1,
-          updated_at = GREATEST(f.updated_at, ${sampleAt}::timestamptz)
-      FROM detected_transition transition
-      WHERE f.id = ${input.flightId}::uuid
-        AND f.tenant_id = ${input.tenantId}::uuid
-        AND transition.event_type IS NOT NULL
-      RETURNING f.id, transition.from_version, f.version AS to_version
-    ),
-    inserted_event AS (
-      INSERT INTO flight_oooi_events (
-        tenant_id, flight_id, event_type, occurred_at, source, device_id,
-        created_at
+      VALUES (
+        ${input.flightId}, ${input.tenantId}, ${input.membershipId},
+        ${input.deviceId}, ${ms(leaseExpiresAt)}, ${ms(sampleAt)},
+        ${ms(sampleAt)}
       )
-      SELECT ${input.tenantId}::uuid, updated.id,
-             transition.event_type, ${sampleAt}, 'telemetry',
-             ${input.deviceId}::uuid, ${sampleAt}
-      FROM detected_transition transition
-      JOIN updated_flight updated ON TRUE
-      WHERE transition.event_type IS NOT NULL
-      RETURNING id, event_type, occurred_at, created_at
-    ),
-    inserted_audit AS (
-      INSERT INTO audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta,
-        created_at
-      )
-      SELECT ${input.tenantId}::uuid, NULL, 'flight.oooi_automatic',
-             'flight', ${input.flightId},
-             jsonb_build_object(
-               'eventType', event_type,
-               'deviceId', ${input.deviceId}::text,
-               'source', 'telemetry',
-               'fromVersion', updated.from_version,
-               'toVersion', updated.to_version
-             ),
-             ${sampleAt}
-      FROM inserted_event
-      JOIN updated_flight updated ON TRUE
-      RETURNING id
-    ),
-    current_upsert AS (
+      ON CONFLICT (flight_id) DO UPDATE
+      SET tenant_id = excluded.tenant_id,
+          membership_id = excluded.membership_id,
+          device_id = excluded.device_id,
+          lease_expires_at = excluded.lease_expires_at,
+          updated_at = excluded.updated_at
+    `,
+    db
+      .update(simulatorDevices)
+      .set({
+        lastSequence: sample.sequence,
+        lastIngestAt: sampleAt,
+        lastSeenAt: sampleAt,
+        updatedAt: sampleAt,
+      })
+      .where(eq(simulatorDevices.id, input.deviceId)),
+    ...(transition && eventId
+      ? [
+          sql`
+            UPDATE flights
+            SET ${sql.raw(OOOI_COLUMN[transition])} = ${ms(sampleAt)},
+                version = version + 1,
+                updated_at = max(updated_at, ${ms(sampleAt)})
+            WHERE id = ${input.flightId}
+              AND tenant_id = ${input.tenantId}
+          `,
+          db.insert(flightOooiEvents).values({
+            id: eventId,
+            tenantId: input.tenantId,
+            flightId: input.flightId,
+            eventType: transition,
+            occurredAt: sampleAt,
+            source: "telemetry",
+            deviceId: input.deviceId,
+            createdAt: sampleAt,
+          }),
+          insertAudit({
+            tenantId: input.tenantId,
+            actorMembershipId: null,
+            action: "flight.oooi_automatic",
+            entityType: "flight",
+            entityId: input.flightId,
+            meta: {
+              eventType: transition,
+              deviceId: input.deviceId,
+              source: "telemetry",
+              fromVersion: flight.version,
+              toVersion: flight.version + 1,
+            },
+            createdAt: sampleAt,
+          }),
+        ]
+      : []),
+    sql`
       INSERT INTO flight_telemetry_current (
         flight_id, tenant_id, membership_id, device_id, phase, latitude,
         longitude, altitude_feet, ground_speed_knots, heading_degrees,
         simulator_time, sample_at, sequence, created_at, updated_at
       )
-      SELECT flight_id, tenant_id, membership_id, device_id,
-             ${input.sample.phase}::telemetry_phase, ${input.sample.latitude},
-             ${input.sample.longitude}, ${input.sample.altitudeFeet},
-             ${input.sample.groundSpeedKnots}, ${input.sample.headingDegrees},
-             ${simulatorTime}, ${sampleAt},
-             ${input.sample.sequence}, ${sampleAt},
-             ${sampleAt}
-      FROM accepted_lease
-      ON CONFLICT (flight_id) DO UPDATE
-      SET tenant_id = EXCLUDED.tenant_id,
-          membership_id = EXCLUDED.membership_id,
-          device_id = EXCLUDED.device_id,
-          phase = EXCLUDED.phase,
-          latitude = EXCLUDED.latitude,
-          longitude = EXCLUDED.longitude,
-          altitude_feet = EXCLUDED.altitude_feet,
-          ground_speed_knots = EXCLUDED.ground_speed_knots,
-          heading_degrees = EXCLUDED.heading_degrees,
-          simulator_time = EXCLUDED.simulator_time,
-          sample_at = EXCLUDED.sample_at,
-          sequence = EXCLUDED.sequence,
-          updated_at = EXCLUDED.updated_at
-      RETURNING *
-    ),
-    track_insert AS (
-      INSERT INTO flight_telemetry_track (
-        tenant_id, flight_id, membership_id, device_id, phase, latitude,
-        longitude, altitude_feet, ground_speed_knots, heading_degrees,
-        simulator_time, sample_at, sequence, created_at
+      VALUES (
+        ${input.flightId}, ${input.tenantId}, ${input.membershipId},
+        ${input.deviceId}, ${sample.phase}, ${sample.latitude},
+        ${sample.longitude}, ${sample.altitudeFeet}, ${sample.groundSpeedKnots},
+        ${sample.headingDegrees}, ${ms(sample.simulatorTime)},
+        ${ms(sampleAt)}, ${sample.sequence}, ${ms(sampleAt)}, ${ms(sampleAt)}
       )
-      SELECT tenant_id, flight_id, membership_id, device_id,
-             ${input.sample.phase}::telemetry_phase, ${input.sample.latitude},
-             ${input.sample.longitude}, ${input.sample.altitudeFeet},
-             ${input.sample.groundSpeedKnots}, ${input.sample.headingDegrees},
-             ${simulatorTime}, ${sampleAt},
-             ${input.sample.sequence}, ${sampleAt}
-      FROM accepted_lease
-      RETURNING id
-    ),
-    pruned_track_delete AS (
+      ON CONFLICT (flight_id) DO UPDATE
+      SET tenant_id = excluded.tenant_id,
+          membership_id = excluded.membership_id,
+          device_id = excluded.device_id,
+          phase = excluded.phase,
+          latitude = excluded.latitude,
+          longitude = excluded.longitude,
+          altitude_feet = excluded.altitude_feet,
+          ground_speed_knots = excluded.ground_speed_knots,
+          heading_degrees = excluded.heading_degrees,
+          simulator_time = excluded.simulator_time,
+          sample_at = excluded.sample_at,
+          sequence = excluded.sequence,
+          updated_at = excluded.updated_at
+    `,
+    db.insert(flightTelemetryTrack).values({
+      tenantId: input.tenantId,
+      flightId: input.flightId,
+      membershipId: input.membershipId,
+      deviceId: input.deviceId,
+      phase: sample.phase,
+      latitude: sample.latitude,
+      longitude: sample.longitude,
+      altitudeFeet: sample.altitudeFeet,
+      groundSpeedKnots: sample.groundSpeedKnots,
+      headingDegrees: sample.headingDegrees,
+      simulatorTime: sample.simulatorTime,
+      sampleAt,
+      sequence: sample.sequence,
+      createdAt: sampleAt,
+    }),
+    sql`
       DELETE FROM flight_telemetry_track
-      WHERE tenant_id = ${input.tenantId}::uuid
-        AND flight_id = ${input.flightId}::uuid
-        AND EXISTS (SELECT 1 FROM accepted_lease)
+      WHERE tenant_id = ${input.tenantId}
+        AND flight_id = ${input.flightId}
         AND (
-          sample_at < ${trackCutoff}
+          sample_at < ${ms(trackCutoff)}
           OR id IN (
             SELECT id
             FROM flight_telemetry_track
-            WHERE tenant_id = ${input.tenantId}::uuid
-              AND flight_id = ${input.flightId}::uuid
-              AND sample_at >= ${trackCutoff}
+            WHERE tenant_id = ${input.tenantId}
+              AND flight_id = ${input.flightId}
+              AND sample_at >= ${ms(trackCutoff)}
             ORDER BY sample_at DESC, id DESC
-            OFFSET ${TRACK_MAX_SAMPLES_PER_FLIGHT - 1}
+            LIMIT -1 OFFSET ${TRACK_MAX_SAMPLES_PER_FLIGHT}
           )
         )
-      RETURNING id
-    )
-    SELECT
-      CASE
-        WHEN EXISTS (SELECT 1 FROM current_upsert) THEN 'accepted'
-        WHEN EXISTS (SELECT 1 FROM eligible_device) THEN 'lease_conflict'
-        WHEN EXISTS (
-          SELECT 1 FROM assigned_device
-          WHERE flight_status NOT IN ('accepted', 'briefed', 'active')
-             OR membership_role <> 'pilot'
-             OR membership_status <> 'active'
-        ) THEN 'ineligible'
-        WHEN EXISTS (SELECT 1 FROM assigned_device) THEN 'replay_or_rate'
-        ELSE 'credential_invalid'
-      END AS status,
-      (SELECT id::text FROM inserted_event LIMIT 1) AS event_id,
-      (SELECT event_type::text FROM inserted_event LIMIT 1) AS event_type,
-      (SELECT occurred_at FROM inserted_event LIMIT 1) AS event_occurred_at,
-      (SELECT created_at FROM inserted_event LIMIT 1) AS event_created_at,
-      (SELECT flight_id::text FROM current_upsert LIMIT 1) AS current_flight_id,
-      (SELECT tenant_id::text FROM current_upsert LIMIT 1) AS current_tenant_id,
-      (SELECT membership_id::text FROM current_upsert LIMIT 1) AS current_membership_id,
-      (SELECT device_id::text FROM current_upsert LIMIT 1) AS current_device_id,
-      (SELECT phase::text FROM current_upsert LIMIT 1) AS current_phase,
-      (SELECT latitude FROM current_upsert LIMIT 1) AS current_latitude,
-      (SELECT longitude FROM current_upsert LIMIT 1) AS current_longitude,
-      (SELECT altitude_feet FROM current_upsert LIMIT 1) AS current_altitude_feet,
-      (SELECT ground_speed_knots FROM current_upsert LIMIT 1) AS current_ground_speed_knots,
-      (SELECT heading_degrees FROM current_upsert LIMIT 1) AS current_heading_degrees,
-      (SELECT simulator_time FROM current_upsert LIMIT 1) AS current_simulator_time,
-      (SELECT sample_at FROM current_upsert LIMIT 1) AS current_sample_at,
-      (SELECT sequence FROM current_upsert LIMIT 1) AS current_sequence,
-      (SELECT created_at FROM current_upsert LIMIT 1) AS current_created_at,
-      (SELECT updated_at FROM current_upsert LIMIT 1) AS current_updated_at
-  `);
+    `,
+  ];
+  const result = await runAtomic(statements);
+  if (!result) return null;
 
-  const row = result.rows[0];
-  if (!row) throw new Error("Atomic telemetry ingest returned no result");
-  const current =
-    row.current_flight_id &&
-    row.current_tenant_id &&
-    row.current_membership_id &&
-    row.current_device_id &&
-    row.current_phase &&
-    row.current_latitude !== null &&
-    row.current_longitude !== null &&
-    row.current_altitude_feet !== null &&
-    row.current_ground_speed_knots !== null &&
-    row.current_heading_degrees !== null &&
-    row.current_simulator_time &&
-    row.current_sample_at &&
-    row.current_sequence !== null &&
-    row.current_created_at &&
-    row.current_updated_at
-      ? {
-          flightId: row.current_flight_id,
-          tenantId: row.current_tenant_id,
-          membershipId: row.current_membership_id,
-          deviceId: row.current_device_id,
-          phase: row.current_phase,
-          latitude: Number(row.current_latitude),
-          longitude: Number(row.current_longitude),
-          altitudeFeet: Number(row.current_altitude_feet),
-          groundSpeedKnots: Number(row.current_ground_speed_knots),
-          headingDegrees: Number(row.current_heading_degrees),
-          simulatorTime: asDate(row.current_simulator_time),
-          sampleAt: asDate(row.current_sample_at),
-          sequence: Number(row.current_sequence),
-          createdAt: asDate(row.current_created_at),
-          updatedAt: asDate(row.current_updated_at),
-        }
-      : null;
-  const oooiEvent =
-    row.event_id &&
-    row.event_type &&
-    row.event_occurred_at &&
-    row.event_created_at
-      ? {
-          id: row.event_id,
-          tenantId: input.tenantId,
-          flightId: input.flightId,
-          eventType: row.event_type,
-          occurredAt: asDate(row.event_occurred_at),
-          source: "telemetry" as const,
-          actorMembershipId: null,
-          deviceId: input.deviceId,
-          reason: null,
-          createdAt: asDate(row.event_created_at),
-        }
-      : null;
-  if (row.status === "accepted" && !current) {
+  const [currentRows, eventRows] = await db.batch([
+    db
+      .select()
+      .from(flightTelemetryCurrent)
+      .where(eq(flightTelemetryCurrent.flightId, input.flightId))
+      .limit(1),
+    db
+      .select()
+      .from(flightOooiEvents)
+      .where(eq(flightOooiEvents.id, eventId ?? ""))
+      .limit(1),
+  ]);
+  const current = currentRows[0] ?? null;
+  if (!current) {
     throw new Error("Atomic telemetry ingest omitted its accepted sample");
   }
-  return { status: row.status, current, oooiEvent };
+  return { status: "accepted", current, oooiEvent: eventRows[0] ?? null };
 }
 
 export async function listFlightTrack(input: {
@@ -707,10 +718,6 @@ export async function listFlightTrack(input: {
     .limit(input.limit);
 }
 
-type AtomicCorrectionRow = {
-  applied: boolean;
-};
-
 /** Atomically updates OOOI values, provenance rows, and the audit record. */
 export async function correctOooiAtomic(input: {
   tenantId: string;
@@ -725,104 +732,93 @@ export async function correctOooiAtomic(input: {
   operationAt: Date;
 }): Promise<boolean> {
   const db = getDb();
-  const outProvided = input.outAt !== undefined;
-  const offProvided = input.offAt !== undefined;
-  const onProvided = input.onAt !== undefined;
-  const inProvided = input.inAt !== undefined;
-  const outAt = input.outAt?.toISOString() ?? null;
-  const offAt = input.offAt?.toISOString() ?? null;
-  const onAt = input.onAt?.toISOString() ?? null;
-  const inAt = input.inAt?.toISOString() ?? null;
-  const operationAt = input.operationAt.toISOString();
-  const result = await db.execute<AtomicCorrectionRow>(sql`
-    WITH proposed AS MATERIALIZED (
-      SELECT f.*,
-        CASE WHEN ${outProvided} THEN ${outAt}::timestamptz ELSE f.out_at END AS next_out,
-        CASE WHEN ${offProvided} THEN ${offAt}::timestamptz ELSE f.off_at END AS next_off,
-        CASE WHEN ${onProvided} THEN ${onAt}::timestamptz ELSE f.on_at END AS next_on,
-        CASE WHEN ${inProvided} THEN ${inAt}::timestamptz ELSE f.in_at END AS next_in
-      FROM flights f
-      WHERE f.id = ${input.flightId}::uuid
-        AND f.tenant_id = ${input.tenantId}::uuid
-        AND f.version = ${input.expectedVersion}
-      FOR UPDATE
-    ),
-    valid AS MATERIALIZED (
-      SELECT * FROM proposed
-      WHERE (next_out IS NULL OR next_off IS NULL OR next_out <= next_off)
-        AND (next_out IS NULL OR next_on IS NULL OR next_out <= next_on)
-        AND (next_out IS NULL OR next_in IS NULL OR next_out <= next_in)
-        AND (next_off IS NULL OR next_on IS NULL OR next_off <= next_on)
-        AND (next_off IS NULL OR next_in IS NULL OR next_off <= next_in)
-        AND (next_on IS NULL OR next_in IS NULL OR next_on <= next_in)
-    ),
-    updated AS (
-      UPDATE flights f
-      SET out_at = valid.next_out,
-          off_at = valid.next_off,
-          on_at = valid.next_on,
-          in_at = valid.next_in,
-          out_manual_override = CASE WHEN ${outProvided}
-                                     THEN true ELSE f.out_manual_override END,
-          off_manual_override = CASE WHEN ${offProvided}
-                                     THEN true ELSE f.off_manual_override END,
-          on_manual_override = CASE WHEN ${onProvided}
-                                    THEN true ELSE f.on_manual_override END,
-          in_manual_override = CASE WHEN ${inProvided}
-                                    THEN true ELSE f.in_manual_override END,
-          version = f.version + 1,
-          updated_at = GREATEST(f.updated_at, ${operationAt}::timestamptz)
-      FROM valid
-      WHERE f.id = valid.id
-        AND f.tenant_id = valid.tenant_id
-        AND f.version = ${input.expectedVersion}
-      RETURNING f.id, valid.version AS from_version, f.version AS to_version
-    ),
-    event_values(event_type, provided, occurred_at) AS (
-      VALUES
-        ('out'::oooi_event_type, ${outProvided}, ${outAt}::timestamptz),
-        ('off'::oooi_event_type, ${offProvided}, ${offAt}::timestamptz),
-        ('on'::oooi_event_type, ${onProvided}, ${onAt}::timestamptz),
-        ('in'::oooi_event_type, ${inProvided}, ${inAt}::timestamptz)
-    ),
-    inserted_events AS (
-      INSERT INTO flight_oooi_events (
-        tenant_id, flight_id, event_type, occurred_at, source,
-        actor_membership_id, reason, created_at
-      )
-      SELECT ${input.tenantId}::uuid, updated.id, values.event_type,
-             values.occurred_at, 'manual', ${input.actorMembershipId}::uuid,
-             ${input.reason}, ${operationAt}
-      FROM updated
-      CROSS JOIN event_values values
-      WHERE values.provided
-      RETURNING id
-    ),
-    inserted_audit AS (
-      INSERT INTO audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta,
-        created_at
-      )
-      SELECT ${input.tenantId}::uuid, ${input.actorMembershipId}::uuid,
-             'flight.oooi_correct', 'flight', updated.id::text,
-             jsonb_build_object(
-               'fields', ARRAY_REMOVE(ARRAY[
-                 CASE WHEN ${outProvided} THEN 'outAt' END,
-                 CASE WHEN ${offProvided} THEN 'offAt' END,
-                 CASE WHEN ${onProvided} THEN 'onAt' END,
-                 CASE WHEN ${inProvided} THEN 'inAt' END
-               ], NULL),
-               'reason', ${input.reason}::text,
-               'fromVersion', updated.from_version,
-               'toVersion', updated.to_version
-             ),
-             ${operationAt}
-      FROM updated
-      RETURNING id
+  const [flight] = await db
+    .select()
+    .from(flights)
+    .where(
+      and(
+        eq(flights.id, input.flightId),
+        eq(flights.tenantId, input.tenantId),
+        eq(flights.version, input.expectedVersion),
+      ),
     )
-    SELECT EXISTS (SELECT 1 FROM updated) AS applied
-  `);
-  return result.rows[0]?.applied === true;
+    .limit(1);
+  if (!flight) return false;
+
+  const provided = {
+    out: input.outAt !== undefined,
+    off: input.offAt !== undefined,
+    on: input.onAt !== undefined,
+    in: input.inAt !== undefined,
+  };
+  const next = {
+    out: provided.out ? (input.outAt ?? null) : flight.outAt,
+    off: provided.off ? (input.offAt ?? null) : flight.offAt,
+    on: provided.on ? (input.onAt ?? null) : flight.onAt,
+    in: provided.in ? (input.inAt ?? null) : flight.inAt,
+  };
+  const ordered = [next.out, next.off, next.on, next.in];
+  for (let earlier = 0; earlier < ordered.length; earlier += 1) {
+    for (let later = earlier + 1; later < ordered.length; later += 1) {
+      const a = ordered[earlier];
+      const b = ordered[later];
+      if (a && b && a.getTime() > b.getTime()) return false;
+    }
+  }
+
+  const at = and(
+    eq(flights.id, input.flightId),
+    eq(flights.tenantId, input.tenantId),
+    eq(flights.version, input.expectedVersion),
+  )!;
+  const kinds = (["out", "off", "on", "in"] as const).filter(
+    (kind) => provided[kind],
+  );
+  const result = await runAtomic([
+    guard(sql`EXISTS (SELECT 1 FROM ${flights} WHERE ${at})`),
+    db
+      .update(flights)
+      .set({
+        outAt: next.out,
+        offAt: next.off,
+        onAt: next.on,
+        inAt: next.in,
+        ...(provided.out ? { outManualOverride: true } : {}),
+        ...(provided.off ? { offManualOverride: true } : {}),
+        ...(provided.on ? { onManualOverride: true } : {}),
+        ...(provided.in ? { inManualOverride: true } : {}),
+        version: sql`${flights.version} + 1`,
+        updatedAt: sql`max(${flights.updatedAt}, ${ms(input.operationAt)})`,
+      })
+      .where(at),
+    ...kinds.map((kind) =>
+      db.insert(flightOooiEvents).values({
+        tenantId: input.tenantId,
+        flightId: input.flightId,
+        eventType: kind,
+        occurredAt: next[kind],
+        source: "manual",
+        actorMembershipId: input.actorMembershipId,
+        reason: input.reason,
+        createdAt: input.operationAt,
+      }),
+    ),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.actorMembershipId,
+      action: "flight.oooi_correct",
+      entityType: "flight",
+      entityId: input.flightId,
+      meta: {
+        fields: kinds.map((kind) => `${kind}At`),
+        reason: input.reason,
+        fromVersion: input.expectedVersion,
+        toVersion: input.expectedVersion + 1,
+      },
+      createdAt: input.operationAt,
+    }),
+  ]);
+  return result !== null;
 }
 
 export async function listOooiEvents(
@@ -840,31 +836,4 @@ export async function listOooiEvents(
       ),
     )
     .orderBy(desc(flightOooiEvents.createdAt), desc(flightOooiEvents.id));
-}
-
-function asDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value);
-}
-
-function nullableDate(value: Date | string | null): Date | null {
-  return value === null ? null : asDate(value);
-}
-
-function simulatorDeviceFromRow(
-  row: AtomicSimulatorDeviceRow,
-): SimulatorDevice {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    membershipId: row.membership_id,
-    name: row.name,
-    tokenMac: row.token_mac,
-    status: row.status,
-    lastSequence: row.last_sequence,
-    lastIngestAt: nullableDate(row.last_ingest_at),
-    lastSeenAt: nullableDate(row.last_seen_at),
-    revokedAt: nullableDate(row.revoked_at),
-    createdAt: asDate(row.created_at),
-    updatedAt: asDate(row.updated_at),
-  };
 }

@@ -27,7 +27,7 @@ import {
 import { findMembershipByCallsign } from "../../db/repositories/memberships.js";
 import { findLatestDispatchRelease } from "../../db/repositories/dispatch-releases.js";
 import { AppError } from "../../lib/errors.js";
-import { isUniqueViolation } from "../../lib/postgres.js";
+import { isUniqueViolation } from "../../lib/db-errors.js";
 import type { Tenant } from "../../db/schema.js";
 import type { AcarsMessage, Flight } from "../../db/schema.js";
 import { parseOperationalInteraction } from "./progress.js";

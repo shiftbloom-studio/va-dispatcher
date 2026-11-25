@@ -1,18 +1,13 @@
 import { defineConfig } from "drizzle-kit";
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required for drizzle-kit");
-}
-
+/**
+ * Generates SQL migrations for Cloudflare D1. Apply them with
+ * `wrangler d1 migrations apply` (see apps/api/README.md); drizzle-kit never
+ * connects to a remote database from this configuration.
+ */
 export default defineConfig({
   schema: "./src/db/schema.ts",
-  dialect: "postgresql",
-  // Keep schema operations scoped to application-owned tables. Neon provisions
-  // its own schemas alongside `public`, which must never be managed by Drizzle.
-  schemaFilter: ["public"],
-  dbCredentials: {
-    url: databaseUrl,
-  },
+  out: "./drizzle",
+  dialect: "sqlite",
   verbose: true,
 });

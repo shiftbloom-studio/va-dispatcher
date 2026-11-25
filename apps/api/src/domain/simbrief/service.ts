@@ -17,7 +17,7 @@ import type {
 import { env } from "../../env.js";
 import { createTokenMac, verifyTokenMac } from "../../lib/crypto.js";
 import { AppError } from "../../lib/errors.js";
-import { isUniqueViolation } from "../../lib/postgres.js";
+import { isUniqueViolation } from "../../lib/db-errors.js";
 import {
   buildSimbriefDispatchUrl,
   SimbriefAdapter,

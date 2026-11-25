@@ -1,34 +1,61 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean,
-  type AnyPgColumn,
+  type AnySQLiteColumn,
   check,
-  doublePrecision,
   foreignKey,
   index,
   integer,
-  jsonb,
-  pgEnum,
-  pgTable,
+  real,
+  sqliteTable,
   text,
-  timestamp,
   uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
+} from "drizzle-orm/sqlite-core";
 
-export const memberRoleEnum = pgEnum("member_role", [
+/**
+ * D1 (SQLite) has no native enum, UUID, timestamp, or JSONB types. These
+ * helpers keep the column definitions close to the domain vocabulary:
+ * enums are TEXT columns with a CHECK constraint, UUIDs are canonical
+ * lowercase TEXT, timestamps are integer milliseconds since the epoch, and
+ * JSON documents are TEXT validated with `json_valid`.
+ */
+function sqliteEnum<const T extends readonly [string, ...string[]]>(
+  enumName: string,
+  values: T,
+) {
+  const column = (name: string) => text(name, { enum: values });
+  return Object.assign(column, { enumName, enumValues: values });
+}
+
+/** SQL default producing an RFC 4122 version 4 UUID string. */
+export const uuidV4Sql = sql`(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))))`;
+
+/** SQL default for the current time in epoch milliseconds. */
+export const nowMsSql = sql`(cast(unixepoch('subsec') * 1000 as integer))`;
+
+const uuid = (name: string) => text(name);
+const uuidPk = (name: string) =>
+  text(name)
+    .primaryKey()
+    .default(uuidV4Sql)
+    .$defaultFn(() => crypto.randomUUID());
+const timestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
+const jsonb = (name: string) => text(name, { mode: "json" });
+const boolean = (name: string) => integer(name, { mode: "boolean" });
+const doublePrecision = (name: string) => real(name);
+
+export const memberRoleEnum = sqliteEnum("member_role", [
   "pilot",
   "dispatcher",
   "admin",
 ]);
 
-export const memberStatusEnum = pgEnum("member_status", [
+export const memberStatusEnum = sqliteEnum("member_status", [
   "active",
   "invited",
   "disabled",
 ]);
 
-export const scheduleRequestStatusEnum = pgEnum("schedule_request_status", [
+export const scheduleRequestStatusEnum = sqliteEnum("schedule_request_status", [
   "pending",
   "in_review",
   "fulfilled",
@@ -37,7 +64,7 @@ export const scheduleRequestStatusEnum = pgEnum("schedule_request_status", [
   "cancelled",
 ]);
 
-export const flightStatusEnum = pgEnum("flight_status", [
+export const flightStatusEnum = sqliteEnum("flight_status", [
   "draft",
   "offered",
   "accepted",
@@ -48,12 +75,12 @@ export const flightStatusEnum = pgEnum("flight_status", [
   "cancelled",
 ]);
 
-export const acarsDirectionEnum = pgEnum("acars_direction", [
+export const acarsDirectionEnum = sqliteEnum("acars_direction", [
   "inbound",
   "outbound",
 ]);
 
-export const acarsMsgTypeEnum = pgEnum("acars_msg_type", [
+export const acarsMsgTypeEnum = sqliteEnum("acars_msg_type", [
   "telex",
   "progress",
   "cpdlc",
@@ -61,30 +88,30 @@ export const acarsMsgTypeEnum = pgEnum("acars_msg_type", [
   "other",
 ]);
 
-export const acarsProviderEnum = pgEnum("acars_provider", ["mock", "hoppie"]);
+export const acarsProviderEnum = sqliteEnum("acars_provider", ["mock", "hoppie"]);
 
-export const acarsDeliveryStatusEnum = pgEnum("acars_delivery_status", [
+export const acarsDeliveryStatusEnum = sqliteEnum("acars_delivery_status", [
   "pending",
   "accepted",
   "rejected",
   "ambiguous",
 ]);
 
-export const simbriefDispatchStatusEnum = pgEnum("simbrief_dispatch_status", [
+export const simbriefDispatchStatusEnum = sqliteEnum("simbrief_dispatch_status", [
   "prepared",
   "pending",
   "ready",
 ]);
 
-export const brandPresenceEnum = pgEnum("brand_presence", [
+export const brandPresenceEnum = sqliteEnum("brand_presence", [
   "restrained",
   "balanced",
   "high",
 ]);
 
-export const dispatchUnitEnum = pgEnum("dispatch_unit", ["kg", "lb"]);
+export const dispatchUnitEnum = sqliteEnum("dispatch_unit", ["kg", "lb"]);
 
-export const flightEventKindEnum = pgEnum("flight_event_kind", [
+export const flightEventKindEnum = sqliteEnum("flight_event_kind", [
   "flt_init",
   "out",
   "off",
@@ -95,18 +122,18 @@ export const flightEventKindEnum = pgEnum("flight_event_kind", [
   "assignment_confirmed",
 ]);
 
-export const flightEventSourceEnum = pgEnum("flight_event_source", [
+export const flightEventSourceEnum = sqliteEnum("flight_event_source", [
   "hoppie",
   "pilot_web",
   "dispatcher",
 ]);
 
-export const simulatorDeviceStatusEnum = pgEnum("simulator_device_status", [
+export const simulatorDeviceStatusEnum = sqliteEnum("simulator_device_status", [
   "active",
   "revoked",
 ]);
 
-export const telemetryPhaseEnum = pgEnum("telemetry_phase", [
+export const telemetryPhaseEnum = sqliteEnum("telemetry_phase", [
   "preflight",
   "taxi_out",
   "airborne",
@@ -114,39 +141,39 @@ export const telemetryPhaseEnum = pgEnum("telemetry_phase", [
   "parked",
 ]);
 
-export const oooiEventTypeEnum = pgEnum("oooi_event_type", [
+export const oooiEventTypeEnum = sqliteEnum("oooi_event_type", [
   "out",
   "off",
   "on",
   "in",
 ]);
 
-export const oooiSourceEnum = pgEnum("oooi_source", ["telemetry", "manual"]);
+export const oooiSourceEnum = sqliteEnum("oooi_source", ["telemetry", "manual"]);
 
-export const privacyPolicyStatusEnum = pgEnum("privacy_policy_status", [
+export const privacyPolicyStatusEnum = sqliteEnum("privacy_policy_status", [
   "draft",
   "active",
   "retired",
 ]);
 
-export const privacyRunModeEnum = pgEnum("privacy_run_mode", [
+export const privacyRunModeEnum = sqliteEnum("privacy_run_mode", [
   "dry_run",
   "execute",
 ]);
 
-export const privacyRunStatusEnum = pgEnum("privacy_run_status", [
+export const privacyRunStatusEnum = sqliteEnum("privacy_run_status", [
   "queued",
   "running",
   "completed",
   "failed",
 ]);
 
-export const privacyRequestScopeEnum = pgEnum("privacy_request_scope", [
+export const privacyRequestScopeEnum = sqliteEnum("privacy_request_scope", [
   "member",
   "tenant",
 ]);
 
-export const privacyRequestKindEnum = pgEnum("privacy_request_kind", [
+export const privacyRequestKindEnum = sqliteEnum("privacy_request_kind", [
   "export",
   "correction",
   "restriction",
@@ -155,7 +182,7 @@ export const privacyRequestKindEnum = pgEnum("privacy_request_kind", [
   "erasure",
 ]);
 
-export const privacyRequestStatusEnum = pgEnum("privacy_request_status", [
+export const privacyRequestStatusEnum = sqliteEnum("privacy_request_status", [
   "pending_verification",
   "pending_approval",
   "approved",
@@ -167,13 +194,13 @@ export const privacyRequestStatusEnum = pgEnum("privacy_request_status", [
   "cancelled",
 ]);
 
-export const privacyHoldStatusEnum = pgEnum("privacy_hold_status", [
+export const privacyHoldStatusEnum = sqliteEnum("privacy_hold_status", [
   "pending",
   "active",
   "released",
 ]);
 
-export const privacyExternalProviderEnum = pgEnum("privacy_external_provider", [
+export const privacyExternalProviderEnum = sqliteEnum("privacy_external_provider", [
   "clerk",
   "vercel",
   "neon",
@@ -182,25 +209,27 @@ export const privacyExternalProviderEnum = pgEnum("privacy_external_provider", [
   "navigraph",
 ]);
 
-export const privacyExternalTaskStatusEnum = pgEnum(
+export const privacyExternalTaskStatusEnum = sqliteEnum(
   "privacy_external_task_status",
   ["pending", "completed", "not_applicable", "failed"],
 );
 
 const timestamps = {
-  createdAt: timestamp("created_at", { withTimezone: true })
+  createdAt: timestamp("created_at")
     .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .default(nowMsSql)
+      .$defaultFn(() => new Date()),
+  updatedAt: timestamp("updated_at")
     .notNull()
-    .defaultNow()
+    .default(nowMsSql)
+      .$defaultFn(() => new Date())
     .$onUpdate(() => new Date()),
 };
 
-export const tenants = pgTable(
+export const tenants = sqliteTable(
   "tenants",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     clerkOrgId: text("clerk_org_id").notNull(),
@@ -219,19 +248,23 @@ export const tenants = pgTable(
     ...timestamps,
   },
   (t) => [
+    check(
+      "tenants_brand_presence_enum_check",
+      sql`${t.brandPresence} in ('restrained', 'balanced', 'high')`,
+    ),
     uniqueIndex("tenants_slug_uidx").on(t.slug),
     uniqueIndex("tenants_clerk_org_uidx").on(t.clerkOrgId),
     check(
       "tenants_brand_seed_color_check",
-      sql`${t.brandSeedColor} ~ '^#[0-9a-f]{6}$'`,
+      sql`length(${t.brandSeedColor}) = 7 and ${t.brandSeedColor} glob '#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'`,
     ),
   ],
 );
 
-export const memberships = pgTable(
+export const memberships = sqliteTable(
   "memberships",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -242,18 +275,22 @@ export const memberships = pgTable(
     displayName: text("display_name"),
     pilotCallsign: text("pilot_callsign"),
     simbriefUserId: text("simbrief_user_id"),
-    simbriefVerifiedAt: timestamp("simbrief_verified_at", {
-      withTimezone: true,
-    }),
+    simbriefVerifiedAt: timestamp("simbrief_verified_at"),
     navigraphSubject: text("navigraph_subject"),
     navigraphUsername: text("navigraph_username"),
-    navigraphConnectedAt: timestamp("navigraph_connected_at", {
-      withTimezone: true,
-    }),
+    navigraphConnectedAt: timestamp("navigraph_connected_at"),
     status: memberStatusEnum("status").notNull().default("active"),
     ...timestamps,
   },
   (t) => [
+    check(
+      "memberships_role_enum_check",
+      sql`${t.role} in ('pilot', 'dispatcher', 'admin')`,
+    ),
+    check(
+      "memberships_status_enum_check",
+      sql`${t.status} in ('active', 'invited', 'disabled')`,
+    ),
     uniqueIndex("memberships_tenant_user_uidx").on(t.tenantId, t.clerkUserId),
     uniqueIndex("memberships_tenant_id_uidx").on(t.tenantId, t.id),
     uniqueIndex("memberships_tenant_callsign_uidx").on(
@@ -272,10 +309,10 @@ export const memberships = pgTable(
   ],
 );
 
-export const scheduleRequests = pgTable(
+export const scheduleRequests = sqliteTable(
   "schedule_requests",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -284,8 +321,8 @@ export const scheduleRequests = pgTable(
       .references(() => memberships.id, { onDelete: "restrict" }),
     title: text("title"),
     notes: text("notes"),
-    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
-    windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
+    windowStart: timestamp("window_start").notNull(),
+    windowEnd: timestamp("window_end").notNull(),
     desiredFlightCount: integer("desired_flight_count").notNull(),
     preferences: jsonb("preferences")
       .$type<Record<string, unknown>>()
@@ -298,6 +335,10 @@ export const scheduleRequests = pgTable(
     ...timestamps,
   },
   (t) => [
+    check(
+      "schedule_requests_status_enum_check",
+      sql`${t.status} in ('pending', 'in_review', 'fulfilled', 'partially_fulfilled', 'rejected', 'cancelled')`,
+    ),
     uniqueIndex("schedule_requests_tenant_id_uidx").on(t.tenantId, t.id),
     foreignKey({
       columns: [t.tenantId, t.pilotMembershipId],
@@ -312,10 +353,10 @@ export const scheduleRequests = pgTable(
   ],
 );
 
-export const flights = pgTable(
+export const flights = sqliteTable(
   "flights",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -331,8 +372,8 @@ export const flights = pgTable(
     flightNumber: text("flight_number").notNull(),
     depIcao: text("dep_icao").notNull(),
     arrIcao: text("arr_icao").notNull(),
-    etd: timestamp("etd", { withTimezone: true }).notNull(),
-    eta: timestamp("eta", { withTimezone: true }).notNull(),
+    etd: timestamp("etd").notNull(),
+    eta: timestamp("eta").notNull(),
     aircraftType: text("aircraft_type"),
     version: integer("version").notNull().default(1),
     status: flightStatusEnum("status").notNull().default("draft"),
@@ -341,13 +382,11 @@ export const flights = pgTable(
     dispatcherNotes: text("dispatcher_notes"),
     assignmentRevision: integer("assignment_revision").notNull().default(1),
     assignmentConfirmedRevision: integer("assignment_confirmed_revision"),
-    assignmentConfirmedAt: timestamp("assignment_confirmed_at", {
-      withTimezone: true,
-    }),
-    outAt: timestamp("out_at", { withTimezone: true }),
-    offAt: timestamp("off_at", { withTimezone: true }),
-    onAt: timestamp("on_at", { withTimezone: true }),
-    inAt: timestamp("in_at", { withTimezone: true }),
+    assignmentConfirmedAt: timestamp("assignment_confirmed_at"),
+    outAt: timestamp("out_at"),
+    offAt: timestamp("off_at"),
+    onAt: timestamp("on_at"),
+    inAt: timestamp("in_at"),
     outManualOverride: boolean("out_manual_override").notNull().default(false),
     offManualOverride: boolean("off_manual_override").notNull().default(false),
     onManualOverride: boolean("on_manual_override").notNull().default(false),
@@ -355,6 +394,10 @@ export const flights = pgTable(
     ...timestamps,
   },
   (t) => [
+    check(
+      "flights_status_enum_check",
+      sql`${t.status} in ('draft', 'offered', 'accepted', 'declined', 'briefed', 'active', 'completed', 'cancelled')`,
+    ),
     uniqueIndex("flights_tenant_id_uidx").on(t.tenantId, t.id),
     uniqueIndex("flights_tenant_replaces_uidx").on(
       t.tenantId,
@@ -392,10 +435,10 @@ export const flights = pgTable(
 );
 
 /** Immutable revisions of a dispatch release. The latest revision is current. */
-export const dispatchReleases = pgTable(
+export const dispatchReleases = sqliteTable(
   "dispatch_releases",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -426,11 +469,20 @@ export const dispatchReleases = pgTable(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    releasedAt: timestamp("released_at", { withTimezone: true })
+    releasedAt: timestamp("released_at")
       .notNull()
-      .defaultNow(),
+      .default(nowMsSql)
+      .$defaultFn(() => new Date()),
   },
   (t) => [
+    check(
+      "dispatch_releases_fuel_unit_enum_check",
+      sql`${t.fuelUnit} in ('kg', 'lb')`,
+    ),
+    check(
+      "dispatch_releases_payload_unit_enum_check",
+      sql`${t.payloadUnit} in ('kg', 'lb')`,
+    ),
     uniqueIndex("dispatch_releases_flight_revision_uidx").on(
       t.tenantId,
       t.flightId,
@@ -469,26 +521,31 @@ export const dispatchReleases = pgTable(
  * canonical IDs and the immutable request-progress outcome needed to replay
  * an idempotent POST without generating another batch.
  */
-export const scheduleFulfillmentAttempts = pgTable(
+export const scheduleFulfillmentAttempts = sqliteTable(
   "schedule_fulfillment_attempts",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     scheduleRequestId: uuid("schedule_request_id").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     payloadHash: text("payload_hash").notNull(),
-    flightIds: uuid("flight_ids").array().notNull(),
+    flightIds: jsonb("flight_ids").$type<string[]>().notNull(),
     requestStatus: scheduleRequestStatusEnum("request_status").notNull(),
     requestVersion: integer("request_version").notNull(),
     linkedFlightCount: integer("linked_flight_count").notNull(),
     remainingFlightCount: integer("remaining_flight_count").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at")
       .notNull()
-      .defaultNow(),
+      .default(nowMsSql)
+      .$defaultFn(() => new Date()),
   },
   (t) => [
+    check(
+      "schedule_fulfillment_attempts_request_status_enum_check",
+      sql`${t.requestStatus} in ('pending', 'in_review', 'fulfilled', 'partially_fulfilled', 'rejected', 'cancelled')`,
+    ),
     uniqueIndex("schedule_fulfillment_attempts_request_key_uidx").on(
       t.tenantId,
       t.scheduleRequestId,
@@ -501,15 +558,15 @@ export const scheduleFulfillmentAttempts = pgTable(
     }).onDelete("cascade"),
     check(
       "schedule_fulfillment_attempts_key_check",
-      sql`char_length(${t.idempotencyKey}) between 1 and 200`,
+      sql`length(${t.idempotencyKey}) between 1 and 200`,
     ),
     check(
       "schedule_fulfillment_attempts_payload_hash_check",
-      sql`char_length(${t.payloadHash}) = 64`,
+      sql`length(${t.payloadHash}) = 64`,
     ),
     check(
       "schedule_fulfillment_attempts_flights_check",
-      sql`cardinality(${t.flightIds}) > 0`,
+      sql`json_array_length(${t.flightIds}) > 0`,
     ),
     check(
       "schedule_fulfillment_attempts_status_check",
@@ -534,10 +591,10 @@ export const scheduleFulfillmentAttempts = pgTable(
  * The PKCE verifier is encrypted at rest and each transaction is atomically
  * consumed before the authorization code is exchanged.
  */
-export const navigraphOauthTransactions = pgTable(
+export const navigraphOauthTransactions = sqliteTable(
   "navigraph_oauth_transactions",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -546,11 +603,12 @@ export const navigraphOauthTransactions = pgTable(
       .references(() => memberships.id, { onDelete: "cascade" }),
     stateId: text("state_id").notNull(),
     codeVerifierEnc: text("code_verifier_enc").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    consumedAt: timestamp("consumed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+    createdAt: timestamp("created_at")
       .notNull()
-      .defaultNow(),
+      .default(nowMsSql)
+      .$defaultFn(() => new Date()),
   },
   (t) => [
     uniqueIndex("navigraph_oauth_transactions_state_uidx").on(t.stateId),
@@ -570,10 +628,10 @@ export const navigraphOauthTransactions = pgTable(
  * to complete a pending dispatch. The actor's SimBrief user ID is snapshotted
  * because the member may later disconnect or change accounts.
  */
-export const simbriefDispatches = pgTable(
+export const simbriefDispatches = sqliteTable(
   "simbrief_dispatches",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -591,9 +649,7 @@ export const simbriefDispatches = pgTable(
     simbriefUserId: text("simbrief_user_id"),
     staticId: text("static_id").notNull(),
     callbackTokenMac: text("callback_token_mac"),
-    callbackExpiresAt: timestamp("callback_expires_at", {
-      withTimezone: true,
-    }),
+    callbackExpiresAt: timestamp("callback_expires_at"),
     status: simbriefDispatchStatusEnum("status").notNull().default("pending"),
     revision: integer("revision").notNull(),
     flightSnapshot: jsonb("flight_snapshot")
@@ -605,12 +661,16 @@ export const simbriefDispatches = pgTable(
       .default({}),
     ofp: jsonb("ofp").$type<Record<string, unknown>>(),
     simbriefRequestId: text("simbrief_request_id"),
-    generatedAt: timestamp("generated_at", { withTimezone: true }),
-    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    generatedAt: timestamp("generated_at"),
+    syncedAt: timestamp("synced_at"),
     lastError: text("last_error"),
     ...timestamps,
   },
   (t) => [
+    check(
+      "simbrief_dispatches_status_enum_check",
+      sql`${t.status} in ('prepared', 'pending', 'ready')`,
+    ),
     uniqueIndex("simbrief_dispatches_static_id_uidx").on(t.staticId),
     index("simbrief_dispatches_tenant_flight_created_idx").on(
       t.tenantId,
@@ -629,7 +689,7 @@ export const simbriefDispatches = pgTable(
     }).onDelete("cascade"),
     check(
       "simbrief_dispatches_flight_snapshot_object_check",
-      sql`jsonb_typeof(${t.flightSnapshot}) = 'object'`,
+      sql`json_type(${t.flightSnapshot}) = 'object'`,
     ),
     check(
       "simbrief_dispatches_positive_revision_check",
@@ -643,7 +703,7 @@ export const simbriefDispatches = pgTable(
 );
 
 /** Linearization point for canonical SimBrief revision prepare/generate races. */
-export const simbriefFlightHeads = pgTable(
+export const simbriefFlightHeads = sqliteTable(
   "simbrief_flight_heads",
   {
     flightId: uuid("flight_id")
@@ -673,10 +733,10 @@ export const simbriefFlightHeads = pgTable(
 );
 
 /** Revocable simulator-client credential. Only a keyed authenticator is stored. */
-export const simulatorDevices = pgTable(
+export const simulatorDevices = sqliteTable(
   "simulator_devices",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -687,12 +747,16 @@ export const simulatorDevices = pgTable(
     tokenMac: text("token_mac").notNull(),
     status: simulatorDeviceStatusEnum("status").notNull().default("active"),
     lastSequence: integer("last_sequence"),
-    lastIngestAt: timestamp("last_ingest_at", { withTimezone: true }),
-    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastIngestAt: timestamp("last_ingest_at"),
+    lastSeenAt: timestamp("last_seen_at"),
+    revokedAt: timestamp("revoked_at"),
     ...timestamps,
   },
   (t) => [
+    check(
+      "simulator_devices_status_enum_check",
+      sql`${t.status} in ('active', 'revoked')`,
+    ),
     index("simulator_devices_tenant_member_idx").on(t.tenantId, t.membershipId),
     uniqueIndex("simulator_devices_tenant_id_uidx").on(t.tenantId, t.id),
     uniqueIndex("simulator_devices_tenant_member_id_uidx").on(
@@ -709,7 +773,7 @@ export const simulatorDevices = pgTable(
 );
 
 /** Latest known simulator state. This is intentionally separate from history. */
-export const flightTelemetryCurrent = pgTable(
+export const flightTelemetryCurrent = sqliteTable(
   "flight_telemetry_current",
   {
     flightId: uuid("flight_id")
@@ -730,14 +794,16 @@ export const flightTelemetryCurrent = pgTable(
     altitudeFeet: integer("altitude_feet").notNull(),
     groundSpeedKnots: integer("ground_speed_knots").notNull(),
     headingDegrees: doublePrecision("heading_degrees").notNull(),
-    simulatorTime: timestamp("simulator_time", {
-      withTimezone: true,
-    }).notNull(),
-    sampleAt: timestamp("sample_at", { withTimezone: true }).notNull(),
+    simulatorTime: timestamp("simulator_time").notNull(),
+    sampleAt: timestamp("sample_at").notNull(),
     sequence: integer("sequence").notNull(),
     ...timestamps,
   },
   (t) => [
+    check(
+      "flight_telemetry_current_phase_enum_check",
+      sql`${t.phase} in ('preflight', 'taxi_out', 'airborne', 'taxi_in', 'parked')`,
+    ),
     index("flight_telemetry_current_tenant_sample_idx").on(
       t.tenantId,
       t.sampleAt,
@@ -766,7 +832,7 @@ export const flightTelemetryCurrent = pgTable(
 );
 
 /** Single-writer lease preventing two active clients from racing one flight. */
-export const flightTelemetryLeases = pgTable(
+export const flightTelemetryLeases = sqliteTable(
   "flight_telemetry_leases",
   {
     flightId: uuid("flight_id")
@@ -781,9 +847,7 @@ export const flightTelemetryLeases = pgTable(
     deviceId: uuid("device_id")
       .notNull()
       .references(() => simulatorDevices.id, { onDelete: "cascade" }),
-    leaseExpiresAt: timestamp("lease_expires_at", {
-      withTimezone: true,
-    }).notNull(),
+    leaseExpiresAt: timestamp("lease_expires_at").notNull(),
     ...timestamps,
   },
   (t) => [
@@ -815,10 +879,10 @@ export const flightTelemetryLeases = pgTable(
 );
 
 /** Retained, bounded flight track used for operational replay and export. */
-export const flightTelemetryTrack = pgTable(
+export const flightTelemetryTrack = sqliteTable(
   "flight_telemetry_track",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -837,16 +901,19 @@ export const flightTelemetryTrack = pgTable(
     altitudeFeet: integer("altitude_feet").notNull(),
     groundSpeedKnots: integer("ground_speed_knots").notNull(),
     headingDegrees: doublePrecision("heading_degrees").notNull(),
-    simulatorTime: timestamp("simulator_time", {
-      withTimezone: true,
-    }).notNull(),
-    sampleAt: timestamp("sample_at", { withTimezone: true }).notNull(),
+    simulatorTime: timestamp("simulator_time").notNull(),
+    sampleAt: timestamp("sample_at").notNull(),
     sequence: integer("sequence").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at")
       .notNull()
-      .defaultNow(),
+      .default(nowMsSql)
+      .$defaultFn(() => new Date()),
   },
   (t) => [
+    check(
+      "flight_telemetry_track_phase_enum_check",
+      sql`${t.phase} in ('preflight', 'taxi_out', 'airborne', 'taxi_in', 'parked')`,
+    ),
     index("flight_telemetry_track_flight_sample_idx").on(
       t.tenantId,
       t.flightId,
@@ -875,10 +942,10 @@ export const flightTelemetryTrack = pgTable(
 );
 
 /** Append-only provenance for automatic and manually corrected OOOI values. */
-export const flightOooiEvents = pgTable(
+export const flightOooiEvents = sqliteTable(
   "flight_oooi_events",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -886,7 +953,7 @@ export const flightOooiEvents = pgTable(
       .notNull()
       .references(() => flights.id, { onDelete: "cascade" }),
     eventType: oooiEventTypeEnum("event_type").notNull(),
-    occurredAt: timestamp("occurred_at", { withTimezone: true }),
+    occurredAt: timestamp("occurred_at"),
     source: oooiSourceEnum("source").notNull(),
     actorMembershipId: uuid("actor_membership_id").references(
       () => memberships.id,
@@ -896,11 +963,20 @@ export const flightOooiEvents = pgTable(
       onDelete: "restrict",
     }),
     reason: text("reason"),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at")
       .notNull()
-      .defaultNow(),
+      .default(nowMsSql)
+      .$defaultFn(() => new Date()),
   },
   (t) => [
+    check(
+      "flight_oooi_events_event_type_enum_check",
+      sql`${t.eventType} in ('out', 'off', 'on', 'in')`,
+    ),
+    check(
+      "flight_oooi_events_source_enum_check",
+      sql`${t.source} in ('telemetry', 'manual')`,
+    ),
     index("flight_oooi_events_flight_created_idx").on(
       t.tenantId,
       t.flightId,
@@ -924,10 +1000,10 @@ export const flightOooiEvents = pgTable(
   ],
 );
 
-export const acarsMessages = pgTable(
+export const acarsMessages = sqliteTable(
   "acars_messages",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -947,11 +1023,27 @@ export const acarsMessages = pgTable(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    receivedAt: timestamp("received_at", { withTimezone: true }),
-    sentAt: timestamp("sent_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at"),
+    sentAt: timestamp("sent_at"),
     ...timestamps,
   },
   (t) => [
+    check(
+      "acars_messages_direction_enum_check",
+      sql`${t.direction} in ('inbound', 'outbound')`,
+    ),
+    check(
+      "acars_messages_msg_type_enum_check",
+      sql`${t.msgType} in ('telex', 'progress', 'cpdlc', 'position', 'other')`,
+    ),
+    check(
+      "acars_messages_provider_enum_check",
+      sql`${t.provider} in ('mock', 'hoppie')`,
+    ),
+    check(
+      "acars_messages_delivery_status_enum_check",
+      sql`${t.deliveryStatus} in ('pending', 'accepted', 'rejected', 'ambiguous')`,
+    ),
     index("acars_messages_tenant_created_idx").on(t.tenantId, t.createdAt),
     index("acars_messages_tenant_flight_idx").on(t.tenantId, t.flightId),
     uniqueIndex("acars_messages_provider_dedupe_uidx").on(
@@ -963,10 +1055,10 @@ export const acarsMessages = pgTable(
 );
 
 /** Auditable source-of-truth events behind tracked flight progress. */
-export const flightOperationalEvents = pgTable(
+export const flightOperationalEvents = sqliteTable(
   "flight_operational_events",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -975,7 +1067,7 @@ export const flightOperationalEvents = pgTable(
       .references(() => flights.id, { onDelete: "cascade" }),
     kind: flightEventKindEnum("kind").notNull(),
     source: flightEventSourceEnum("source").notNull(),
-    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    occurredAt: timestamp("occurred_at").notNull(),
     actorMembershipId: uuid("actor_membership_id").references(
       () => memberships.id,
       { onDelete: "set null" },
@@ -987,11 +1079,20 @@ export const flightOperationalEvents = pgTable(
       },
     ),
     meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at")
       .notNull()
-      .defaultNow(),
+      .default(nowMsSql)
+      .$defaultFn(() => new Date()),
   },
   (t) => [
+    check(
+      "flight_operational_events_kind_enum_check",
+      sql`${t.kind} in ('flt_init', 'out', 'off', 'on', 'in', 'manual_start', 'manual_finish', 'assignment_confirmed')`,
+    ),
+    check(
+      "flight_operational_events_source_enum_check",
+      sql`${t.source} in ('hoppie', 'pilot_web', 'dispatcher')`,
+    ),
     index("flight_operational_events_tenant_flight_idx").on(
       t.tenantId,
       t.flightId,
@@ -1004,10 +1105,10 @@ export const flightOperationalEvents = pgTable(
   ],
 );
 
-export const auditEvents = pgTable(
+export const auditEvents = sqliteTable(
   "audit_events",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -1019,9 +1120,10 @@ export const auditEvents = pgTable(
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id").notNull(),
     meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at")
       .notNull()
-      .defaultNow(),
+      .default(nowMsSql)
+      .$defaultFn(() => new Date()),
   },
   (t) => [
     index("audit_events_tenant_created_idx").on(t.tenantId, t.createdAt),
@@ -1034,10 +1136,10 @@ export const auditEvents = pgTable(
  * be active; material lifecycle execution requires a policy approved by a
  * second administrator.
  */
-export const privacyPolicies = pgTable(
+export const privacyPolicies = sqliteTable(
   "privacy_policies",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -1055,11 +1157,15 @@ export const privacyPolicies = pgTable(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    approvedAt: timestamp("approved_at", { withTimezone: true }),
-    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at"),
+    effectiveAt: timestamp("effective_at"),
     ...timestamps,
   },
   (t) => [
+    check(
+      "privacy_policies_status_enum_check",
+      sql`${t.status} in ('draft', 'active', 'retired')`,
+    ),
     uniqueIndex("privacy_policies_tenant_version_uidx").on(
       t.tenantId,
       t.version,
@@ -1077,10 +1183,10 @@ export const privacyPolicies = pgTable(
 );
 
 /** Checkpointed, bounded retention reports and executions. */
-export const privacyRetentionRuns = pgTable(
+export const privacyRetentionRuns = sqliteTable(
   "privacy_retention_runs",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -1089,9 +1195,9 @@ export const privacyRetentionRuns = pgTable(
       .references(() => privacyPolicies.id, { onDelete: "restrict" }),
     mode: privacyRunModeEnum("mode").notNull(),
     status: privacyRunStatusEnum("status").notNull().default("queued"),
-    asOf: timestamp("as_of", { withTimezone: true }).notNull(),
+    asOf: timestamp("as_of").notNull(),
     dryRunId: uuid("dry_run_id").references(
-      (): AnyPgColumn => privacyRetentionRuns.id,
+      (): AnySQLiteColumn => privacyRetentionRuns.id,
       { onDelete: "restrict" },
     ),
     idempotencyKey: text("idempotency_key").notNull(),
@@ -1107,13 +1213,21 @@ export const privacyRetentionRuns = pgTable(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    startedAt: timestamp("started_at", { withTimezone: true }),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
     lastError: text("last_error"),
     attemptCount: integer("attempt_count").notNull().default(0),
     ...timestamps,
   },
   (t) => [
+    check(
+      "privacy_retention_runs_mode_enum_check",
+      sql`${t.mode} in ('dry_run', 'execute')`,
+    ),
+    check(
+      "privacy_retention_runs_status_enum_check",
+      sql`${t.status} in ('queued', 'running', 'completed', 'failed')`,
+    ),
     uniqueIndex("privacy_retention_runs_tenant_idempotency_uidx").on(
       t.tenantId,
       t.idempotencyKey,
@@ -1138,10 +1252,10 @@ export const privacyRetentionRuns = pgTable(
 );
 
 /** Verified data-subject or tenant-level privacy workflow. */
-export const privacySubjectRequests = pgTable(
+export const privacySubjectRequests = sqliteTable(
   "privacy_subject_requests",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -1171,17 +1285,29 @@ export const privacySubjectRequests = pgTable(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    verifiedAt: timestamp("verified_at"),
     approvedByMembershipId: uuid("approved_by_membership_id").references(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    approvedAt: timestamp("approved_at", { withTimezone: true }),
-    processedAt: timestamp("processed_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at"),
+    processedAt: timestamp("processed_at"),
     lastError: text("last_error"),
     ...timestamps,
   },
   (t) => [
+    check(
+      "privacy_subject_requests_scope_enum_check",
+      sql`${t.scope} in ('member', 'tenant')`,
+    ),
+    check(
+      "privacy_subject_requests_kind_enum_check",
+      sql`${t.kind} in ('export', 'correction', 'restriction', 'objection', 'anonymization', 'erasure')`,
+    ),
+    check(
+      "privacy_subject_requests_status_enum_check",
+      sql`${t.status} in ('pending_verification', 'pending_approval', 'approved', 'processing', 'awaiting_external', 'completed', 'blocked', 'failed', 'cancelled')`,
+    ),
     index("privacy_subject_requests_tenant_status_idx").on(
       t.tenantId,
       t.status,
@@ -1204,19 +1330,19 @@ export const privacySubjectRequests = pgTable(
 );
 
 /** Active restriction and objection flags enforced for optional processors. */
-export const privacySubjectControls = pgTable(
+export const privacySubjectControls = sqliteTable(
   "privacy_subject_controls",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     membershipId: uuid("membership_id")
       .notNull()
       .references(() => memberships.id, { onDelete: "cascade" }),
-    restrictedAt: timestamp("restricted_at", { withTimezone: true }),
+    restrictedAt: timestamp("restricted_at"),
     restrictionReason: text("restriction_reason"),
-    objectedAt: timestamp("objected_at", { withTimezone: true }),
+    objectedAt: timestamp("objected_at"),
     objectionScopes: jsonb("objection_scopes")
       .$type<string[]>()
       .notNull()
@@ -1236,10 +1362,10 @@ export const privacySubjectControls = pgTable(
 );
 
 /** Two-person approved legal or claims preservation exception. */
-export const privacyLegalHolds = pgTable(
+export const privacyLegalHolds = sqliteTable(
   "privacy_legal_holds",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -1250,7 +1376,7 @@ export const privacyLegalHolds = pgTable(
     status: privacyHoldStatusEnum("status").notNull().default("pending"),
     scope: text("scope").notNull(),
     reason: text("reason").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at"),
     createdByMembershipId: uuid("created_by_membership_id").references(
       () => memberships.id,
       { onDelete: "set null" },
@@ -1259,15 +1385,19 @@ export const privacyLegalHolds = pgTable(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at"),
     releasedByMembershipId: uuid("released_by_membership_id").references(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    releasedAt: timestamp("released_at", { withTimezone: true }),
+    releasedAt: timestamp("released_at"),
     ...timestamps,
   },
   (t) => [
+    check(
+      "privacy_legal_holds_status_enum_check",
+      sql`${t.status} in ('pending', 'active', 'released')`,
+    ),
     index("privacy_legal_holds_tenant_status_idx").on(t.tenantId, t.status),
     index("privacy_legal_holds_tenant_member_idx").on(
       t.tenantId,
@@ -1281,10 +1411,10 @@ export const privacyLegalHolds = pgTable(
 );
 
 /** Provider/operator follow-up that cannot safely be performed in-process. */
-export const privacyExternalTasks = pgTable(
+export const privacyExternalTasks = sqliteTable(
   "privacy_external_tasks",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -1304,10 +1434,18 @@ export const privacyExternalTasks = pgTable(
       () => memberships.id,
       { onDelete: "set null" },
     ),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at"),
     ...timestamps,
   },
   (t) => [
+    check(
+      "privacy_external_tasks_provider_enum_check",
+      sql`${t.provider} in ('clerk', 'vercel', 'neon', 'hoppie', 'backup', 'navigraph')`,
+    ),
+    check(
+      "privacy_external_tasks_status_enum_check",
+      sql`${t.status} in ('pending', 'completed', 'not_applicable', 'failed')`,
+    ),
     uniqueIndex("privacy_external_tasks_request_provider_action_uidx").on(
       t.requestId,
       t.provider,
@@ -1321,16 +1459,16 @@ export const privacyExternalTasks = pgTable(
     index("privacy_external_tasks_tenant_status_idx").on(t.tenantId, t.status),
     check(
       "privacy_external_tasks_parent_check",
-      sql`(${t.requestId} is not null)::int + (${t.runId} is not null)::int = 1`,
+      sql`(${t.requestId} is not null) + (${t.runId} is not null) = 1`,
     ),
   ],
 );
 
 /** Internal local/test queue used by the mock adapter. */
-export const mockAcarsQueue = pgTable(
+export const mockAcarsQueue = sqliteTable(
   "mock_acars_queue",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    id: uuidPk("id"),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
@@ -1338,12 +1476,17 @@ export const mockAcarsQueue = pgTable(
     fromStation: text("from_station").notNull(),
     msgType: acarsMsgTypeEnum("msg_type").notNull().default("telex"),
     body: text("body").notNull(),
-    delivered: timestamp("delivered_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    delivered: timestamp("delivered_at"),
+    createdAt: timestamp("created_at")
       .notNull()
-      .defaultNow(),
+      .default(nowMsSql)
+      .$defaultFn(() => new Date()),
   },
   (t) => [
+    check(
+      "mock_acars_queue_msg_type_enum_check",
+      sql`${t.msgType} in ('telex', 'progress', 'cpdlc', 'position', 'other')`,
+    ),
     index("mock_acars_queue_pending_idx").on(
       t.tenantId,
       t.toStation,
@@ -1389,3 +1532,16 @@ export type PrivacySubjectRequest = typeof privacySubjectRequests.$inferSelect;
 export type PrivacySubjectControl = typeof privacySubjectControls.$inferSelect;
 export type PrivacyLegalHold = typeof privacyLegalHolds.$inferSelect;
 export type PrivacyExternalTask = typeof privacyExternalTasks.$inferSelect;
+
+/**
+ * Assertion sink for atomic D1 batches. The table never holds a row: any
+ * insert violates `batch_guard_rejected`, which aborts and rolls back the
+ * whole batch. See `db/atomic.ts`.
+ */
+export const batchGuards = sqliteTable(
+  "batch_guards",
+  {
+    reason: text("reason").notNull(),
+  },
+  () => [check("batch_guard_rejected", sql`0`)],
+);

@@ -19,7 +19,7 @@ import {
 } from "../domain/members/service.js";
 import { env, resolveAppOrigin } from "../env.js";
 import { acarsStationSchema } from "../domain/acars/validation.js";
-import { isUniqueViolation } from "../lib/postgres.js";
+import { isUniqueViolation } from "../lib/db-errors.js";
 import { AppError } from "../lib/errors.js";
 import { clerkOrgRole } from "../domain/members/roles.js";
 import { memberAccessSettings } from "../domain/tenants/member-access.js";

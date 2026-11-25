@@ -1,12 +1,17 @@
-import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { randomUUID } from "node:crypto";
+
+import { and, desc, eq, inArray, like, lt, ne, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "../client.js";
+import { guard, insertAudit, ms, runAtomic } from "../atomic.js";
 import {
   flights,
   memberships,
   scheduleRequests,
+  type Flight,
   type MemberRole,
   type Membership,
+  type ScheduleRequest,
 } from "../schema.js";
 import {
   decodeCursor,
@@ -96,7 +101,8 @@ export async function listMemberships(input: {
   // Drizzle emits interpolated columns in raw correlated subqueries without
   // table qualification unless the tables have explicit aliases. Every table
   // in this query is therefore named, including the outer membership table,
-  // so PostgreSQL can distinguish the joined `id` and `tenant_id` columns.
+  // so SQLite can distinguish the joined `id` and `tenant_id` columns.
+  // SQLite LIKE is case-insensitive for ASCII, matching the former ILIKE.
   const memberList = alias(memberships, "member_list");
   const openFlights = alias(flights, "member_open_flights");
   const activeFlights = alias(flights, "member_active_flights");
@@ -109,9 +115,9 @@ export async function listMemberships(input: {
     const pattern = `%${input.search}%`;
     conditions.push(
       or(
-        ilike(memberList.displayName, pattern),
-        ilike(memberList.pilotCallsign, pattern),
-        ilike(memberList.clerkUserId, pattern),
+        like(memberList.displayName, pattern),
+        like(memberList.pilotCallsign, pattern),
+        like(memberList.clerkUserId, pattern),
       )!,
     );
   }
@@ -131,7 +137,7 @@ export async function listMemberships(input: {
   }
 
   const openFlightCount = db
-    .select({ value: sql<number>`count(*)::int` })
+    .select({ value: sql<number>`count(*)` })
     .from(openFlights)
     .where(
       and(
@@ -141,7 +147,7 @@ export async function listMemberships(input: {
       ),
     );
   const activeFlightCount = db
-    .select({ value: sql<number>`count(*)::int` })
+    .select({ value: sql<number>`count(*)` })
     .from(activeFlights)
     .where(
       and(
@@ -151,7 +157,7 @@ export async function listMemberships(input: {
       ),
     );
   const openScheduleRequestCount = db
-    .select({ value: sql<number>`count(*)::int` })
+    .select({ value: sql<number>`count(*)` })
     .from(openRequests)
     .where(
       and(
@@ -161,7 +167,7 @@ export async function listMemberships(input: {
       ),
     );
   const terminalRequestLinkedFlightCount = db
-    .select({ value: sql<number>`count(*)::int` })
+    .select({ value: sql<number>`count(*)` })
     .from(linkedFlights)
     .innerJoin(
       linkedRequests,
@@ -227,25 +233,25 @@ export async function getMemberWorkImpact(
   const rows = await db
     .select({
       openFlightCount: sql<number>`(
-        select count(*)::int from ${flights}
+        select count(*) from ${flights}
         where ${flights.tenantId} = ${tenantId}
           and ${flights.pilotMembershipId} = ${membershipId}
           and ${inArray(flights.status, [...OPEN_FLIGHT_STATUSES])}
       )`,
       activeFlightCount: sql<number>`(
-        select count(*)::int from ${flights}
+        select count(*) from ${flights}
         where ${flights.tenantId} = ${tenantId}
           and ${flights.pilotMembershipId} = ${membershipId}
           and ${flights.status} = 'active'
       )`,
       openScheduleRequestCount: sql<number>`(
-        select count(*)::int from ${scheduleRequests}
+        select count(*) from ${scheduleRequests}
         where ${scheduleRequests.tenantId} = ${tenantId}
           and ${scheduleRequests.pilotMembershipId} = ${membershipId}
           and ${inArray(scheduleRequests.status, [...OPEN_REQUEST_STATUSES])}
       )`,
       terminalRequestLinkedFlightCount: sql<number>`(
-        select count(*)::int
+        select count(*)
         from ${flights}
         inner join ${scheduleRequests}
           on ${scheduleRequests.id} = ${flights.scheduleRequestId}
@@ -307,24 +313,7 @@ export async function upsertMembership(input: {
   return created!;
 }
 
-type RawMembershipRow = {
-  id: string;
-  tenantId: string;
-  clerkUserId: string;
-  role: MemberRole;
-  displayName: string | null;
-  pilotCallsign: string | null;
-  simbriefUserId: string | null;
-  simbriefVerifiedAt: Date | string | null;
-  navigraphSubject: string | null;
-  navigraphUsername: string | null;
-  navigraphConnectedAt: Date | string | null;
-  status: Membership["status"];
-  createdAt: Date | string;
-  updatedAt: Date | string;
-};
-
-/** Insert a directory member and its audit event as one statement. */
+/** Insert a directory member and its audit event atomically. */
 export async function createDirectoryMembershipWithAudit(input: {
   tenantId: string;
   actorMembershipId: string;
@@ -334,65 +323,42 @@ export async function createDirectoryMembershipWithAudit(input: {
 }): Promise<Membership | null> {
   const db = getDb();
   const createdAt = new Date();
-  const result = await db.execute<RawMembershipRow>(sql`
-    with created as (
-      insert into memberships (
-        tenant_id, clerk_user_id, role, display_name, status, created_at, updated_at
-      )
-      values (
-        ${input.tenantId}::uuid,
-        ${input.clerkUserId},
-        ${input.role}::member_role,
-        ${input.displayName},
-        'active',
-        ${createdAt},
-        ${createdAt}
-      )
-      on conflict (tenant_id, clerk_user_id) do nothing
-      returning *
-    ),
-    recorded_audit as (
-      insert into audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
-      )
-      select
-        c.tenant_id,
-        ${input.actorMembershipId}::uuid,
-        'member.directory_created',
-        'membership',
-        c.id::text,
-        jsonb_build_object(
-          'after', jsonb_build_object(
-            'role', c.role,
-            'status', c.status,
-            'displayName', c.display_name,
-            'pilotCallsign', c.pilot_callsign
-          )
-        ),
-        ${createdAt}
-      from created c
-      returning id
-    )
-    select
-      c.id,
-      c.tenant_id as "tenantId",
-      c.clerk_user_id as "clerkUserId",
-      c.role,
-      c.display_name as "displayName",
-      c.pilot_callsign as "pilotCallsign",
-      c.simbrief_user_id as "simbriefUserId",
-      c.simbrief_verified_at as "simbriefVerifiedAt",
-      c.navigraph_subject as "navigraphSubject",
-      c.navigraph_username as "navigraphUsername",
-      c.navigraph_connected_at as "navigraphConnectedAt",
-      c.status,
-      c.created_at as "createdAt",
-      c.updated_at as "updatedAt",
-      (select id from recorded_audit limit 1) as "auditId"
-    from created c
-  `);
-  const row = result.rows[0] as RawMembershipRow | undefined;
-  return row ? rawMembership(row) : null;
+  const id = randomUUID();
+  const result = await runAtomic([
+    guard(sql`NOT EXISTS (
+      SELECT 1 FROM memberships
+      WHERE tenant_id = ${input.tenantId}
+        AND clerk_user_id = ${input.clerkUserId}
+    )`),
+    db.insert(memberships).values({
+      id,
+      tenantId: input.tenantId,
+      clerkUserId: input.clerkUserId,
+      role: input.role,
+      displayName: input.displayName,
+      status: "active",
+      createdAt,
+      updatedAt: createdAt,
+    }),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.actorMembershipId,
+      action: "member.directory_created",
+      entityType: "membership",
+      entityId: id,
+      meta: {
+        after: {
+          role: input.role,
+          status: "active",
+          displayName: input.displayName,
+          pilotCallsign: null,
+        },
+      },
+      createdAt,
+    }),
+  ]);
+  if (!result) return null;
+  return findMembershipById(input.tenantId, id);
 }
 
 /** First-login provisioning from a verified Clerk organization membership. */
@@ -403,63 +369,42 @@ export async function provisionMembershipWithAudit(input: {
 }): Promise<Membership> {
   const db = getDb();
   const createdAt = new Date();
-  const result = await db.execute<RawMembershipRow>(sql`
-    with created as (
-      insert into memberships (
-        tenant_id, clerk_user_id, role, status, created_at, updated_at
-      )
-      values (
-        ${input.tenantId}::uuid,
-        ${input.clerkUserId},
-        ${input.role}::member_role,
-        'active',
-        ${createdAt},
-        ${createdAt}
-      )
-      on conflict (tenant_id, clerk_user_id) do nothing
-      returning *
-    ),
-    recorded_audit as (
-      insert into audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
-      )
-      select
-        c.tenant_id,
-        c.id,
-        'member.self_provisioned',
-        'membership',
-        c.id::text,
-        jsonb_build_object(
-          'after', jsonb_build_object('role', c.role, 'status', c.status),
-          'authority', 'verified_clerk_membership'
-        ),
-        ${createdAt}
-      from created c
-      returning id
-    )
-    select
-      c.id,
-      c.tenant_id as "tenantId",
-      c.clerk_user_id as "clerkUserId",
-      c.role,
-      c.display_name as "displayName",
-      c.pilot_callsign as "pilotCallsign",
-      c.simbrief_user_id as "simbriefUserId",
-      c.simbrief_verified_at as "simbriefVerifiedAt",
-      c.navigraph_subject as "navigraphSubject",
-      c.navigraph_username as "navigraphUsername",
-      c.navigraph_connected_at as "navigraphConnectedAt",
-      c.status,
-      c.created_at as "createdAt",
-      c.updated_at as "updatedAt",
-      (select id from recorded_audit limit 1) as "auditId"
-    from created c
-  `);
-  const row = result.rows[0] as RawMembershipRow | undefined;
-  if (row) return rawMembership(row);
+  const id = randomUUID();
+  const result = await runAtomic([
+    guard(sql`NOT EXISTS (
+      SELECT 1 FROM memberships
+      WHERE tenant_id = ${input.tenantId}
+        AND clerk_user_id = ${input.clerkUserId}
+    )`),
+    db.insert(memberships).values({
+      id,
+      tenantId: input.tenantId,
+      clerkUserId: input.clerkUserId,
+      role: input.role,
+      status: "active",
+      createdAt,
+      updatedAt: createdAt,
+    }),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: id,
+      action: "member.self_provisioned",
+      entityType: "membership",
+      entityId: id,
+      meta: {
+        after: { role: input.role, status: "active" },
+        authority: "verified_clerk_membership",
+      },
+      createdAt,
+    }),
+  ]);
+  if (result) {
+    const created = await findMembershipById(input.tenantId, id);
+    if (created) return created;
+  }
 
   // Another first request may have won the unique insert. Return that
-  // tenant-scoped member; its winning statement also wrote the audit event.
+  // tenant-scoped member; its winning batch also wrote the audit event.
   const existing = await findMembership(input.tenantId, input.clerkUserId);
   if (!existing) throw new Error("Provisioned membership disappeared");
   return existing;
@@ -474,8 +419,8 @@ export function provisionPilotMembershipWithAudit(input: {
 }
 
 /**
- * Create or reopen a tenant membership application and its audit event in one
- * statement. An existing active member is never downgraded by this flow.
+ * Create or reopen a tenant membership application and its audit event
+ * atomically. An existing active member is never downgraded by this flow.
  */
 export async function submitMembershipApplicationWithAudit(input: {
   tenantId: string;
@@ -483,73 +428,48 @@ export async function submitMembershipApplicationWithAudit(input: {
   requestedRole: Exclude<MemberRole, "admin">;
   displayName: string | null;
 }): Promise<{ membership: Membership; submitted: boolean }> {
-  const db = getDb();
   const submittedAt = new Date();
-  const result = await db.execute<RawMembershipRow>(sql`
-    with submitted as (
-      insert into memberships (
-        tenant_id, clerk_user_id, role, display_name, status, created_at, updated_at
+  const applicant = sql`
+    tenant_id = ${input.tenantId} AND clerk_user_id = ${input.clerkUserId}
+  `;
+  const result = await runAtomic([
+    guard(sql`NOT EXISTS (
+      SELECT 1 FROM memberships WHERE ${applicant} AND status = 'active'
+    )`),
+    sql`
+      INSERT INTO memberships (
+        id, tenant_id, clerk_user_id, role, display_name, status, created_at,
+        updated_at
       )
-      values (
-        ${input.tenantId}::uuid,
-        ${input.clerkUserId},
-        ${input.requestedRole}::member_role,
-        ${input.displayName},
-        'invited',
-        ${submittedAt},
-        ${submittedAt}
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.clerkUserId},
+        ${input.requestedRole}, ${input.displayName}, 'invited',
+        ${ms(submittedAt)}, ${ms(submittedAt)}
       )
-      on conflict (tenant_id, clerk_user_id) do update
-      set
-        role = excluded.role,
-        display_name = coalesce(excluded.display_name, memberships.display_name),
-        status = 'invited',
-        updated_at = excluded.updated_at
-      where memberships.status <> 'active'
-      returning *
-    ),
-    recorded_audit as (
-      insert into audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
-      )
-      select
-        s.tenant_id,
-        s.id,
-        'membership.application_submitted',
-        'membership',
-        s.id::text,
-        jsonb_build_object(
-          'requestedRole', s.role,
-          'authority', 'verified_clerk_user'
-        ),
-        ${submittedAt}
-      from submitted s
-      returning id
-    )
-    select
-      s.id,
-      s.tenant_id as "tenantId",
-      s.clerk_user_id as "clerkUserId",
-      s.role,
-      s.display_name as "displayName",
-      s.pilot_callsign as "pilotCallsign",
-      s.simbrief_user_id as "simbriefUserId",
-      s.simbrief_verified_at as "simbriefVerifiedAt",
-      s.navigraph_subject as "navigraphSubject",
-      s.navigraph_username as "navigraphUsername",
-      s.navigraph_connected_at as "navigraphConnectedAt",
-      s.status,
-      s.created_at as "createdAt",
-      s.updated_at as "updatedAt",
-      (select id from recorded_audit limit 1) as "auditId"
-    from submitted s
-  `);
-  const row = result.rows[0] as RawMembershipRow | undefined;
-  if (row) return { membership: rawMembership(row), submitted: true };
-
-  const existing = await findMembership(input.tenantId, input.clerkUserId);
-  if (!existing) throw new Error("Membership application disappeared");
-  return { membership: existing, submitted: false };
+      ON CONFLICT (tenant_id, clerk_user_id) DO UPDATE
+      SET role = excluded.role,
+          display_name = coalesce(excluded.display_name, memberships.display_name),
+          status = 'invited',
+          updated_at = excluded.updated_at
+      WHERE memberships.status <> 'active'
+    `,
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: sql`id`,
+      action: "membership.application_submitted",
+      entityType: "membership",
+      entityId: sql`id`,
+      meta: {
+        requestedRole: input.requestedRole,
+        authority: "verified_clerk_user",
+      },
+      createdAt: submittedAt,
+      from: sql`memberships WHERE ${applicant}`,
+    }),
+  ]);
+  const membership = await findMembership(input.tenantId, input.clerkUserId);
+  if (!membership) throw new Error("Membership application disappeared");
+  return { membership, submitted: result !== null };
 }
 
 /** Cancel only the signed-in user's own pending application. */
@@ -557,52 +477,32 @@ export async function cancelMembershipApplicationWithAudit(input: {
   tenantId: string;
   clerkUserId: string;
 }): Promise<Membership | null> {
-  const db = getDb();
   const cancelledAt = new Date();
-  const result = await db.execute<RawMembershipRow>(sql`
-    with cancelled as (
-      update memberships m
-      set status = 'disabled', updated_at = ${cancelledAt}
-      where m.tenant_id = ${input.tenantId}::uuid
-        and m.clerk_user_id = ${input.clerkUserId}
-        and m.status = 'invited'
-      returning m.*
-    ),
-    recorded_audit as (
-      insert into audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
-      )
-      select
-        c.tenant_id,
-        c.id,
-        'membership.application_cancelled',
-        'membership',
-        c.id::text,
-        jsonb_build_object('authority', 'verified_clerk_user'),
-        ${cancelledAt}
-      from cancelled c
-      returning id
-    )
-    select
-      c.id,
-      c.tenant_id as "tenantId",
-      c.clerk_user_id as "clerkUserId",
-      c.role,
-      c.display_name as "displayName",
-      c.pilot_callsign as "pilotCallsign",
-      c.simbrief_user_id as "simbriefUserId",
-      c.simbrief_verified_at as "simbriefVerifiedAt",
-      c.navigraph_subject as "navigraphSubject",
-      c.navigraph_username as "navigraphUsername",
-      c.navigraph_connected_at as "navigraphConnectedAt",
-      c.status,
-      c.created_at as "createdAt",
-      c.updated_at as "updatedAt",
-      (select id from recorded_audit limit 1) as "auditId"
-    from cancelled c
-  `);
-  const row = result.rows[0] as RawMembershipRow | undefined;
-  return row ? rawMembership(row) : null;
+  const invited = sql`
+    tenant_id = ${input.tenantId}
+    AND clerk_user_id = ${input.clerkUserId}
+    AND status = 'invited'
+  `;
+  const result = await runAtomic([
+    guard(sql`EXISTS (SELECT 1 FROM memberships WHERE ${invited})`),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: sql`id`,
+      action: "membership.application_cancelled",
+      entityType: "membership",
+      entityId: sql`id`,
+      meta: { authority: "verified_clerk_user" },
+      createdAt: cancelledAt,
+      from: sql`memberships WHERE ${invited}`,
+    }),
+    sql`
+      UPDATE memberships
+      SET status = 'disabled', updated_at = ${ms(cancelledAt)}
+      WHERE ${invited}
+    `,
+  ]);
+  if (!result) return null;
+  return findMembership(input.tenantId, input.clerkUserId);
 }
 
 /** Update self-owned profile/connected-account fields; role/status use the admin transaction. */
@@ -655,43 +555,149 @@ export type AdministrativeUpdateResult =
       impact: MemberWorkImpact;
     };
 
-type AdministrativeUpdateRow = {
-  targetId: string;
-  blockedReason:
-    | "invalid_replacement"
-    | "last_active_admin"
-    | "active_flight"
-    | "terminal_request_link"
-    | "reassignment_required"
-    | null;
-  openFlightCount: number;
-  activeFlightCount: number;
-  openScheduleRequestCount: number;
-  terminalRequestLinkedFlightCount: number;
-  reassignedFlightCount: number;
-  reassignedScheduleRequestCount: number;
-  id: string | null;
-  tenantId: string | null;
-  clerkUserId: string | null;
-  role: MemberRole | null;
-  displayName: string | null;
-  pilotCallsign: string | null;
-  simbriefUserId: string | null;
-  simbriefVerifiedAt: Date | string | null;
-  navigraphSubject: string | null;
-  navigraphUsername: string | null;
-  navigraphConnectedAt: Date | string | null;
-  status: Membership["status"] | null;
-  createdAt: Date | string | null;
-  updatedAt: Date | string | null;
+const LIVE_FLIGHT_STATUSES = [
+  "draft",
+  "offered",
+  "accepted",
+  "briefed",
+  "active",
+] as const;
+const TERMINAL_REQUEST_STATUSES = ["fulfilled", "rejected", "cancelled"];
+const ADMIN_UPDATE_ATTEMPTS = 3;
+
+type AdministrativeState = {
+  target: Membership;
+  replacement: Membership | null;
+  flights: Array<
+    Pick<
+      Flight,
+      | "id"
+      | "status"
+      | "scheduleRequestId"
+      | "version"
+      | "assignmentRevision"
+      | "assignmentConfirmedRevision"
+    >
+  >;
+  requests: Array<
+    Pick<ScheduleRequest, "id" | "pilotMembershipId" | "status" | "version">
+  >;
+  otherActiveAdminCount: number;
 };
 
+async function readAdministrativeState(input: {
+  tenantId: string;
+  membershipId: string;
+  reassignToMembershipId?: string;
+  expectedStatus?: Membership["status"];
+}): Promise<AdministrativeState | null> {
+  const db = getDb();
+  const [targetRows, replacementRows, flightRows, requestRows, adminRows] =
+    await db.batch([
+      db
+        .select()
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.tenantId, input.tenantId),
+            eq(memberships.id, input.membershipId),
+            ...(input.expectedStatus
+              ? [eq(memberships.status, input.expectedStatus)]
+              : []),
+          ),
+        )
+        .limit(1),
+      db
+        .select()
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.tenantId, input.tenantId),
+            eq(memberships.id, input.reassignToMembershipId ?? ""),
+            ne(memberships.id, input.membershipId),
+            eq(memberships.status, "active"),
+            eq(memberships.role, "pilot"),
+          ),
+        )
+        .limit(1),
+      db
+        .select({
+          id: flights.id,
+          status: flights.status,
+          scheduleRequestId: flights.scheduleRequestId,
+          version: flights.version,
+          assignmentRevision: flights.assignmentRevision,
+          assignmentConfirmedRevision: flights.assignmentConfirmedRevision,
+        })
+        .from(flights)
+        .where(
+          and(
+            eq(flights.tenantId, input.tenantId),
+            eq(flights.pilotMembershipId, input.membershipId),
+            inArray(flights.status, [...LIVE_FLIGHT_STATUSES]),
+          ),
+        )
+        .orderBy(flights.id),
+      db
+        .select({
+          id: scheduleRequests.id,
+          pilotMembershipId: scheduleRequests.pilotMembershipId,
+          status: scheduleRequests.status,
+          version: scheduleRequests.version,
+        })
+        .from(scheduleRequests)
+        .where(
+          and(
+            eq(scheduleRequests.tenantId, input.tenantId),
+            or(
+              eq(scheduleRequests.pilotMembershipId, input.membershipId),
+              sql`EXISTS (
+                SELECT 1 FROM flights candidate
+                WHERE candidate.tenant_id = ${input.tenantId}
+                  AND candidate.pilot_membership_id = ${input.membershipId}
+                  AND candidate.schedule_request_id = ${scheduleRequests.id}
+                  AND candidate.status IN ('draft', 'offered', 'accepted', 'briefed', 'active')
+              )`,
+            ),
+          ),
+        )
+        .orderBy(scheduleRequests.id),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.tenantId, input.tenantId),
+            ne(memberships.id, input.membershipId),
+            eq(memberships.role, "admin"),
+            eq(memberships.status, "active"),
+          ),
+        ),
+    ]);
+  const target = targetRows[0];
+  if (!target) return null;
+  return {
+    target,
+    replacement: replacementRows[0] ?? null,
+    flights: flightRows,
+    requests: requestRows,
+    otherActiveAdminCount: Number(adminRows[0]?.count ?? 0),
+  };
+}
+
+/** Compact, order-stable fingerprint of rows a decision depended on. */
+function fingerprint(
+  rows: ReadonlyArray<{ id: string; status: string; version: number }>,
+): string {
+  return rows.map((row) => `${row.id}:${row.status}:${row.version}`).join(",");
+}
+
 /**
- * Apply an administrator member change and its operational side effects in one
- * database transaction. Neon HTTP does not expose callback transactions, so a
- * tenant-scoped advisory lock plus a fixed Drizzle batch is used. The second
- * statement receives a fresh READ COMMITTED snapshot after the lock and keeps
- * the last-active-admin check, work reassignment, and audit insert atomic.
+ * Apply an administrator member change and its operational side effects in
+ * one D1 transaction. The decision is computed from a consistent read; the
+ * write batch re-asserts the member, the replacement, every affected flight
+ * and request, and the remaining-admin count, and is retried when a
+ * concurrent change invalidated the read.
  */
 export async function administrativelyUpdateMembership(input: {
   tenantId: string;
@@ -707,404 +713,286 @@ export async function administrativelyUpdateMembership(input: {
     | "membership.application_rejected"
     | "membership.kick_requested";
 }): Promise<AdministrativeUpdateResult> {
+  for (let attempt = 0; attempt < ADMIN_UPDATE_ATTEMPTS; attempt += 1) {
+    const result = await tryAdministrativeUpdate(input);
+    if (result) return result;
+  }
+  throw new Error("Member update lost every optimistic-concurrency attempt");
+}
+
+async function tryAdministrativeUpdate(
+  input: Parameters<typeof administrativelyUpdateMembership>[0],
+): Promise<AdministrativeUpdateResult | null> {
   const db = getDb();
   const changedAt = new Date();
-  const hasRole = input.patch.role !== undefined;
-  const hasDisplayName = input.patch.displayName !== undefined;
-  const hasPilotCallsign = input.patch.pilotCallsign !== undefined;
-  const hasStatus = input.patch.status !== undefined;
+  const state = await readAdministrativeState(input);
+  if (!state) return { kind: "not_found" };
+
+  const { target, replacement } = state;
   const replacementId = input.reassignToMembershipId ?? null;
-
-  const lock = db.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 1447126::bigint))`,
+  const nextRole = input.patch.role ?? target.role;
+  const nextStatus = input.patch.status ?? target.status;
+  const requiresWorkTransfer =
+    (input.patch.status !== undefined && input.patch.status !== "active") ||
+    (input.patch.role !== undefined &&
+      target.role === "pilot" &&
+      input.patch.role !== "pilot");
+  const openFlights = state.flights.filter(
+    (flight) => flight.status !== "active",
   );
-  const operation = db.execute<AdministrativeUpdateRow>(sql`
-    with target as materialized (
-      select
-        m.*,
-        case when ${hasRole} then ${input.patch.role ?? "pilot"}::member_role else m.role end as next_role,
-        case when ${hasStatus} then ${input.patch.status ?? "active"}::member_status else m.status end as next_status,
-        (
-          (${hasStatus} and ${input.patch.status ?? "active"}::member_status <> 'active')
-          or (
-            ${hasRole}
-            and m.role = 'pilot'
-            and ${input.patch.role ?? "pilot"}::member_role <> 'pilot'
-          )
-        ) as requires_work_transfer
-      from memberships m
-      where m.tenant_id = ${input.tenantId}::uuid
-        and m.id = ${input.membershipId}::uuid
-        and (
-          ${input.expectedStatus ?? null}::member_status is null
-          or m.status = ${input.expectedStatus ?? null}::member_status
-        )
-      for update of m
-    ),
-    replacement as materialized (
-      select m.id
-      from memberships m, target t
-      where ${replacementId}::uuid is not null
-        and m.tenant_id = ${input.tenantId}::uuid
-        and m.id = ${replacementId}::uuid
-        and m.id <> t.id
-        and m.status = 'active'
-        and m.role = 'pilot'
-      limit 1
-    ),
-    locked_requests as materialized (
-      select sr.id, sr.pilot_membership_id, sr.status, sr.version
-      from schedule_requests sr, target t
-      where sr.tenant_id = t.tenant_id
-        and (
-          sr.pilot_membership_id = t.id
-          or exists (
-            select 1
-            from flights candidate_flight
-            where candidate_flight.tenant_id = t.tenant_id
-              and candidate_flight.pilot_membership_id = t.id
-              and candidate_flight.schedule_request_id = sr.id
-              and candidate_flight.status in (
-                'draft', 'offered', 'accepted', 'briefed', 'active'
-              )
-          )
-        )
-      order by sr.id
-      for update of sr
-    ),
-    locked_request_gate as materialized (
-      select count(*)::int as locked_request_count from locked_requests
-    ),
-    locked_flights as materialized (
-      select
-        f.id,
-        f.status,
-        f.schedule_request_id,
-        f.version,
-        f.assignment_revision,
-        f.assignment_confirmed_revision
-      from flights f, target t, locked_request_gate request_gate
-      where request_gate.locked_request_count >= 0
-        and f.tenant_id = t.tenant_id
-        and f.pilot_membership_id = t.id
-        and f.status in ('draft', 'offered', 'accepted', 'briefed', 'active')
-      order by f.id
-      for update of f
-    ),
-    impact as materialized (
-      select
-        (
-          select count(*)::int from locked_flights lf
-          where lf.status in ('draft', 'offered', 'accepted', 'briefed')
-        ) as open_flight_count,
-        (
-          select count(*)::int from locked_flights lf
-          where lf.status = 'active'
-        ) as active_flight_count,
-        (
-          select count(*)::int from locked_requests lr
-          where lr.pilot_membership_id = t.id
-            and lr.status in ('pending', 'in_review', 'partially_fulfilled')
-        ) as open_schedule_request_count,
-        (
-          select count(*)::int
-          from locked_flights lf
-          inner join locked_requests lr on lr.id = lf.schedule_request_id
-          where lf.status in ('draft', 'offered', 'accepted', 'briefed')
-            and lr.status in ('fulfilled', 'rejected', 'cancelled')
-        ) as terminal_request_linked_flight_count
-      from target t
-    ),
-    eligible as materialized (
-      select t.*
-      from target t, impact i
-      where (${replacementId}::uuid is null or exists (select 1 from replacement))
-        and not (
-          t.role = 'admin'
-          and t.status = 'active'
-          and (t.next_role <> 'admin' or t.next_status <> 'active')
-          and not exists (
-            select 1 from memberships other
-            where other.tenant_id = t.tenant_id
-              and other.id <> t.id
-              and other.role = 'admin'
-              and other.status = 'active'
-          )
-        )
-        and not (
-          t.requires_work_transfer
-          and i.active_flight_count > 0
-        )
-        and not (
-          t.requires_work_transfer
-          and i.terminal_request_linked_flight_count > 0
-        )
-        and not (
-          t.requires_work_transfer
-          and (i.open_flight_count > 0 or i.open_schedule_request_count > 0)
-          and not exists (select 1 from replacement)
-        )
-    ),
-    updated_member as (
-      update memberships m
-      set
-        role = e.next_role,
-        display_name = case when ${hasDisplayName} then ${input.patch.displayName ?? null}::text else m.display_name end,
-        pilot_callsign = case when ${hasPilotCallsign} then ${input.patch.pilotCallsign ?? null}::text else m.pilot_callsign end,
-        status = e.next_status,
-        updated_at = ${changedAt}
-      from eligible e
-      where m.id = e.id and m.tenant_id = e.tenant_id
-      returning m.*
-    ),
-    flight_candidates as materialized (
-      select
-        lf.id,
-        lf.status as previous_status,
-        lf.schedule_request_id,
-        lf.version as previous_version,
-        lf.assignment_revision as previous_assignment_revision,
-        lf.assignment_confirmed_revision as previous_confirmed_revision
-      from locked_flights lf, updated_member u
-      where exists (
-          select 1 from eligible e where e.requires_work_transfer
-        )
-        and lf.status in ('draft', 'offered', 'accepted', 'briefed')
-    ),
-    reassigned_flights as (
-      update flights f
-      set
-        pilot_membership_id = r.id,
-        version = f.version + 1,
-        assignment_revision = f.assignment_revision + 1,
-        assignment_confirmed_revision = null,
-        assignment_confirmed_at = null,
-        status = case
-          when fc.previous_status in ('accepted', 'briefed') then 'offered'::flight_status
-          else fc.previous_status
-        end,
-        updated_at = ${changedAt}
-      from flight_candidates fc, replacement r
-      where f.id = fc.id
-        and f.tenant_id = ${input.tenantId}::uuid
-        and f.pilot_membership_id = ${input.membershipId}::uuid
-        and f.status = fc.previous_status
-        and f.version = fc.previous_version
-      returning
-        f.id,
-        f.schedule_request_id,
-        fc.previous_status,
-        f.status as next_status,
-        fc.previous_version,
-        f.version as next_version,
-        fc.previous_assignment_revision,
-        f.assignment_revision as next_assignment_revision,
-        fc.previous_confirmed_revision
-    ),
-    request_candidates as materialized (
-      select
-        lr.id,
-        lr.status as request_status,
-        lr.version as previous_version
-      from locked_requests lr, updated_member u
-      where lr.pilot_membership_id = u.id
-        and lr.status in ('pending', 'in_review', 'partially_fulfilled')
-    ),
-    reassigned_requests as (
-      update schedule_requests sr
-      set
-        pilot_membership_id = r.id,
-        version = sr.version + 1,
-        updated_at = ${changedAt}
-      from request_candidates rc, replacement r
-      where sr.id = rc.id
-        and sr.tenant_id = ${input.tenantId}::uuid
-        and sr.pilot_membership_id = ${input.membershipId}::uuid
-        and sr.status = rc.request_status
-        and sr.version = rc.previous_version
-      returning
-        sr.id,
-        rc.request_status,
-        rc.previous_version,
-        sr.version as next_version
-    ),
-    recorded_flight_audit as (
-      insert into audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
-      )
-      select
-        ${input.tenantId}::uuid,
-        ${input.actorMembershipId}::uuid,
-        'flight.assignment_reassigned',
-        'flight',
-        rf.id::text,
-        jsonb_build_object(
-          'before', jsonb_build_object(
-            'pilotMembershipId', ${input.membershipId}::uuid,
-            'status', rf.previous_status,
-            'version', rf.previous_version,
-            'assignmentRevision', rf.previous_assignment_revision,
-            'assignmentConfirmedRevision', rf.previous_confirmed_revision
-          ),
-          'after', jsonb_build_object(
-            'pilotMembershipId', ${replacementId}::uuid,
-            'status', rf.next_status,
-            'version', rf.next_version,
-            'assignmentRevision', rf.next_assignment_revision,
-            'assignmentConfirmedRevision', null
-          ),
-          'acceptanceInvalidated', rf.previous_status in ('accepted', 'briefed'),
-          'reason', 'member_became_ineligible'
-        ),
-        ${changedAt}
-      from reassigned_flights rf
-      returning id
-    ),
-    recorded_request_audit as (
-      insert into audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
-      )
-      select
-        ${input.tenantId}::uuid,
-        ${input.actorMembershipId}::uuid,
-        'schedule_request.assignment_reassigned',
-        'schedule_request',
-        rr.id::text,
-        jsonb_build_object(
-          'before', jsonb_build_object(
-            'pilotMembershipId', ${input.membershipId}::uuid,
-            'status', rr.request_status,
-            'version', rr.previous_version
-          ),
-          'after', jsonb_build_object(
-            'pilotMembershipId', ${replacementId}::uuid,
-            'status', rr.request_status,
-            'version', rr.next_version
-          ),
-          'reason', 'member_became_ineligible'
-        ),
-        ${changedAt}
-      from reassigned_requests rr
-      returning id
-    ),
-    recorded_audit as (
-      insert into audit_events (
-        tenant_id,
-        actor_membership_id,
-        action,
-        entity_type,
-        entity_id,
-        meta,
-        created_at
-      )
-      select
-        u.tenant_id,
-        ${input.actorMembershipId}::uuid,
-        ${input.auditAction ?? "member.updated"},
-        'membership',
-        u.id::text,
-        jsonb_build_object(
-          'before', jsonb_build_object(
-            'role', t.role,
-            'status', t.status,
-            'displayName', t.display_name,
-            'pilotCallsign', t.pilot_callsign
-          ),
-          'after', jsonb_build_object(
-            'role', u.role,
-            'status', u.status,
-            'displayName', u.display_name,
-            'pilotCallsign', u.pilot_callsign
-          ),
-          'reassignedToMembershipId', ${replacementId}::uuid,
-          'reassignedFlightCount', (select count(*)::int from reassigned_flights),
-          'reassignedScheduleRequestCount', (select count(*)::int from reassigned_requests),
-          'flightAuditCount', (select count(*)::int from recorded_flight_audit),
-          'scheduleRequestAuditCount', (select count(*)::int from recorded_request_audit)
-        ),
-        ${changedAt}
-      from updated_member u, target t
-      returning id
-    )
-    select
-      t.id as "targetId",
-      case
-        when ${replacementId}::uuid is not null and not exists (select 1 from replacement)
-          then 'invalid_replacement'
-        when t.role = 'admin'
-          and t.status = 'active'
-          and (t.next_role <> 'admin' or t.next_status <> 'active')
-          and not exists (
-            select 1 from memberships other
-            where other.tenant_id = t.tenant_id
-              and other.id <> t.id
-              and other.role = 'admin'
-              and other.status = 'active'
-          ) then 'last_active_admin'
-        when t.requires_work_transfer
-          and i.active_flight_count > 0
-          then 'active_flight'
-        when t.requires_work_transfer
-          and i.terminal_request_linked_flight_count > 0
-          then 'terminal_request_link'
-        when t.requires_work_transfer
-          and (i.open_flight_count > 0 or i.open_schedule_request_count > 0)
-          and not exists (select 1 from replacement)
-          then 'reassignment_required'
-        else null
-      end as "blockedReason",
-      i.open_flight_count as "openFlightCount",
-      i.active_flight_count as "activeFlightCount",
-      i.open_schedule_request_count as "openScheduleRequestCount",
-      i.terminal_request_linked_flight_count as "terminalRequestLinkedFlightCount",
-      (select count(*)::int from reassigned_flights) as "reassignedFlightCount",
-      (select count(*)::int from reassigned_requests) as "reassignedScheduleRequestCount",
-      u.id,
-      u.tenant_id as "tenantId",
-      u.clerk_user_id as "clerkUserId",
-      u.role,
-      u.display_name as "displayName",
-      u.pilot_callsign as "pilotCallsign",
-      u.simbrief_user_id as "simbriefUserId",
-      u.simbrief_verified_at as "simbriefVerifiedAt",
-      u.navigraph_subject as "navigraphSubject",
-      u.navigraph_username as "navigraphUsername",
-      u.navigraph_connected_at as "navigraphConnectedAt",
-      u.status,
-      u.created_at as "createdAt",
-      u.updated_at as "updatedAt",
-      (select id from recorded_audit limit 1) as "auditId"
-    from target t
-    join impact i on true
-    left join updated_member u on true
-  `);
-
-  const [, result] = await db.batch([lock, operation] as const);
-  const row = result.rows[0] as AdministrativeUpdateRow | undefined;
-  if (!row) return { kind: "not_found" };
-
-  const impact = {
-    openFlightCount: Number(row.openFlightCount),
-    activeFlightCount: Number(row.activeFlightCount),
-    openScheduleRequestCount: Number(row.openScheduleRequestCount),
-    terminalRequestLinkedFlightCount: Number(
-      row.terminalRequestLinkedFlightCount,
-    ),
+  const requestById = new Map(state.requests.map((r) => [r.id, r]));
+  const impact: MemberWorkImpact = {
+    openFlightCount: openFlights.length,
+    activeFlightCount: state.flights.length - openFlights.length,
+    openScheduleRequestCount: state.requests.filter(
+      (request) =>
+        request.pilotMembershipId === target.id &&
+        (OPEN_REQUEST_STATUSES as readonly string[]).includes(request.status),
+    ).length,
+    terminalRequestLinkedFlightCount: openFlights.filter((flight) => {
+      const request = flight.scheduleRequestId
+        ? requestById.get(flight.scheduleRequestId)
+        : undefined;
+      return !!request && TERMINAL_REQUEST_STATUSES.includes(request.status);
+    }).length,
   };
-  if (!row.id || row.blockedReason) {
-    return {
-      kind: "blocked",
-      reason: row.blockedReason ?? "reassignment_required",
-      impact,
-    };
+  const removesLastAdmin =
+    target.role === "admin" &&
+    target.status === "active" &&
+    (nextRole !== "admin" || nextStatus !== "active") &&
+    state.otherActiveAdminCount === 0;
+
+  const blocked = (
+    reason: Extract<AdministrativeUpdateResult, { kind: "blocked" }>["reason"],
+  ): AdministrativeUpdateResult => ({ kind: "blocked", reason, impact });
+  if (replacementId !== null && !replacement) {
+    return blocked("invalid_replacement");
+  }
+  if (removesLastAdmin) return blocked("last_active_admin");
+  if (requiresWorkTransfer && impact.activeFlightCount > 0) {
+    return blocked("active_flight");
+  }
+  if (requiresWorkTransfer && impact.terminalRequestLinkedFlightCount > 0) {
+    return blocked("terminal_request_link");
+  }
+  if (
+    requiresWorkTransfer &&
+    (impact.openFlightCount > 0 || impact.openScheduleRequestCount > 0) &&
+    !replacement
+  ) {
+    return blocked("reassignment_required");
   }
 
+  const flightsToMove = requiresWorkTransfer && replacement ? openFlights : [];
+  const requestsToMove =
+    requiresWorkTransfer && replacement
+      ? state.requests.filter(
+          (request) =>
+            request.pilotMembershipId === target.id &&
+            (OPEN_REQUEST_STATUSES as readonly string[]).includes(
+              request.status,
+            ),
+        )
+      : [];
+  const after = {
+    role: nextRole,
+    status: nextStatus,
+    displayName:
+      input.patch.displayName !== undefined
+        ? input.patch.displayName
+        : target.displayName,
+    pilotCallsign:
+      input.patch.pilotCallsign !== undefined
+        ? input.patch.pilotCallsign
+        : target.pilotCallsign,
+  };
+
+  const statements = [
+    guard(sql`EXISTS (
+      SELECT 1 FROM memberships
+      WHERE tenant_id = ${input.tenantId}
+        AND id = ${target.id}
+        AND role = ${target.role}
+        AND status = ${target.status}
+        AND updated_at = ${ms(target.updatedAt)}
+    )`),
+    guard(sql`(
+      SELECT count(*) FROM memberships
+      WHERE tenant_id = ${input.tenantId}
+        AND id <> ${target.id}
+        AND role = 'admin'
+        AND status = 'active'
+    ) = ${state.otherActiveAdminCount}`),
+    guard(sql`coalesce((
+      SELECT group_concat(id || ':' || status || ':' || version, ',' ORDER BY id)
+      FROM flights
+      WHERE tenant_id = ${input.tenantId}
+        AND pilot_membership_id = ${target.id}
+        AND status IN ('draft', 'offered', 'accepted', 'briefed', 'active')
+    ), '') = ${fingerprint(state.flights)}`),
+    guard(sql`coalesce((
+      SELECT group_concat(sr.id || ':' || sr.status || ':' || sr.version, ',' ORDER BY sr.id)
+      FROM schedule_requests sr
+      WHERE sr.tenant_id = ${input.tenantId}
+        AND (
+          sr.pilot_membership_id = ${target.id}
+          OR EXISTS (
+            SELECT 1 FROM flights candidate
+            WHERE candidate.tenant_id = sr.tenant_id
+              AND candidate.pilot_membership_id = ${target.id}
+              AND candidate.schedule_request_id = sr.id
+              AND candidate.status IN ('draft', 'offered', 'accepted', 'briefed', 'active')
+          )
+        )
+    ), '') = ${fingerprint(state.requests)}`),
+    ...(replacement
+      ? [
+          guard(sql`EXISTS (
+            SELECT 1 FROM memberships
+            WHERE tenant_id = ${input.tenantId}
+              AND id = ${replacement.id}
+              AND role = 'pilot'
+              AND status = 'active'
+          )`),
+        ]
+      : []),
+    db
+      .update(memberships)
+      .set({
+        role: nextRole,
+        displayName: after.displayName,
+        pilotCallsign: after.pilotCallsign,
+        status: nextStatus,
+        updatedAt: changedAt,
+      })
+      .where(
+        and(
+          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.id, target.id),
+        ),
+      ),
+    ...flightsToMove.flatMap((flight) => {
+      const nextFlightStatus =
+        flight.status === "accepted" || flight.status === "briefed"
+          ? "offered"
+          : flight.status;
+      return [
+        db
+          .update(flights)
+          .set({
+            pilotMembershipId: replacement!.id,
+            version: flight.version + 1,
+            assignmentRevision: flight.assignmentRevision + 1,
+            assignmentConfirmedRevision: null,
+            assignmentConfirmedAt: null,
+            status: nextFlightStatus,
+            updatedAt: changedAt,
+          })
+          .where(
+            and(
+              eq(flights.tenantId, input.tenantId),
+              eq(flights.id, flight.id),
+            ),
+          ),
+        insertAudit({
+          tenantId: input.tenantId,
+          actorMembershipId: input.actorMembershipId,
+          action: "flight.assignment_reassigned",
+          entityType: "flight",
+          entityId: flight.id,
+          meta: {
+            before: {
+              pilotMembershipId: target.id,
+              status: flight.status,
+              version: flight.version,
+              assignmentRevision: flight.assignmentRevision,
+              assignmentConfirmedRevision: flight.assignmentConfirmedRevision,
+            },
+            after: {
+              pilotMembershipId: replacementId,
+              status: nextFlightStatus,
+              version: flight.version + 1,
+              assignmentRevision: flight.assignmentRevision + 1,
+              assignmentConfirmedRevision: null,
+            },
+            acceptanceInvalidated:
+              flight.status === "accepted" || flight.status === "briefed",
+            reason: "member_became_ineligible",
+          },
+          createdAt: changedAt,
+        }),
+      ];
+    }),
+    ...requestsToMove.flatMap((request) => [
+      db
+        .update(scheduleRequests)
+        .set({
+          pilotMembershipId: replacement!.id,
+          version: request.version + 1,
+          updatedAt: changedAt,
+        })
+        .where(
+          and(
+            eq(scheduleRequests.tenantId, input.tenantId),
+            eq(scheduleRequests.id, request.id),
+          ),
+        ),
+      insertAudit({
+        tenantId: input.tenantId,
+        actorMembershipId: input.actorMembershipId,
+        action: "schedule_request.assignment_reassigned",
+        entityType: "schedule_request",
+        entityId: request.id,
+        meta: {
+          before: {
+            pilotMembershipId: target.id,
+            status: request.status,
+            version: request.version,
+          },
+          after: {
+            pilotMembershipId: replacementId,
+            status: request.status,
+            version: request.version + 1,
+          },
+          reason: "member_became_ineligible",
+        },
+        createdAt: changedAt,
+      }),
+    ]),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.actorMembershipId,
+      action: input.auditAction ?? "member.updated",
+      entityType: "membership",
+      entityId: target.id,
+      meta: {
+        before: {
+          role: target.role,
+          status: target.status,
+          displayName: target.displayName,
+          pilotCallsign: target.pilotCallsign,
+        },
+        after,
+        reassignedToMembershipId: replacementId,
+        reassignedFlightCount: flightsToMove.length,
+        reassignedScheduleRequestCount: requestsToMove.length,
+        flightAuditCount: flightsToMove.length,
+        scheduleRequestAuditCount: requestsToMove.length,
+      },
+      createdAt: changedAt,
+    }),
+  ];
+  const result = await runAtomic(statements);
+  if (!result) return null;
+
+  const membership = await findMembershipById(input.tenantId, target.id);
+  if (!membership) return { kind: "not_found" };
   return {
     kind: "updated",
-    membership: rawMembership(row as RawMembershipRow),
+    membership,
     impact,
-    reassignedFlightCount: Number(row.reassignedFlightCount),
-    reassignedScheduleRequestCount: Number(row.reassignedScheduleRequestCount),
+    reassignedFlightCount: flightsToMove.length,
+    reassignedScheduleRequestCount: requestsToMove.length,
   };
 }
 
@@ -1118,83 +1006,38 @@ export async function recoverMembershipAsTenantAdmin(input: {
 }): Promise<Membership | null> {
   const db = getDb();
   const recoveredAt = new Date();
-  const lock = db.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 1447126::bigint))`,
-  );
-  const operation = db.execute<AdministrativeUpdateRow>(sql`
-    with recovered as (
-      update memberships m
-      set role = 'admin', status = 'active', updated_at = ${recoveredAt}
-      where m.tenant_id = ${input.tenantId}::uuid
-        and m.id = ${input.membershipId}::uuid
-        and not exists (
-          select 1 from memberships active_admin
-          where active_admin.tenant_id = m.tenant_id
-            and active_admin.role = 'admin'
-            and active_admin.status = 'active'
-        )
-      returning m.*
-    ),
-    recorded_audit as (
-      insert into audit_events (
-        tenant_id, actor_membership_id, action, entity_type, entity_id, meta, created_at
-      )
-      select
-        r.tenant_id,
-        r.id,
-        'member.admin_recovered',
-        'membership',
-        r.id::text,
-        jsonb_build_object('authority', 'verified_clerk_organization_admin'),
-        ${recoveredAt}
-      from recovered r
-      returning id
-    )
-    select
-      r.id,
-      r.tenant_id as "tenantId",
-      r.clerk_user_id as "clerkUserId",
-      r.role,
-      r.display_name as "displayName",
-      r.pilot_callsign as "pilotCallsign",
-      r.simbrief_user_id as "simbriefUserId",
-      r.simbrief_verified_at as "simbriefVerifiedAt",
-      r.navigraph_subject as "navigraphSubject",
-      r.navigraph_username as "navigraphUsername",
-      r.navigraph_connected_at as "navigraphConnectedAt",
-      r.status,
-      r.created_at as "createdAt",
-      r.updated_at as "updatedAt",
-      (select id from recorded_audit limit 1) as "auditId"
-    from recovered r
-  `);
-  const [, result] = await db.batch([lock, operation] as const);
-  const row = result.rows[0] as AdministrativeUpdateRow | undefined;
-  if (!row?.id) return null;
-  return rawMembership(row as RawMembershipRow);
-}
-
-function toDateOrNull(value: Date | string | null): Date | null {
-  return value === null ? null : new Date(value);
-}
-
-function rawMembership(row: RawMembershipRow): Membership {
-  return {
-    id: row.id,
-    tenantId: row.tenantId,
-    clerkUserId: row.clerkUserId,
-    role: row.role,
-    displayName: row.displayName,
-    pilotCallsign: row.pilotCallsign,
-    simbriefUserId: row.simbriefUserId,
-    simbriefVerifiedAt: toDateOrNull(row.simbriefVerifiedAt),
-    navigraphSubject: row.navigraphSubject,
-    navigraphUsername: row.navigraphUsername,
-    navigraphConnectedAt: toDateOrNull(row.navigraphConnectedAt),
-    status: row.status,
-    createdAt: new Date(row.createdAt),
-    updatedAt: new Date(row.updatedAt),
-  };
+  const result = await runAtomic([
+    guard(sql`EXISTS (
+      SELECT 1 FROM memberships
+      WHERE tenant_id = ${input.tenantId} AND id = ${input.membershipId}
+    )`),
+    guard(sql`NOT EXISTS (
+      SELECT 1 FROM memberships active_admin
+      WHERE active_admin.tenant_id = ${input.tenantId}
+        AND active_admin.role = 'admin'
+        AND active_admin.status = 'active'
+    )`),
+    db
+      .update(memberships)
+      .set({ role: "admin", status: "active", updatedAt: recoveredAt })
+      .where(
+        and(
+          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.id, input.membershipId),
+        ),
+      ),
+    insertAudit({
+      tenantId: input.tenantId,
+      actorMembershipId: input.membershipId,
+      action: "member.admin_recovered",
+      entityType: "membership",
+      entityId: input.membershipId,
+      meta: { authority: "verified_clerk_organization_admin" },
+      createdAt: recoveredAt,
+    }),
+  ]);
+  if (!result) return null;
+  return findMembershipById(input.tenantId, input.membershipId);
 }
 
 export async function markSimbriefVerified(input: {
