@@ -720,15 +720,60 @@ describe("administrative member transactions (D1)", () => {
 
 async function seedFixtures({ db }: TestDatabase): Promise<void> {
   await db.insert(tenants).values([
-    { id: TENANT_ONE, slug: "admin-test-one", name: "Admin Test One", clerkOrgId: "org_admin_test_one" },
-    { id: TENANT_TWO, slug: "admin-test-two", name: "Admin Test Two", clerkOrgId: "org_admin_test_two" },
+    {
+      id: TENANT_ONE,
+      slug: "admin-test-one",
+      name: "Admin Test One",
+      clerkOrgId: "org_admin_test_one",
+    },
+    {
+      id: TENANT_TWO,
+      slug: "admin-test-two",
+      name: "Admin Test Two",
+      clerkOrgId: "org_admin_test_two",
+    },
   ]);
   await db.insert(memberships).values([
-    { id: ADMIN_ONE, tenantId: TENANT_ONE, clerkUserId: "admin_one", role: "admin", displayName: "Admin One", status: "active" },
-    { id: ADMIN_TWO, tenantId: TENANT_ONE, clerkUserId: "admin_two", role: "admin", displayName: "Admin Two", status: "active" },
-    { id: PILOT_ONE, tenantId: TENANT_ONE, clerkUserId: "pilot_one", role: "pilot", displayName: "Pilot One", status: "active" },
-    { id: PILOT_TWO, tenantId: TENANT_ONE, clerkUserId: "pilot_two", role: "pilot", displayName: "Pilot Two", status: "active" },
-    { id: OUTSIDE_PILOT, tenantId: TENANT_TWO, clerkUserId: "outside_pilot", role: "pilot", displayName: "Outside Pilot", status: "active" },
+    {
+      id: ADMIN_ONE,
+      tenantId: TENANT_ONE,
+      clerkUserId: "admin_one",
+      role: "admin",
+      displayName: "Admin One",
+      status: "active",
+    },
+    {
+      id: ADMIN_TWO,
+      tenantId: TENANT_ONE,
+      clerkUserId: "admin_two",
+      role: "admin",
+      displayName: "Admin Two",
+      status: "active",
+    },
+    {
+      id: PILOT_ONE,
+      tenantId: TENANT_ONE,
+      clerkUserId: "pilot_one",
+      role: "pilot",
+      displayName: "Pilot One",
+      status: "active",
+    },
+    {
+      id: PILOT_TWO,
+      tenantId: TENANT_ONE,
+      clerkUserId: "pilot_two",
+      role: "pilot",
+      displayName: "Pilot Two",
+      status: "active",
+    },
+    {
+      id: OUTSIDE_PILOT,
+      tenantId: TENANT_TWO,
+      clerkUserId: "outside_pilot",
+      role: "pilot",
+      displayName: "Outside Pilot",
+      status: "active",
+    },
   ]);
   const now = new Date();
   await db.insert(scheduleRequests).values({

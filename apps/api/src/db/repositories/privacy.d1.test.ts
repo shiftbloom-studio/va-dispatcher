@@ -718,10 +718,23 @@ describe("privacy lifecycle repository (D1)", () => {
         ["membership", "select 1 from memberships where id=?", SUBJECT_ONE],
         ["request", "select 1 from schedule_requests where id=?", REQUEST_ONE],
         ["flight", "select 1 from flights where id=?", FLIGHT_ONE],
-        ["message", "select 1 from acars_messages where flight_id=?", FLIGHT_ONE],
+        [
+          "message",
+          "select 1 from acars_messages where flight_id=?",
+          FLIGHT_ONE,
+        ],
         ["device", "select 1 from simulator_devices where id=?", DEVICE_ONE],
-        ["telemetry", "select 1 from flight_telemetry_current where flight_id=?", FLIGHT_ONE],
-        ["oooi", "select 1 from flight_oooi_events where flight_id=? and device_id=?", FLIGHT_ONE, DEVICE_ONE],
+        [
+          "telemetry",
+          "select 1 from flight_telemetry_current where flight_id=?",
+          FLIGHT_ONE,
+        ],
+        [
+          "oooi",
+          "select 1 from flight_oooi_events where flight_id=? and device_id=?",
+          FLIGHT_ONE,
+          DEVICE_ONE,
+        ],
       ];
       const persisted: Array<{ entity: string }> = [];
       for (const [entity, statement, ...params] of probes) {
@@ -803,25 +816,122 @@ async function seedFixtures({ db }: TestDatabase) {
     },
   ]);
   await db.insert(memberships).values([
-    { id: ADMIN_ONE, tenantId: TENANT_ONE, clerkUserId: "admin_one", role: "admin", displayName: "Admin One", status: "active" },
-    { id: ADMIN_TWO, tenantId: TENANT_ONE, clerkUserId: "admin_two", role: "admin", displayName: "Admin Two", status: "active" },
-    { id: SUBJECT_ONE, tenantId: TENANT_ONE, clerkUserId: "subject_one", role: "pilot", displayName: "Subject One", status: "disabled" },
-    { id: SUBJECT_TWO, tenantId: TENANT_TWO, clerkUserId: "subject_two", role: "pilot", displayName: "Subject Two", status: "disabled" },
-    { id: ADMIN_THREE, tenantId: TENANT_TWO, clerkUserId: "admin_two_tenant", role: "admin", displayName: "Admin Two Tenant", status: "active" },
+    {
+      id: ADMIN_ONE,
+      tenantId: TENANT_ONE,
+      clerkUserId: "admin_one",
+      role: "admin",
+      displayName: "Admin One",
+      status: "active",
+    },
+    {
+      id: ADMIN_TWO,
+      tenantId: TENANT_ONE,
+      clerkUserId: "admin_two",
+      role: "admin",
+      displayName: "Admin Two",
+      status: "active",
+    },
+    {
+      id: SUBJECT_ONE,
+      tenantId: TENANT_ONE,
+      clerkUserId: "subject_one",
+      role: "pilot",
+      displayName: "Subject One",
+      status: "disabled",
+    },
+    {
+      id: SUBJECT_TWO,
+      tenantId: TENANT_TWO,
+      clerkUserId: "subject_two",
+      role: "pilot",
+      displayName: "Subject Two",
+      status: "disabled",
+    },
+    {
+      id: ADMIN_THREE,
+      tenantId: TENANT_TWO,
+      clerkUserId: "admin_two_tenant",
+      role: "admin",
+      displayName: "Admin Two Tenant",
+      status: "active",
+    },
   ]);
   const windowEnd = new Date(TWO_YEARS_AGO.getTime() + 2 * HOUR_MS);
   await db.insert(scheduleRequests).values([
-    { id: REQUEST_ONE, tenantId: TENANT_ONE, pilotMembershipId: SUBJECT_ONE, title: "Synthetic request", notes: "synthetic request notes", windowStart: TWO_YEARS_AGO, windowEnd, desiredFlightCount: 1, status: "cancelled" },
-    { id: REQUEST_TWO, tenantId: TENANT_TWO, pilotMembershipId: SUBJECT_TWO, title: "Outside request", notes: "outside tenant", windowStart: TWO_YEARS_AGO, windowEnd, desiredFlightCount: 1, status: "cancelled" },
+    {
+      id: REQUEST_ONE,
+      tenantId: TENANT_ONE,
+      pilotMembershipId: SUBJECT_ONE,
+      title: "Synthetic request",
+      notes: "synthetic request notes",
+      windowStart: TWO_YEARS_AGO,
+      windowEnd,
+      desiredFlightCount: 1,
+      status: "cancelled",
+    },
+    {
+      id: REQUEST_TWO,
+      tenantId: TENANT_TWO,
+      pilotMembershipId: SUBJECT_TWO,
+      title: "Outside request",
+      notes: "outside tenant",
+      windowStart: TWO_YEARS_AGO,
+      windowEnd,
+      desiredFlightCount: 1,
+      status: "cancelled",
+    },
   ]);
   const eta = new Date(TWO_YEARS_AGO.getTime() + HOUR_MS);
   await db.insert(flights).values([
-    { id: FLIGHT_ONE, tenantId: TENANT_ONE, scheduleRequestId: REQUEST_ONE, pilotMembershipId: SUBJECT_ONE, flightNumber: "PRV101", depIcao: "EKCH", arrIcao: "ENGM", etd: TWO_YEARS_AGO, eta, status: "completed" },
-    { id: FLIGHT_TWO, tenantId: TENANT_TWO, scheduleRequestId: REQUEST_TWO, pilotMembershipId: SUBJECT_TWO, flightNumber: "PRV202", depIcao: "ENGM", arrIcao: "ESSA", etd: TWO_YEARS_AGO, eta, status: "completed" },
+    {
+      id: FLIGHT_ONE,
+      tenantId: TENANT_ONE,
+      scheduleRequestId: REQUEST_ONE,
+      pilotMembershipId: SUBJECT_ONE,
+      flightNumber: "PRV101",
+      depIcao: "EKCH",
+      arrIcao: "ENGM",
+      etd: TWO_YEARS_AGO,
+      eta,
+      status: "completed",
+    },
+    {
+      id: FLIGHT_TWO,
+      tenantId: TENANT_TWO,
+      scheduleRequestId: REQUEST_TWO,
+      pilotMembershipId: SUBJECT_TWO,
+      flightNumber: "PRV202",
+      depIcao: "ENGM",
+      arrIcao: "ESSA",
+      etd: TWO_YEARS_AGO,
+      eta,
+      status: "completed",
+    },
   ]);
   await db.insert(simulatorDevices).values([
-    { id: DEVICE_ONE, tenantId: TENANT_ONE, membershipId: SUBJECT_ONE, name: "Subject simulator", tokenMac: "device-token-mac-one", status: "active", lastSequence: 10, lastIngestAt: sampleAt, lastSeenAt: sampleAt },
-    { id: DEVICE_TWO, tenantId: TENANT_TWO, membershipId: SUBJECT_TWO, name: "Outside simulator", tokenMac: "device-token-mac-two", status: "active", lastSequence: 10, lastIngestAt: sampleAt, lastSeenAt: sampleAt },
+    {
+      id: DEVICE_ONE,
+      tenantId: TENANT_ONE,
+      membershipId: SUBJECT_ONE,
+      name: "Subject simulator",
+      tokenMac: "device-token-mac-one",
+      status: "active",
+      lastSequence: 10,
+      lastIngestAt: sampleAt,
+      lastSeenAt: sampleAt,
+    },
+    {
+      id: DEVICE_TWO,
+      tenantId: TENANT_TWO,
+      membershipId: SUBJECT_TWO,
+      name: "Outside simulator",
+      tokenMac: "device-token-mac-two",
+      status: "active",
+      lastSequence: 10,
+      lastIngestAt: sampleAt,
+      lastSeenAt: sampleAt,
+    },
   ]);
   const sample = {
     phase: "parked" as const,
@@ -833,21 +943,85 @@ async function seedFixtures({ db }: TestDatabase) {
     sequence: 10,
   };
   await db.insert(flightTelemetryCurrent).values([
-    { ...sample, flightId: FLIGHT_ONE, tenantId: TENANT_ONE, membershipId: SUBJECT_ONE, deviceId: DEVICE_ONE, latitude: 55.618, longitude: 12.656 },
-    { ...sample, flightId: FLIGHT_TWO, tenantId: TENANT_TWO, membershipId: SUBJECT_TWO, deviceId: DEVICE_TWO, latitude: 59.651, longitude: 17.918, altitudeFeet: 30 },
+    {
+      ...sample,
+      flightId: FLIGHT_ONE,
+      tenantId: TENANT_ONE,
+      membershipId: SUBJECT_ONE,
+      deviceId: DEVICE_ONE,
+      latitude: 55.618,
+      longitude: 12.656,
+    },
+    {
+      ...sample,
+      flightId: FLIGHT_TWO,
+      tenantId: TENANT_TWO,
+      membershipId: SUBJECT_TWO,
+      deviceId: DEVICE_TWO,
+      latitude: 59.651,
+      longitude: 17.918,
+      altitudeFeet: 30,
+    },
   ]);
   const leaseExpiresAt = new Date("2026-08-10T10:00:30Z");
   await db.insert(flightTelemetryLeases).values([
-    { flightId: FLIGHT_ONE, tenantId: TENANT_ONE, membershipId: SUBJECT_ONE, deviceId: DEVICE_ONE, leaseExpiresAt },
-    { flightId: FLIGHT_TWO, tenantId: TENANT_TWO, membershipId: SUBJECT_TWO, deviceId: DEVICE_TWO, leaseExpiresAt },
+    {
+      flightId: FLIGHT_ONE,
+      tenantId: TENANT_ONE,
+      membershipId: SUBJECT_ONE,
+      deviceId: DEVICE_ONE,
+      leaseExpiresAt,
+    },
+    {
+      flightId: FLIGHT_TWO,
+      tenantId: TENANT_TWO,
+      membershipId: SUBJECT_TWO,
+      deviceId: DEVICE_TWO,
+      leaseExpiresAt,
+    },
   ]);
   await db.insert(flightTelemetryTrack).values([
-    { ...sample, id: TRACK_ONE, tenantId: TENANT_ONE, flightId: FLIGHT_ONE, membershipId: SUBJECT_ONE, deviceId: DEVICE_ONE, latitude: 55.618, longitude: 12.656 },
-    { ...sample, id: TRACK_TWO, tenantId: TENANT_TWO, flightId: FLIGHT_TWO, membershipId: SUBJECT_TWO, deviceId: DEVICE_TWO, latitude: 59.651, longitude: 17.918, altitudeFeet: 30 },
+    {
+      ...sample,
+      id: TRACK_ONE,
+      tenantId: TENANT_ONE,
+      flightId: FLIGHT_ONE,
+      membershipId: SUBJECT_ONE,
+      deviceId: DEVICE_ONE,
+      latitude: 55.618,
+      longitude: 12.656,
+    },
+    {
+      ...sample,
+      id: TRACK_TWO,
+      tenantId: TENANT_TWO,
+      flightId: FLIGHT_TWO,
+      membershipId: SUBJECT_TWO,
+      deviceId: DEVICE_TWO,
+      latitude: 59.651,
+      longitude: 17.918,
+      altitudeFeet: 30,
+    },
   ]);
   await db.insert(flightOooiEvents).values([
-    { tenantId: TENANT_ONE, flightId: FLIGHT_ONE, eventType: "out", occurredAt: sampleAt, source: "telemetry", deviceId: DEVICE_ONE, reason: "subject device event" },
-    { tenantId: TENANT_TWO, flightId: FLIGHT_TWO, eventType: "out", occurredAt: sampleAt, source: "telemetry", deviceId: DEVICE_TWO, reason: "outside device event" },
+    {
+      tenantId: TENANT_ONE,
+      flightId: FLIGHT_ONE,
+      eventType: "out",
+      occurredAt: sampleAt,
+      source: "telemetry",
+      deviceId: DEVICE_ONE,
+      reason: "subject device event",
+    },
+    {
+      tenantId: TENANT_TWO,
+      flightId: FLIGHT_TWO,
+      eventType: "out",
+      occurredAt: sampleAt,
+      source: "telemetry",
+      deviceId: DEVICE_TWO,
+      reason: "outside device event",
+    },
   ]);
   await db.insert(acarsMessages).values({
     tenantId: TENANT_ONE,

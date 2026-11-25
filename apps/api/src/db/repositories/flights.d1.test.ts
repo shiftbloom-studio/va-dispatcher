@@ -54,12 +54,34 @@ describe("flight repository D1 contracts", () => {
     await database.reset();
     const { db } = database;
     await db.insert(tenants).values([
-      { id: tenantId, slug: "vsas", name: "Virtual SAS", clerkOrgId: "org_vsas" },
-      { id: otherTenantId, slug: "other", name: "Other VA", clerkOrgId: "org_other" },
+      {
+        id: tenantId,
+        slug: "vsas",
+        name: "Virtual SAS",
+        clerkOrgId: "org_vsas",
+      },
+      {
+        id: otherTenantId,
+        slug: "other",
+        name: "Other VA",
+        clerkOrgId: "org_other",
+      },
     ]);
     await db.insert(memberships).values([
-      { id: pilotMembershipId, tenantId, clerkUserId: "user_pilot", role: "pilot", status: "active" },
-      { id: dispatcherMembershipId, tenantId, clerkUserId: "user_dispatcher", role: "dispatcher", status: "active" },
+      {
+        id: pilotMembershipId,
+        tenantId,
+        clerkUserId: "user_pilot",
+        role: "pilot",
+        status: "active",
+      },
+      {
+        id: dispatcherMembershipId,
+        tenantId,
+        clerkUserId: "user_dispatcher",
+        role: "dispatcher",
+        status: "active",
+      },
     ]);
     await db.insert(scheduleRequests).values({
       id: scheduleRequestId,
@@ -90,19 +112,62 @@ describe("flight repository D1 contracts", () => {
     });
     for (const row of [
       flight(ids.stale, "SK001", at(-DAY - 1), at(-22 * HOUR), "accepted"),
-      flight(ids.overdueBoundary, "SK002", at(-DAY), at(-22 * HOUR), "accepted"),
+      flight(
+        ids.overdueBoundary,
+        "SK002",
+        at(-DAY),
+        at(-22 * HOUR),
+        "accepted",
+      ),
       flight(ids.overdue, "SK003", at(-HOUR), at(20 * MINUTE), "briefed"),
       flight(ids.upcoming, "SK004", at(DAY), at(26 * HOUR), "accepted"),
-      flight(ids.horizonBoundary, "SK005", at(7 * DAY), at(7 * DAY + HOUR), "accepted"),
-      flight(ids.beyondHorizon, "SK006", at(7 * DAY + 1), at(7 * DAY + HOUR), "briefed"),
-      flight(ids.activeOld, "SK007", at(-30 * DAY), at(-30 * DAY + HOUR), "active"),
-      flight(ids.terminal, "SK008", at(-30 * MINUTE), at(30 * MINUTE), "completed"),
-      flight(ids.foreign, "OT001", at(HOUR), at(2 * HOUR), "accepted", otherTenantId),
+      flight(
+        ids.horizonBoundary,
+        "SK005",
+        at(7 * DAY),
+        at(7 * DAY + HOUR),
+        "accepted",
+      ),
+      flight(
+        ids.beyondHorizon,
+        "SK006",
+        at(7 * DAY + 1),
+        at(7 * DAY + HOUR),
+        "briefed",
+      ),
+      flight(
+        ids.activeOld,
+        "SK007",
+        at(-30 * DAY),
+        at(-30 * DAY + HOUR),
+        "active",
+      ),
+      flight(
+        ids.terminal,
+        "SK008",
+        at(-30 * MINUTE),
+        at(30 * MINUTE),
+        "completed",
+      ),
+      flight(
+        ids.foreign,
+        "OT001",
+        at(HOUR),
+        at(2 * HOUR),
+        "accepted",
+        otherTenantId,
+      ),
     ]) {
       await db.insert(flights).values(row);
     }
     await db.insert(flights).values({
-      ...flight(ids.declined, "SK009", at(2 * DAY), at(2 * DAY + HOUR), "declined"),
+      ...flight(
+        ids.declined,
+        "SK009",
+        at(2 * DAY),
+        at(2 * DAY + HOUR),
+        "declined",
+      ),
       pilotMembershipId,
       version: 3,
     });
@@ -118,7 +183,8 @@ describe("flight repository D1 contracts", () => {
       create trigger reject_${table}_insert before insert on ${table}
       begin select raise(abort, '${message}'); end
     `);
-    return () => database.query(`drop trigger if exists reject_${table}_insert`);
+    return () =>
+      database.query(`drop trigger if exists reject_${table}_insert`);
   }
 
   it("includes exact window boundaries, active flights, and current-month completions while excluding stale, future, and foreign rows", async () => {
@@ -166,7 +232,10 @@ describe("flight repository D1 contracts", () => {
       ),
     ).resolves.toBe(1);
 
-    const restore = await rejectInsertsInto("audit_events", "synthetic audit insert failure");
+    const restore = await rejectInsertsInto(
+      "audit_events",
+      "synthetic audit insert failure",
+    );
     try {
       await expect(
         createFlight({
@@ -183,7 +252,9 @@ describe("flight repository D1 contracts", () => {
       await restore();
     }
     await expect(
-      count("select count(*) as count from flights where flight_number='SK102'"),
+      count(
+        "select count(*) as count from flights where flight_number='SK102'",
+      ),
     ).resolves.toBe(0);
   });
 

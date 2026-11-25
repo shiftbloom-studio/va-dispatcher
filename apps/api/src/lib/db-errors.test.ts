@@ -20,9 +20,9 @@ describe("isUniqueViolation", () => {
   });
 
   it("does not hide unrelated database failures", () => {
-    expect(
-      isUniqueViolation(new Error("FOREIGN KEY constraint failed")),
-    ).toBe(false);
+    expect(isUniqueViolation(new Error("FOREIGN KEY constraint failed"))).toBe(
+      false,
+    );
     expect(isUniqueViolation(new Error("connection lost"))).toBe(false);
   });
 });

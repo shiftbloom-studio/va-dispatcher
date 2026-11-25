@@ -106,7 +106,11 @@ describe("schedule request repository D1 contracts", () => {
       desiredFlightCount: 1,
       preferences,
     });
-    expect(created).toMatchObject({ status: "pending", version: 1, preferences });
+    expect(created).toMatchObject({
+      status: "pending",
+      version: 1,
+      preferences,
+    });
     await expect(auditCount(created.id)).resolves.toBe(1);
 
     const restore = await rejectAuditInserts();
@@ -196,9 +200,11 @@ describe("schedule request repository D1 contracts", () => {
     });
     expect(cancelled).toMatchObject({ status: "cancelled", version: 3 });
 
-    const rows = await database.query<{ id: string; status: string; version: number }>(
-      "select id, status, version from flights order by id",
-    );
+    const rows = await database.query<{
+      id: string;
+      status: string;
+      version: number;
+    }>("select id, status, version from flights order by id");
     expect(rows).toEqual([
       { id: flightIds.offered, status: "cancelled", version: 2 },
       { id: flightIds.briefed, status: "cancelled", version: 2 },
@@ -217,7 +223,10 @@ describe("schedule request repository D1 contracts", () => {
       reason: "Pilot unavailable",
       linkedFlightAction: "cancel_predeparture",
     });
-    const flightAudits = await database.query<{ entity_id: string; meta: string }>(
+    const flightAudits = await database.query<{
+      entity_id: string;
+      meta: string;
+    }>(
       "select entity_id, meta from audit_events where entity_type = 'flight' order by entity_id",
     );
     expect(flightAudits.map((row) => row.entity_id)).toEqual([
@@ -246,7 +255,9 @@ describe("schedule request repository D1 contracts", () => {
     } finally {
       await restore();
     }
-    await expect(findScheduleRequest(tenantId, requestId)).resolves.toMatchObject({
+    await expect(
+      findScheduleRequest(tenantId, requestId),
+    ).resolves.toMatchObject({
       status: "partially_fulfilled",
       version: 2,
     });

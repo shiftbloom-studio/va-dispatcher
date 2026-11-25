@@ -27,11 +27,11 @@
     "test:web": "pnpm --filter @va-dispatch/web test",
     "test:e2e:integrated": "pnpm --filter @va-dispatch/web test:e2e:integrated",
     "lint": "pnpm -r --if-present lint",
-    "format:check": "prettier --check package.json pnpm-workspace.yaml vercel.ts README.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md AGENTS.md docs wiki .github apps packages",
+    "format:check": "prettier --check package.json pnpm-workspace.yaml README.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md AGENTS.md docs wiki .github apps packages",
     "security:audit": "pnpm audit --audit-level high",
     "typecheck": "pnpm -r --if-present typecheck",
-    "db:push": "pnpm --filter @va-dispatch/api db:push",
-    "db:studio": "pnpm --filter @va-dispatch/api db:studio"
+    "db:generate": "pnpm --filter @va-dispatch/api db:generate",
+    "db:migrate:local": "pnpm --filter @va-dispatch/api db:migrate:local"
   },
   "engines": {
     "node": ">=24"

@@ -64,7 +64,10 @@ describe("Worker scheduled jobs", () => {
 
   it("keeps the wrangler cron triggers in sync", async () => {
     const { readFileSync } = await import("node:fs");
-    const config = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+    const config = readFileSync(
+      new URL("../wrangler.jsonc", import.meta.url),
+      "utf8",
+    );
     expect(config).toContain(
       `"triggers": { "crons": ["${CRON_ACARS_POLL}", "${CRON_PRIVACY_LIFECYCLE}"] }`,
     );

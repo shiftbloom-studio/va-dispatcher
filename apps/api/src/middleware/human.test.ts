@@ -39,7 +39,9 @@ describe("bot protection policy", () => {
     expect(botCheckLevel("PATCH", "/api/v1/me")).toBe("basic");
     expect(botCheckLevel("DELETE", "/api/v1/members/member-id")).toBe("basic");
     expect(botCheckLevel("GET", "/api/v1/flights")).toBeNull();
-    expect(botCheckLevel("POST", "/api/v1/internal/cron/acars-poll")).toBeNull();
+    expect(
+      botCheckLevel("POST", "/api/v1/internal/cron/acars-poll"),
+    ).toBeNull();
   });
 
   it("blocks automated requests before protected handlers run", async () => {
@@ -85,7 +87,9 @@ describe("bot protection policy", () => {
     });
     const { app } = protectedApp();
     const allowed = await app.request(
-      requestWithScore(1, { headers: { "X-E2E-Fixture-Token": fixtureSecret } }),
+      requestWithScore(1, {
+        headers: { "X-E2E-Fixture-Token": fixtureSecret },
+      }),
     );
     expect(allowed.status).toBe(200);
     const denied = await app.request(

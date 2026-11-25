@@ -248,9 +248,7 @@ async function flightFeatureFixtures(
   );
 }
 
-test("public legal pages load without a consent banner", async ({
-  page,
-}) => {
+test("public legal pages load without a consent banner", async ({ page }) => {
   await page.goto("/privacy");
   await expect(
     page.getByRole("heading", { name: "Privacy Notice", exact: true }),

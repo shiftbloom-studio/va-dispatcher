@@ -6,7 +6,8 @@ import { loadLegalConfig } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Datenschutzerklärung",
-  description: "Wie vSAS Live Operations personenbezogene Daten verarbeitet und welche notwendigen Browserdaten gespeichert werden.",
+  description:
+    "Wie vSAS Live Operations personenbezogene Daten verarbeitet und welche notwendigen Browserdaten gespeichert werden.",
   alternates: { languages: { en: "/privacy", de: "/datenschutz" } },
 };
 

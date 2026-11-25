@@ -124,12 +124,39 @@ describe("SimBrief D1 atomicity contracts", () => {
     await database.reset();
     const { db } = database;
     await db.insert(tenants).values([
-      { id: tenantId, slug: "vsas", name: "Virtual SAS", clerkOrgId: "org_test" },
-      { id: otherTenantId, slug: "other", name: "Other VA", clerkOrgId: "org_other" },
+      {
+        id: tenantId,
+        slug: "vsas",
+        name: "Virtual SAS",
+        clerkOrgId: "org_test",
+      },
+      {
+        id: otherTenantId,
+        slug: "other",
+        name: "Other VA",
+        clerkOrgId: "org_other",
+      },
     ]);
     await db.insert(memberships).values([
-      { id: dispatcherId, tenantId, clerkUserId: "dispatcher", role: "dispatcher", displayName: "Trusted Dispatcher", pilotCallsign: "DISPATCH", status: "active" },
-      { id: pilotId, tenantId, clerkUserId: "pilot", role: "pilot", displayName: "Synthetic Pilot", pilotCallsign: "SAS123", simbriefUserId: "123456", status: "active" },
+      {
+        id: dispatcherId,
+        tenantId,
+        clerkUserId: "dispatcher",
+        role: "dispatcher",
+        displayName: "Trusted Dispatcher",
+        pilotCallsign: "DISPATCH",
+        status: "active",
+      },
+      {
+        id: pilotId,
+        tenantId,
+        clerkUserId: "pilot",
+        role: "pilot",
+        displayName: "Synthetic Pilot",
+        pilotCallsign: "SAS123",
+        simbriefUserId: "123456",
+        status: "active",
+      },
     ]);
     await db.insert(flights).values({
       id: flightId,
@@ -191,7 +218,10 @@ describe("SimBrief D1 atomicity contracts", () => {
   });
 
   it("rolls preparation back when its audit insert fails", async () => {
-    await database.failInserts("audit_events", "new.action = 'simbrief.dispatch_prepare'");
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'simbrief.dispatch_prepare'",
+    );
 
     await expect(prepare(dispatchA)).rejects.toThrow();
     const [state] = await sql`
@@ -266,7 +296,10 @@ describe("SimBrief D1 atomicity contracts", () => {
 
   it("rolls generation back when its audit insert fails", async () => {
     await prepare(dispatchA);
-    await database.failInserts("audit_events", "new.action = 'simbrief.dispatch_generate'");
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'simbrief.dispatch_generate'",
+    );
 
     await expect(start(dispatchA)).rejects.toThrow();
     const [state] = await sql`
@@ -410,7 +443,10 @@ describe("SimBrief D1 atomicity contracts", () => {
   });
 
   it("rolls flight and release publication back when its audit fails", async () => {
-    await database.failInserts("audit_events", "new.action = 'flight.release_publish'");
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'flight.release_publish'",
+    );
 
     await expect(publishRelease()).rejects.toThrow();
     const [state] = await sql`
@@ -444,9 +480,7 @@ describe("SimBrief D1 atomicity contracts", () => {
     `;
     expect(new Date(Number(state?.callback_expires_at))).toEqual(expiry);
     expect(state?.last_error).toBe("Still waiting for OFP");
-    expect(
-      Number(state?.updated_at),
-    ).toBeGreaterThanOrEqual(now.getTime());
+    expect(Number(state?.updated_at)).toBeGreaterThanOrEqual(now.getTime());
   });
 
   it("atomically stores the OFP, verifies the pilot, and audits readiness", async () => {
@@ -483,7 +517,10 @@ describe("SimBrief D1 atomicity contracts", () => {
   it("rolls OFP state and pilot verification back when ready audit fails", async () => {
     await prepare(dispatchA);
     await start(dispatchA);
-    await database.failInserts("audit_events", "new.action = 'simbrief.dispatch_ready'");
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'simbrief.dispatch_ready'",
+    );
 
     await expect(
       completeSimbriefDispatchAtomic({

@@ -1,12 +1,7 @@
 // Copies drizzle-kit output (drizzle/<timestamp>_<name>/migration.sql) into
 // the flat, numbered layout that `wrangler d1 migrations apply` expects
 // (migrations/0001_<name>.sql). Existing numbered files are never rewritten.
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 

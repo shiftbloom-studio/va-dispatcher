@@ -106,8 +106,22 @@ describe("telemetry D1 atomicity contracts", () => {
       clerkUserId: "user_test",
     });
     for (const flight of [
-      { id: flightA, flightNumber: "SK901", depIcao: "EKCH", arrIcao: "ENGM", etd: "2026-08-12T12:00:00.000Z", eta: "2026-08-12T14:00:00.000Z" },
-      { id: flightB, flightNumber: "SK902", depIcao: "ENGM", arrIcao: "EKCH", etd: "2026-08-12T15:00:00.000Z", eta: "2026-08-12T17:00:00.000Z" },
+      {
+        id: flightA,
+        flightNumber: "SK901",
+        depIcao: "EKCH",
+        arrIcao: "ENGM",
+        etd: "2026-08-12T12:00:00.000Z",
+        eta: "2026-08-12T14:00:00.000Z",
+      },
+      {
+        id: flightB,
+        flightNumber: "SK902",
+        depIcao: "ENGM",
+        arrIcao: "EKCH",
+        etd: "2026-08-12T15:00:00.000Z",
+        eta: "2026-08-12T17:00:00.000Z",
+      },
     ]) {
       await db.insert(flights).values({
         ...flight,
@@ -120,14 +134,29 @@ describe("telemetry D1 atomicity contracts", () => {
       });
     }
     await db.insert(simulatorDevices).values([
-      { id: deviceA, tenantId, membershipId, name: "Device A", tokenMac: "mac-a" },
-      { id: deviceB, tenantId, membershipId, name: "Device B", tokenMac: "mac-b" },
+      {
+        id: deviceA,
+        tenantId,
+        membershipId,
+        name: "Device A",
+        tokenMac: "mac-a",
+      },
+      {
+        id: deviceB,
+        tenantId,
+        membershipId,
+        name: "Device B",
+        tokenMac: "mac-b",
+      },
     ]);
   });
 
   it("rolls back device issuance when its audit record cannot be written", async () => {
     const issuedDevice = "60000000-0000-4000-8000-000000000003";
-    await database.failInserts("audit_events", "new.action = 'telemetry.device_create'");
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'telemetry.device_create'",
+    );
 
     await expect(
       createSimulatorDeviceAtomic({
@@ -292,7 +321,10 @@ describe("telemetry D1 atomicity contracts", () => {
 
   it("rolls back every automatic OOOI and telemetry write when audit fails", async () => {
     await ingest({ phase: "preflight", sequence: 1, sampleAt: now });
-    await database.failInserts("audit_events", "new.action = 'flight.oooi_automatic'");
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'flight.oooi_automatic'",
+    );
 
     await expect(
       ingest({
@@ -777,7 +809,10 @@ describe("telemetry D1 atomicity contracts", () => {
           off_at = ${new Date(now.getTime() + 10_000).toISOString()}
       WHERE id = ${flightA}
     `;
-    await database.failInserts("audit_events", "new.action = 'flight.oooi_correct'");
+    await database.failInserts(
+      "audit_events",
+      "new.action = 'flight.oooi_correct'",
+    );
 
     await expect(
       correctOooiAtomic({

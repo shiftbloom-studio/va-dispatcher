@@ -91,9 +91,9 @@ function validateRuntimeEnvironment(config: Env): void {
         "Invalid production environment: E2E fixture mode is forbidden",
       );
     }
-    const missing = [
-      ["E2E_FIXTURE_SECRET", config.E2E_FIXTURE_SECRET],
-    ].flatMap(([name, value]) => (value ? [] : [name]));
+    const missing = [["E2E_FIXTURE_SECRET", config.E2E_FIXTURE_SECRET]].flatMap(
+      ([name, value]) => (value ? [] : [name]),
+    );
     if (missing.length) {
       throw new Error(
         `Invalid E2E fixture environment: missing ${missing.join(", ")}`,

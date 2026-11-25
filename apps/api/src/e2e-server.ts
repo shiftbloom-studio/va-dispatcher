@@ -166,10 +166,42 @@ async function resetFixtureData() {
     },
   ]);
   await database.db.insert(memberships).values([
-    { id: FIXTURE_IDS.pilot, tenantId: FIXTURE_IDS.tenant, clerkUserId: "user_e2e_pilot", role: "pilot", displayName: "Integrated Test Pilot", pilotCallsign: "SAS101", status: "active" },
-    { id: FIXTURE_IDS.dispatcher, tenantId: FIXTURE_IDS.tenant, clerkUserId: "user_e2e_dispatcher", role: "dispatcher", displayName: "Integrated Test Dispatcher", pilotCallsign: "VSASOPS", status: "active" },
-    { id: FIXTURE_IDS.admin, tenantId: FIXTURE_IDS.tenant, clerkUserId: "user_e2e_admin", role: "admin", displayName: "Integrated Test Administrator", pilotCallsign: "VSASADM", status: "active" },
-    { id: FIXTURE_IDS.outsider, tenantId: FIXTURE_IDS.otherTenant, clerkUserId: "user_e2e_outsider", role: "pilot", displayName: "Outside Test Pilot", pilotCallsign: "OTHER01", status: "active" },
+    {
+      id: FIXTURE_IDS.pilot,
+      tenantId: FIXTURE_IDS.tenant,
+      clerkUserId: "user_e2e_pilot",
+      role: "pilot",
+      displayName: "Integrated Test Pilot",
+      pilotCallsign: "SAS101",
+      status: "active",
+    },
+    {
+      id: FIXTURE_IDS.dispatcher,
+      tenantId: FIXTURE_IDS.tenant,
+      clerkUserId: "user_e2e_dispatcher",
+      role: "dispatcher",
+      displayName: "Integrated Test Dispatcher",
+      pilotCallsign: "VSASOPS",
+      status: "active",
+    },
+    {
+      id: FIXTURE_IDS.admin,
+      tenantId: FIXTURE_IDS.tenant,
+      clerkUserId: "user_e2e_admin",
+      role: "admin",
+      displayName: "Integrated Test Administrator",
+      pilotCallsign: "VSASADM",
+      status: "active",
+    },
+    {
+      id: FIXTURE_IDS.outsider,
+      tenantId: FIXTURE_IDS.otherTenant,
+      clerkUserId: "user_e2e_outsider",
+      role: "pilot",
+      displayName: "Outside Test Pilot",
+      pilotCallsign: "OTHER01",
+      status: "active",
+    },
   ]);
   return FIXTURE_IDS;
 }

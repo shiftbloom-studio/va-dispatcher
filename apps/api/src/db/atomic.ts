@@ -50,8 +50,7 @@ function toD1Value(value: unknown): unknown {
 
 /** A raw SQL fragment or a Drizzle query builder (insert/update/delete/select). */
 export type AtomicStatement =
-  | SQL
-  | { toSQL(): { sql: string; params: unknown[] } };
+  SQL | { toSQL(): { sql: string; params: unknown[] } };
 
 function compile(statement: AtomicStatement): {
   sql: string;

@@ -88,7 +88,10 @@ export const acarsMsgTypeEnum = sqliteEnum("acars_msg_type", [
   "other",
 ]);
 
-export const acarsProviderEnum = sqliteEnum("acars_provider", ["mock", "hoppie"]);
+export const acarsProviderEnum = sqliteEnum("acars_provider", [
+  "mock",
+  "hoppie",
+]);
 
 export const acarsDeliveryStatusEnum = sqliteEnum("acars_delivery_status", [
   "pending",
@@ -97,11 +100,10 @@ export const acarsDeliveryStatusEnum = sqliteEnum("acars_delivery_status", [
   "ambiguous",
 ]);
 
-export const simbriefDispatchStatusEnum = sqliteEnum("simbrief_dispatch_status", [
-  "prepared",
-  "pending",
-  "ready",
-]);
+export const simbriefDispatchStatusEnum = sqliteEnum(
+  "simbrief_dispatch_status",
+  ["prepared", "pending", "ready"],
+);
 
 export const brandPresenceEnum = sqliteEnum("brand_presence", [
   "restrained",
@@ -148,7 +150,10 @@ export const oooiEventTypeEnum = sqliteEnum("oooi_event_type", [
   "in",
 ]);
 
-export const oooiSourceEnum = sqliteEnum("oooi_source", ["telemetry", "manual"]);
+export const oooiSourceEnum = sqliteEnum("oooi_source", [
+  "telemetry",
+  "manual",
+]);
 
 export const privacyPolicyStatusEnum = sqliteEnum("privacy_policy_status", [
   "draft",
@@ -200,13 +205,10 @@ export const privacyHoldStatusEnum = sqliteEnum("privacy_hold_status", [
   "released",
 ]);
 
-export const privacyExternalProviderEnum = sqliteEnum("privacy_external_provider", [
-  "clerk",
-  "cloudflare",
-  "hoppie",
-  "backup",
-  "navigraph",
-]);
+export const privacyExternalProviderEnum = sqliteEnum(
+  "privacy_external_provider",
+  ["clerk", "cloudflare", "hoppie", "backup", "navigraph"],
+);
 
 export const privacyExternalTaskStatusEnum = sqliteEnum(
   "privacy_external_task_status",
@@ -217,11 +219,11 @@ const timestamps = {
   createdAt: timestamp("created_at")
     .notNull()
     .default(nowMsSql)
-      .$defaultFn(() => new Date()),
+    .$defaultFn(() => new Date()),
   updatedAt: timestamp("updated_at")
     .notNull()
     .default(nowMsSql)
-      .$defaultFn(() => new Date())
+    .$defaultFn(() => new Date())
     .$onUpdate(() => new Date()),
 };
 

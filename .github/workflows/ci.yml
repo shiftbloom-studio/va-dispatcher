@@ -14,88 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  service_ports:
-    name: Choose PostgreSQL host ports
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      contracts: ${{ steps.ports.outputs.contracts }}
-      e2e: ${{ steps.ports.outputs.e2e }}
-    steps:
-      - name: Derive non-overlapping host ports from the run id
-        id: ports
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Separate 20000-port windows so concurrent runs can share one Docker daemon.
-          slot=$(( GITHUB_RUN_ID % 20000 ))
-          echo "contracts=$((20000 + slot))" >> "${GITHUB_OUTPUT}"
-          echo "e2e=$((40000 + slot))" >> "${GITHUB_OUTPUT}"
-
-  postgres-contracts:
-    name: Fresh schema and PostgreSQL contracts
-    needs: service_ports
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: va_dispatch_fresh
-        ports:
-          - ${{ format('{0}:5432', needs.service_ports.outputs.contracts) }}
-        options: >-
-          --health-cmd "pg_isready -U postgres -d va_dispatch_fresh"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      PGPORT: ${{ needs.service_ports.outputs.contracts }}
-      PGUSER: postgres
-      PGPASSWORD: postgres
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24.15.0
-          cache: pnpm
-
-      - name: Test PostgreSQL host resolver
-        run: node --test .github/scripts/resolve-service-host.test.mjs
-
-      - name: Resolve PostgreSQL host
-        id: postgres
-        run: |
-          set -euo pipefail
-          host="$(node .github/scripts/resolve-service-host.mjs "${PGPORT}")"
-          echo "host=${host}" >> "${GITHUB_OUTPUT}"
-          echo "PGHOST=${host}" >> "${GITHUB_ENV}"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Push the canonical schema to a fresh database
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@${{ steps.postgres.outputs.host }}:${{ env.PGPORT }}/va_dispatch_fresh
-        run: pnpm db:push
-
-      - name: Verify PostgreSQL invariants
-        env:
-          TEST_DATABASE_URL: postgresql://postgres:postgres@${{ steps.postgres.outputs.host }}:${{ env.PGPORT }}/va_dispatch_fresh
-          TEST_CONFIRM_DATABASE: va_dispatch_fresh
-        run: pnpm --filter @va-dispatch/api test:postgres
-
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -146,6 +64,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Bundle the API Worker
+        run: pnpm --filter @va-dispatch/api exec wrangler deploy --dry-run --outdir .wrangler/dry-run
+
       - name: Install Playwright Chromium
         run: pnpm --filter @va-dispatch/web exec playwright install --with-deps chromium
 
@@ -162,26 +83,9 @@ jobs:
           retention-days: 7
 
   integrated-e2e:
-    name: Integrated web, API, and PostgreSQL E2E
-    needs: service_ports
+    name: Integrated web, API, and local D1 E2E
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: va_dispatch_e2e
-        ports:
-          - ${{ format('{0}:5432', needs.service_ports.outputs.e2e) }}
-        options: >-
-          --health-cmd "pg_isready -U postgres -d va_dispatch_e2e"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      PGPORT: ${{ needs.service_ports.outputs.e2e }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -198,29 +102,13 @@ jobs:
           node-version: 24.15.0
           cache: pnpm
 
-      - name: Resolve PostgreSQL host
-        id: postgres
-        run: |
-          set -euo pipefail
-          host="$(node .github/scripts/resolve-service-host.mjs "${PGPORT}")"
-          echo "host=${host}" >> "${GITHUB_OUTPUT}"
-          echo "PGHOST=${host}" >> "${GITHUB_ENV}"
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Push the canonical schema to the isolated E2E database
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@${{ steps.postgres.outputs.host }}:${{ env.PGPORT }}/va_dispatch_e2e
-        run: pnpm db:push
 
       - name: Install Playwright Chromium
         run: pnpm --filter @va-dispatch/web exec playwright install --with-deps chromium
 
       - name: Run integrated pilot and dispatcher journeys
-        env:
-          E2E_DATABASE_URL: postgresql://postgres:postgres@${{ steps.postgres.outputs.host }}:${{ env.PGPORT }}/va_dispatch_e2e
-          E2E_CONFIRM_DATABASE: va_dispatch_e2e
         run: pnpm test:e2e:integrated
 
       - name: Upload failed integrated E2E artifacts

@@ -204,9 +204,7 @@ export async function fulfillScheduleRequest(input: {
         )
     )`),
     // Cumulative capacity is checked inside the same serialized transaction.
-    guard(
-      sql`${existingFlightCount} + ${batchCount} <= ${desiredFlightCount}`,
-    ),
+    guard(sql`${existingFlightCount} + ${batchCount} <= ${desiredFlightCount}`),
     // A concurrent submission with the same idempotency key already won.
     guard(sql`NOT EXISTS (
       SELECT 1
@@ -242,8 +240,9 @@ export async function fulfillScheduleRequest(input: {
           ${desiredFlightCount} AS desired
       )
     `,
-    ...proposed.map((flight) =>
-      sql`
+    ...proposed.map(
+      (flight) =>
+        sql`
         INSERT INTO flights (
           id, tenant_id, schedule_request_id, pilot_membership_id,
           flight_number, dep_icao, arr_icao, etd, eta, aircraft_type, status,

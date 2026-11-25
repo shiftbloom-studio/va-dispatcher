@@ -677,7 +677,12 @@ export async function createPrivacySubjectRequest(input: {
       payload: input.payload,
       createdByMembershipId: input.actorMembershipId,
     }),
-    requestAudit(input, id, "privacy.request_created", sql`json_object('scope', scope, 'kind', kind)`),
+    requestAudit(
+      input,
+      id,
+      "privacy.request_created",
+      sql`json_object('scope', scope, 'kind', kind)`,
+    ),
   ]);
   if (!result) return null;
   return findPrivacySubjectRequest(input.tenantId, id);
@@ -869,7 +874,10 @@ async function findLegalHold(
     .select()
     .from(privacyLegalHolds)
     .where(
-      and(eq(privacyLegalHolds.tenantId, tenantId), eq(privacyLegalHolds.id, id)),
+      and(
+        eq(privacyLegalHolds.tenantId, tenantId),
+        eq(privacyLegalHolds.id, id),
+      ),
     )
     .limit(1);
   return rows[0] ?? null;
@@ -962,7 +970,13 @@ export async function approveLegalHold(input: {
         updatedAt: now,
       })
       .where(eq(privacyLegalHolds.id, input.holdId)),
-    holdAudit(input, input.holdId, "privacy.legal_hold_approved", HOLD_AUDIT_META, now),
+    holdAudit(
+      input,
+      input.holdId,
+      "privacy.legal_hold_approved",
+      HOLD_AUDIT_META,
+      now,
+    ),
   ]);
   if (!result) return null;
   return findLegalHold(input.tenantId, input.holdId);
@@ -1615,7 +1629,12 @@ export async function anonymizePrivacySubject(
   const result = await runAtomic([
     ...destructionGuards(input, "anonymization", now),
     // Counts are taken before anything below changes the subject's rows.
-    completeDestructionRequest(input, "anonymization", sets.localRecords, nowMs),
+    completeDestructionRequest(
+      input,
+      "anonymization",
+      sets.localRecords,
+      nowMs,
+    ),
     sql`
       update privacy_subject_controls
       set restriction_reason = null, updated_at = ${nowMs}
@@ -2082,10 +2101,7 @@ export async function listPrivacyExportStoreRecords(input: {
   });
 }
 
-type RetentionMutation = (
-  ids: SQL,
-  noHold: (subject: SQL) => SQL,
-) => SQL;
+type RetentionMutation = (ids: SQL, noHold: (subject: SQL) => SQL) => SQL;
 
 type RetentionSpec = {
   /** Rows of `(store, id, subject_id, sort_at)` that are past retention. */

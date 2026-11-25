@@ -1,4 +1,10 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,7 +135,9 @@ export async function createTestDatabase(): Promise<TestDatabase> {
 
   async function reset(): Promise<void> {
     const triggers = await d1
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'test_%'")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'test_%'",
+      )
       .all<{ name: string }>();
     await d1.batch([
       ...triggers.results.map(({ name }) =>
@@ -143,7 +151,10 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   await migrate();
   setDbForTests(db, d1);
 
-  async function query<T>(statement: string, ...params: unknown[]): Promise<T[]> {
+  async function query<T>(
+    statement: string,
+    ...params: unknown[]
+  ): Promise<T[]> {
     const result = await d1
       .prepare(statement)
       .bind(...params.map(toTestParameter))

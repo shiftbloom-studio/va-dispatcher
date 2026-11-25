@@ -143,9 +143,9 @@ const copy: Record<LegalLocale, Copy> = {
     providers: {
       clerk: (
         <>
-          <strong>Clerk, Inc.</strong>: account-access waitlist, sign-in,
-          tenant invitations, organization membership and roles, sessions, and
-          abuse protection. See the{" "}
+          <strong>Clerk, Inc.</strong>: account-access waitlist, sign-in, tenant
+          invitations, organization membership and roles, sessions, and abuse
+          protection. See the{" "}
           <External href="https://clerk.com/legal/dpa">
             Clerk Data Processing Addendum
           </External>
@@ -333,13 +333,13 @@ const copy: Record<LegalLocale, Copy> = {
       ),
       hoppie: (
         <>
-          <strong>Hoppie&apos;s ACARS</strong>: nur, wenn eine virtuelle
-          Airline ihre Hoppie-Bodenstation einrichtet. Stationskennungen und
-          Nachrichten laufen über ein in den Niederlanden betriebenes
-          Hobby-Netzwerk. Hoppie weist darauf hin, dass ACARS kein privates
-          Nachrichtensystem ist und Nachrichten für andere sichtbar sein
-          können. Schreibe deshalb nie personenbezogene, vertrauliche oder
-          besonders schützenswerte Daten in eine ACARS-Nachricht. Siehe{" "}
+          <strong>Hoppie&apos;s ACARS</strong>: nur, wenn eine virtuelle Airline
+          ihre Hoppie-Bodenstation einrichtet. Stationskennungen und Nachrichten
+          laufen über ein in den Niederlanden betriebenes Hobby-Netzwerk. Hoppie
+          weist darauf hin, dass ACARS kein privates Nachrichtensystem ist und
+          Nachrichten für andere sichtbar sein können. Schreibe deshalb nie
+          personenbezogene, vertrauliche oder besonders schützenswerte Daten in
+          eine ACARS-Nachricht. Siehe{" "}
           <External href="https://www.hoppie.nl/acars/system/register.html">
             Datenschutzhinweise von Hoppie
           </External>

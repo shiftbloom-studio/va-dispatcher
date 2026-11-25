@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "02d92080-2cb9-4f28-ac29-b886edc9f083",
-  "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
-  ],
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
     {
       "name": "acars_messages",
@@ -3347,13 +3345,9 @@
       "table": "tenants"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3362,13 +3356,9 @@
       "table": "acars_messages"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -3377,13 +3367,9 @@
       "table": "acars_messages"
     },
     {
-      "columns": [
-        "created_by_membership_id"
-      ],
+      "columns": ["created_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -3392,13 +3378,9 @@
       "table": "acars_messages"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3407,13 +3389,9 @@
       "table": "audit_events"
     },
     {
-      "columns": [
-        "actor_membership_id"
-      ],
+      "columns": ["actor_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -3422,13 +3400,9 @@
       "table": "audit_events"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3437,13 +3411,9 @@
       "table": "dispatch_releases"
     },
     {
-      "columns": [
-        "released_by_membership_id"
-      ],
+      "columns": ["released_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -3452,15 +3422,9 @@
       "table": "dispatch_releases"
     },
     {
-      "columns": [
-        "tenant_id",
-        "flight_id"
-      ],
+      "columns": ["tenant_id", "flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3469,13 +3433,9 @@
       "table": "dispatch_releases"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3484,13 +3444,9 @@
       "table": "flight_oooi_events"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3499,13 +3455,9 @@
       "table": "flight_oooi_events"
     },
     {
-      "columns": [
-        "actor_membership_id"
-      ],
+      "columns": ["actor_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
@@ -3514,13 +3466,9 @@
       "table": "flight_oooi_events"
     },
     {
-      "columns": [
-        "device_id"
-      ],
+      "columns": ["device_id"],
       "tableTo": "simulator_devices",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
@@ -3529,15 +3477,9 @@
       "table": "flight_oooi_events"
     },
     {
-      "columns": [
-        "tenant_id",
-        "flight_id"
-      ],
+      "columns": ["tenant_id", "flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3546,15 +3488,9 @@
       "table": "flight_oooi_events"
     },
     {
-      "columns": [
-        "tenant_id",
-        "actor_membership_id"
-      ],
+      "columns": ["tenant_id", "actor_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": true,
@@ -3563,15 +3499,9 @@
       "table": "flight_oooi_events"
     },
     {
-      "columns": [
-        "tenant_id",
-        "device_id"
-      ],
+      "columns": ["tenant_id", "device_id"],
       "tableTo": "simulator_devices",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": true,
@@ -3580,13 +3510,9 @@
       "table": "flight_oooi_events"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3595,13 +3521,9 @@
       "table": "flight_operational_events"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3610,13 +3532,9 @@
       "table": "flight_operational_events"
     },
     {
-      "columns": [
-        "actor_membership_id"
-      ],
+      "columns": ["actor_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -3625,13 +3543,9 @@
       "table": "flight_operational_events"
     },
     {
-      "columns": [
-        "acars_message_id"
-      ],
+      "columns": ["acars_message_id"],
       "tableTo": "acars_messages",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -3640,13 +3554,9 @@
       "table": "flight_operational_events"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3655,13 +3565,9 @@
       "table": "flight_telemetry_current"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3670,13 +3576,9 @@
       "table": "flight_telemetry_current"
     },
     {
-      "columns": [
-        "membership_id"
-      ],
+      "columns": ["membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3685,13 +3587,9 @@
       "table": "flight_telemetry_current"
     },
     {
-      "columns": [
-        "device_id"
-      ],
+      "columns": ["device_id"],
       "tableTo": "simulator_devices",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3700,15 +3598,9 @@
       "table": "flight_telemetry_current"
     },
     {
-      "columns": [
-        "tenant_id",
-        "flight_id"
-      ],
+      "columns": ["tenant_id", "flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3717,15 +3609,9 @@
       "table": "flight_telemetry_current"
     },
     {
-      "columns": [
-        "tenant_id",
-        "membership_id"
-      ],
+      "columns": ["tenant_id", "membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3734,17 +3620,9 @@
       "table": "flight_telemetry_current"
     },
     {
-      "columns": [
-        "tenant_id",
-        "membership_id",
-        "device_id"
-      ],
+      "columns": ["tenant_id", "membership_id", "device_id"],
       "tableTo": "simulator_devices",
-      "columnsTo": [
-        "tenant_id",
-        "membership_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "membership_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3753,13 +3631,9 @@
       "table": "flight_telemetry_current"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3768,13 +3642,9 @@
       "table": "flight_telemetry_leases"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3783,13 +3653,9 @@
       "table": "flight_telemetry_leases"
     },
     {
-      "columns": [
-        "membership_id"
-      ],
+      "columns": ["membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3798,13 +3664,9 @@
       "table": "flight_telemetry_leases"
     },
     {
-      "columns": [
-        "device_id"
-      ],
+      "columns": ["device_id"],
       "tableTo": "simulator_devices",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3813,15 +3675,9 @@
       "table": "flight_telemetry_leases"
     },
     {
-      "columns": [
-        "tenant_id",
-        "flight_id"
-      ],
+      "columns": ["tenant_id", "flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3830,15 +3686,9 @@
       "table": "flight_telemetry_leases"
     },
     {
-      "columns": [
-        "tenant_id",
-        "membership_id"
-      ],
+      "columns": ["tenant_id", "membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3847,17 +3697,9 @@
       "table": "flight_telemetry_leases"
     },
     {
-      "columns": [
-        "tenant_id",
-        "membership_id",
-        "device_id"
-      ],
+      "columns": ["tenant_id", "membership_id", "device_id"],
       "tableTo": "simulator_devices",
-      "columnsTo": [
-        "tenant_id",
-        "membership_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "membership_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3866,13 +3708,9 @@
       "table": "flight_telemetry_leases"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3881,13 +3719,9 @@
       "table": "flight_telemetry_track"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3896,13 +3730,9 @@
       "table": "flight_telemetry_track"
     },
     {
-      "columns": [
-        "membership_id"
-      ],
+      "columns": ["membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3911,13 +3741,9 @@
       "table": "flight_telemetry_track"
     },
     {
-      "columns": [
-        "device_id"
-      ],
+      "columns": ["device_id"],
       "tableTo": "simulator_devices",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3926,15 +3752,9 @@
       "table": "flight_telemetry_track"
     },
     {
-      "columns": [
-        "tenant_id",
-        "flight_id"
-      ],
+      "columns": ["tenant_id", "flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3943,15 +3763,9 @@
       "table": "flight_telemetry_track"
     },
     {
-      "columns": [
-        "tenant_id",
-        "membership_id"
-      ],
+      "columns": ["tenant_id", "membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3960,17 +3774,9 @@
       "table": "flight_telemetry_track"
     },
     {
-      "columns": [
-        "tenant_id",
-        "membership_id",
-        "device_id"
-      ],
+      "columns": ["tenant_id", "membership_id", "device_id"],
       "tableTo": "simulator_devices",
-      "columnsTo": [
-        "tenant_id",
-        "membership_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "membership_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -3979,13 +3785,9 @@
       "table": "flight_telemetry_track"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3994,13 +3796,9 @@
       "table": "flights"
     },
     {
-      "columns": [
-        "schedule_request_id"
-      ],
+      "columns": ["schedule_request_id"],
       "tableTo": "schedule_requests",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4009,13 +3807,9 @@
       "table": "flights"
     },
     {
-      "columns": [
-        "pilot_membership_id"
-      ],
+      "columns": ["pilot_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4024,15 +3818,9 @@
       "table": "flights"
     },
     {
-      "columns": [
-        "tenant_id",
-        "replaces_flight_id"
-      ],
+      "columns": ["tenant_id", "replaces_flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": true,
@@ -4041,15 +3829,9 @@
       "table": "flights"
     },
     {
-      "columns": [
-        "tenant_id",
-        "pilot_membership_id"
-      ],
+      "columns": ["tenant_id", "pilot_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": true,
@@ -4058,15 +3840,9 @@
       "table": "flights"
     },
     {
-      "columns": [
-        "tenant_id",
-        "schedule_request_id"
-      ],
+      "columns": ["tenant_id", "schedule_request_id"],
       "tableTo": "schedule_requests",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": true,
@@ -4075,13 +3851,9 @@
       "table": "flights"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4090,13 +3862,9 @@
       "table": "memberships"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4105,13 +3873,9 @@
       "table": "mock_acars_queue"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4120,13 +3884,9 @@
       "table": "navigraph_oauth_transactions"
     },
     {
-      "columns": [
-        "membership_id"
-      ],
+      "columns": ["membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4135,13 +3895,9 @@
       "table": "navigraph_oauth_transactions"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4150,13 +3906,9 @@
       "table": "privacy_external_tasks"
     },
     {
-      "columns": [
-        "request_id"
-      ],
+      "columns": ["request_id"],
       "tableTo": "privacy_subject_requests",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4165,13 +3917,9 @@
       "table": "privacy_external_tasks"
     },
     {
-      "columns": [
-        "run_id"
-      ],
+      "columns": ["run_id"],
       "tableTo": "privacy_retention_runs",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4180,13 +3928,9 @@
       "table": "privacy_external_tasks"
     },
     {
-      "columns": [
-        "completed_by_membership_id"
-      ],
+      "columns": ["completed_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4195,13 +3939,9 @@
       "table": "privacy_external_tasks"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4210,13 +3950,9 @@
       "table": "privacy_legal_holds"
     },
     {
-      "columns": [
-        "subject_membership_id"
-      ],
+      "columns": ["subject_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4225,13 +3961,9 @@
       "table": "privacy_legal_holds"
     },
     {
-      "columns": [
-        "created_by_membership_id"
-      ],
+      "columns": ["created_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4240,13 +3972,9 @@
       "table": "privacy_legal_holds"
     },
     {
-      "columns": [
-        "approved_by_membership_id"
-      ],
+      "columns": ["approved_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4255,13 +3983,9 @@
       "table": "privacy_legal_holds"
     },
     {
-      "columns": [
-        "released_by_membership_id"
-      ],
+      "columns": ["released_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4270,13 +3994,9 @@
       "table": "privacy_legal_holds"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4285,13 +4005,9 @@
       "table": "privacy_policies"
     },
     {
-      "columns": [
-        "created_by_membership_id"
-      ],
+      "columns": ["created_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4300,13 +4016,9 @@
       "table": "privacy_policies"
     },
     {
-      "columns": [
-        "approved_by_membership_id"
-      ],
+      "columns": ["approved_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4315,13 +4027,9 @@
       "table": "privacy_policies"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4330,13 +4038,9 @@
       "table": "privacy_retention_runs"
     },
     {
-      "columns": [
-        "policy_id"
-      ],
+      "columns": ["policy_id"],
       "tableTo": "privacy_policies",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
@@ -4345,13 +4049,9 @@
       "table": "privacy_retention_runs"
     },
     {
-      "columns": [
-        "dry_run_id"
-      ],
+      "columns": ["dry_run_id"],
       "tableTo": "privacy_retention_runs",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
@@ -4360,13 +4060,9 @@
       "table": "privacy_retention_runs"
     },
     {
-      "columns": [
-        "requested_by_membership_id"
-      ],
+      "columns": ["requested_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4375,13 +4071,9 @@
       "table": "privacy_retention_runs"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4390,13 +4082,9 @@
       "table": "privacy_subject_controls"
     },
     {
-      "columns": [
-        "membership_id"
-      ],
+      "columns": ["membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4405,13 +4093,9 @@
       "table": "privacy_subject_controls"
     },
     {
-      "columns": [
-        "updated_by_membership_id"
-      ],
+      "columns": ["updated_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4420,13 +4104,9 @@
       "table": "privacy_subject_controls"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4435,13 +4115,9 @@
       "table": "privacy_subject_requests"
     },
     {
-      "columns": [
-        "subject_membership_id"
-      ],
+      "columns": ["subject_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4450,13 +4126,9 @@
       "table": "privacy_subject_requests"
     },
     {
-      "columns": [
-        "created_by_membership_id"
-      ],
+      "columns": ["created_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4465,13 +4137,9 @@
       "table": "privacy_subject_requests"
     },
     {
-      "columns": [
-        "verified_by_membership_id"
-      ],
+      "columns": ["verified_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4480,13 +4148,9 @@
       "table": "privacy_subject_requests"
     },
     {
-      "columns": [
-        "approved_by_membership_id"
-      ],
+      "columns": ["approved_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4495,13 +4159,9 @@
       "table": "privacy_subject_requests"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4510,15 +4170,9 @@
       "table": "schedule_fulfillment_attempts"
     },
     {
-      "columns": [
-        "tenant_id",
-        "schedule_request_id"
-      ],
+      "columns": ["tenant_id", "schedule_request_id"],
       "tableTo": "schedule_requests",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -4527,13 +4181,9 @@
       "table": "schedule_fulfillment_attempts"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4542,13 +4192,9 @@
       "table": "schedule_requests"
     },
     {
-      "columns": [
-        "pilot_membership_id"
-      ],
+      "columns": ["pilot_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
@@ -4557,15 +4203,9 @@
       "table": "schedule_requests"
     },
     {
-      "columns": [
-        "tenant_id",
-        "pilot_membership_id"
-      ],
+      "columns": ["tenant_id", "pilot_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": true,
@@ -4574,13 +4214,9 @@
       "table": "schedule_requests"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4589,13 +4225,9 @@
       "table": "simbrief_dispatches"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4604,13 +4236,9 @@
       "table": "simbrief_dispatches"
     },
     {
-      "columns": [
-        "created_by_membership_id"
-      ],
+      "columns": ["created_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4619,13 +4247,9 @@
       "table": "simbrief_dispatches"
     },
     {
-      "columns": [
-        "generated_by_membership_id"
-      ],
+      "columns": ["generated_by_membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -4634,15 +4258,9 @@
       "table": "simbrief_dispatches"
     },
     {
-      "columns": [
-        "tenant_id",
-        "flight_id"
-      ],
+      "columns": ["tenant_id", "flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -4651,13 +4269,9 @@
       "table": "simbrief_dispatches"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4666,13 +4280,9 @@
       "table": "simbrief_flight_heads"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4681,15 +4291,9 @@
       "table": "simbrief_flight_heads"
     },
     {
-      "columns": [
-        "tenant_id",
-        "flight_id"
-      ],
+      "columns": ["tenant_id", "flight_id"],
       "tableTo": "flights",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -4698,13 +4302,9 @@
       "table": "simbrief_flight_heads"
     },
     {
-      "columns": [
-        "tenant_id"
-      ],
+      "columns": ["tenant_id"],
       "tableTo": "tenants",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4713,13 +4313,9 @@
       "table": "simulator_devices"
     },
     {
-      "columns": [
-        "membership_id"
-      ],
+      "columns": ["membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -4728,15 +4324,9 @@
       "table": "simulator_devices"
     },
     {
-      "columns": [
-        "tenant_id",
-        "membership_id"
-      ],
+      "columns": ["tenant_id", "membership_id"],
       "tableTo": "memberships",
-      "columnsTo": [
-        "tenant_id",
-        "id"
-      ],
+      "columnsTo": ["tenant_id", "id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": true,
@@ -4745,216 +4335,168 @@
       "table": "simulator_devices"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "acars_messages_pk",
       "table": "acars_messages",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "audit_events_pk",
       "table": "audit_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "dispatch_releases_pk",
       "table": "dispatch_releases",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "flight_oooi_events_pk",
       "table": "flight_oooi_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "flight_operational_events_pk",
       "table": "flight_operational_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "nameExplicit": false,
       "name": "flight_telemetry_current_pk",
       "table": "flight_telemetry_current",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "nameExplicit": false,
       "name": "flight_telemetry_leases_pk",
       "table": "flight_telemetry_leases",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "flight_telemetry_track_pk",
       "table": "flight_telemetry_track",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "flights_pk",
       "table": "flights",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "memberships_pk",
       "table": "memberships",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "mock_acars_queue_pk",
       "table": "mock_acars_queue",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "navigraph_oauth_transactions_pk",
       "table": "navigraph_oauth_transactions",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "privacy_external_tasks_pk",
       "table": "privacy_external_tasks",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "privacy_legal_holds_pk",
       "table": "privacy_legal_holds",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "privacy_policies_pk",
       "table": "privacy_policies",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "privacy_retention_runs_pk",
       "table": "privacy_retention_runs",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "privacy_subject_controls_pk",
       "table": "privacy_subject_controls",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "privacy_subject_requests_pk",
       "table": "privacy_subject_requests",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "schedule_fulfillment_attempts_pk",
       "table": "schedule_fulfillment_attempts",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "schedule_requests_pk",
       "table": "schedule_requests",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "simbrief_dispatches_pk",
       "table": "simbrief_dispatches",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "flight_id"
-      ],
+      "columns": ["flight_id"],
       "nameExplicit": false,
       "name": "simbrief_flight_heads_pk",
       "table": "simbrief_flight_heads",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "simulator_devices_pk",
       "table": "simulator_devices",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "tenants_pk",
       "table": "tenants",

@@ -501,8 +501,7 @@ describe("admin control-plane routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.createOrganizationInvitation).toHaveBeenCalledWith(
       expect.objectContaining({
-        redirectUrl:
-          "https://preview-origin.example.test/vsas/sign-in",
+        redirectUrl: "https://preview-origin.example.test/vsas/sign-in",
       }),
     );
   });

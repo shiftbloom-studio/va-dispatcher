@@ -14,14 +14,21 @@
   "preview_urls": false,
   "observability": { "enabled": true },
   "d1_databases": [
-    { "binding": "DB", "database_name": "va-dispatch", "database_id": "local", "migrations_dir": "migrations" }
+    {
+      "binding": "DB",
+      "database_name": "va-dispatch",
+      "database_id": "local",
+      "migrations_dir": "migrations",
+    },
   ],
-  "r2_buckets": [{ "binding": "TENANT_LOGOS", "bucket_name": "va-dispatch-tenant-logos" }],
+  "r2_buckets": [
+    { "binding": "TENANT_LOGOS", "bucket_name": "va-dispatch-tenant-logos" },
+  ],
   "vars": {
     "NODE_ENV": "development",
     "APP_ORIGIN": "http://localhost:3000",
     "CORS_ORIGIN": "http://localhost:3000",
-    "ACARS_PROVIDER": "mock"
+    "ACARS_PROVIDER": "mock",
   },
   "env": {
     "production": {
@@ -31,10 +38,15 @@
           "binding": "DB",
           "database_name": "va-dispatch",
           "database_id": "<VA_D1_DATABASE_ID>",
-          "migrations_dir": "migrations"
-        }
+          "migrations_dir": "migrations",
+        },
       ],
-      "r2_buckets": [{ "binding": "TENANT_LOGOS", "bucket_name": "va-dispatch-tenant-logos" }],
+      "r2_buckets": [
+        {
+          "binding": "TENANT_LOGOS",
+          "bucket_name": "va-dispatch-tenant-logos",
+        },
+      ],
       // Keep in sync with CRON_ACARS_POLL and CRON_PRIVACY_LIFECYCLE in src/worker.ts.
       "triggers": { "crons": ["* * * * *", "0 * * * *"] },
       "vars": {
@@ -46,11 +58,11 @@
         "CLERK_PUBLISHABLE_KEY": "<CLERK_PUBLISHABLE_KEY>",
         "SIMBRIEF_CALLBACK_URL": "https://<VA_HOSTNAME>/api/v1/simbrief/callback",
         "NAVIGRAPH_REDIRECT_URI": "https://<VA_HOSTNAME>/api/v1/simbrief/oauth/callback",
-        "VSAS_CLERK_ORG_ID": "<VSAS_CLERK_ORG_ID>"
-      }
+        "VSAS_CLERK_ORG_ID": "<VSAS_CLERK_ORG_ID>",
+      },
       // Secrets (wrangler secret put --env production): CLERK_SECRET_KEY,
       // TENANT_SECRETS_KEY, CRON_SECRET, SIMBRIEF_API_KEY, NAVIGRAPH_CLIENT_ID,
       // NAVIGRAPH_CLIENT_SECRET.
-    }
-  }
+    },
+  },
 }
