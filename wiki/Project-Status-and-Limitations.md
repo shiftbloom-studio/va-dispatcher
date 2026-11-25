@@ -20,8 +20,8 @@ application on 18 August 2026. Re-verify it whenever behavior changes.
 | ACARS               | Dispatcher-only Hoppie send/poll, stored conversations, bounded inbound deduplication, explicit uncertain outcomes    |
 | Administration      | Native invitations, application decisions, role/Clerk sync, removal, member-access policy, safe reassignment, audit   |
 | Privacy lifecycle   | Approved retention policies, dry runs, resumable execution, subject workflows, holds, provider tasks                  |
-| Schema workflow     | Canonical Drizzle schema, fresh-database push, and real PostgreSQL contract checks                                    |
-| Verification        | Unit/component contracts, real PostgreSQL contracts, fast browser workflows, two integrated app journeys              |
+| Schema workflow     | Canonical Drizzle schema, generated D1 migrations, and local D1 contract checks                                       |
+| Verification        | Unit/component contracts, local D1 contracts, fast browser workflows, two integrated app journeys                     |
 
 ## Operational boundaries
 
@@ -69,20 +69,19 @@ application on 18 August 2026. Re-verify it whenever behavior changes.
 
 - The backend is multi-tenant, while the checked-in web presentation registry
   currently contains only vSAS.
-- The project is pre-production. Schema changes recreate an empty database and
-  apply canonical `schema.ts` with `db:push`; durable data evolution is not yet supported.
-- The integrated E2E authority is deliberately non-production-only and requires
-  an explicitly confirmed disposable database.
+- Schema changes ship as generated D1 migrations, applied on every deploy.
+- The integrated E2E authority is deliberately non-production-only and runs
+  against an in-memory local D1 database.
 - A successful local or CI run is not a substitute for a post-deployment Clerk,
-  BotID, service-rewrite, static-asset, and live-provider acceptance check.
+  bot-score, zone-route, static-asset, and live-provider acceptance check.
 
 ## Release-readiness checklist
 
 Before calling a deployment fully ready:
 
-1. Create an empty database and apply the exact release schema with `db:push`.
+1. Confirm the API build applied every pending D1 migration.
 2. Confirm `/api/ready` passed for the exact deployment commit.
-3. Verify Clerk organization roles, legal configuration, BotID, and tenant
+3. Verify Clerk organization roles, legal configuration, bot protection, and tenant
    encryption keys.
 4. Complete deployed waitlist/invited-signup/application approval, direct
    invitation, removal, pilot, and dispatcher journeys.

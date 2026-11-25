@@ -51,7 +51,7 @@ body:
     attributes:
       label: Environment
       description: Include the OS, Node.js and pnpm versions, browser, and relevant deployment mode.
-      placeholder: macOS 15, Node.js 24, pnpm 11.21.0, Chrome 140, local development
+      placeholder: macOS 15, Node.js 26, pnpm 11.21.0, Chrome 140, local development
     validations:
       required: true
 

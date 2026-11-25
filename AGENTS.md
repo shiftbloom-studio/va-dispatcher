@@ -48,7 +48,8 @@ packages/eslint-config/  Shared lint configuration
 docs/                    Maintainer, privacy, and cost/provisioning runbooks
 wiki/                    Source mirror for the GitHub Wiki
 .github/                 CI, security automation, templates, ownership
-vercel.ts                Vercel Services topology, rewrites, and cron
+apps/*/wrangler.jsonc,   Cloudflare Worker configs (bindings, routes, cron);
+apps/web/cloudflare.config.ts  see docs/cloudflare-deployment.md
 ```
 
 Important implementation entry points:
@@ -71,10 +72,12 @@ Important implementation entry points:
 
 - Node.js: `>=24`; `.nvmrc` pins the preferred local version.
 - Package manager: pnpm `11.21.0` via the root `packageManager` field.
-- API: Hono, TypeScript, Drizzle ORM, Neon Postgres, Clerk, Zod, Vitest.
+- API: Hono, TypeScript, Drizzle ORM on Cloudflare D1, R2, Clerk, Zod, Vitest.
 - Web: Next.js 16 App Router, React 19, TanStack Query, Clerk, Zod, Vitest,
-  Playwright.
-- Deployment: Vercel Services defined in `vercel.ts`.
+  Playwright. Production builds use vinext (`vite build`); `next dev` stays the
+  local dev server.
+- Deployment: two Cloudflare Workers via Workers Builds, see
+  `docs/cloudflare-deployment.md`.
 
 Use root scripts rather than inventing local wrappers:
 
@@ -96,25 +99,25 @@ pnpm --filter @va-dispatch/web test:e2e
 Database scripts are intentionally separate:
 
 ```bash
-pnpm db:push
-pnpm db:studio
+pnpm db:generate        # write a D1 migration from schema.ts
+pnpm db:migrate:local   # apply migrations to the local D1 database
 ```
 
-`db:push` and `db:studio` act on the configured database. Confirm the target and
-obtain authorization before using them. This Shiftbloom project is
-pre-production: `schema.ts` is canonical, databases are recreated when the
-schema changes, and `db:push` must never target user data that needs preserving.
-Never infer that a `.env` file is safe.
+`schema.ts` is canonical. Every schema change ships as a new generated file in
+`apps/api/migrations`; never edit an applied migration. Remote migrations run
+only from the API deploy; obtain authorization before running
+`wrangler d1 ... --remote` by hand. Never infer that a `.env` file is safe.
 
 ## Runtime shape and request flow
 
-The primary deployment contains a `web` service and an `api` service. Vercel
-rewrites browser `/api/*` requests to the API and supplies `API_INTERNAL_URL`
-for private server-to-server calls. A supported fallback deploys both apps as
-separate Vercel projects and configures the web project with `API_ORIGIN`.
+Production runs two Workers on one hostname. `va-dispatch-web` is the
+custom-domain origin; `va-dispatch-api` claims `<host>/api/*` with a zone route.
+Server components reach the API through the web Worker's `API` service binding
+(`apps/web/src/lib/api/service-binding.ts`); locally they use `API_ORIGIN`.
+Never put a per-user (Clerk-token) request through the shared data cache;
+`serverPublicApi` is only for identical-for-everyone reads.
 
-The API deliberately supports both path shapes because a service rewrite can
-strip `/api`:
+The API supports both path shapes so it also works without the `/api` prefix:
 
 - business API: `/api/v1/*` and `/v1/*`;
 - API docs: `/api/docs/*` and `/docs/*`;
@@ -174,14 +177,14 @@ separate test mechanism and must also remain impossible in production.
 
 ## Human-request protection
 
-Vercel BotID protects business routes through `requireHuman`.
+`requireHuman` (`apps/api/src/middleware/human.ts`) blocks likely automated
+mutations using Cloudflare's bot score.
 
-- Deep analysis is used on the configured high-risk, exact mutation routes.
-- Other mutations use the basic check.
-- Browser-side BotID route declarations and server-side matching must stay in
-  sync when an endpoint or method changes.
-- Do not weaken or bypass BotID to make a test pass. Use the explicit local or
-  test fixture seam.
+- The strict threshold applies to the configured high-risk, exact mutation
+  routes.
+- Other mutations use the basic threshold. Verified bots always pass.
+- Do not weaken or bypass the check to make a test pass. Use the explicit local
+  or test fixture seam.
 
 Internal cron routes are machine-to-machine and use their own authentication;
 do not accidentally put them behind the human check.
@@ -314,12 +317,10 @@ Keep the standard JSON error envelope and request IDs. Do not expose raw SQL,
 provider errors, secrets, or stack traces. Pagination must use the shared
 helpers and deterministic ordering.
 
-The canonical schema is `apps/api/src/db/schema.ts`. Apply schema changes to a
-new empty database with `pnpm db:push`, then run the relevant real-PostgreSQL
-contracts. Never preserve an outdated test catalog by adding legacy-adoption
-machinery. Preserve foreign keys, tenant indexes, uniqueness constraints, and
-timestamp semantics. If this project later carries durable production data,
-stop and agree a new data-evolution policy before changing the schema.
+The canonical schema is `apps/api/src/db/schema.ts`. Generate a migration with
+`pnpm db:generate`, then run the repository contract tests (`*.d1.test.ts`),
+which apply all migrations to a fresh local D1 database. Preserve foreign keys, tenant indexes, uniqueness constraints, and
+timestamp semantics.
 
 Audit security- and operations-relevant mutations. Audit rows should record
 the authenticated actor, tenant, action, entity, and useful non-secret metadata
@@ -385,7 +386,7 @@ Minimum focused expectations:
 - Domain transition change: transition unit tests plus affected route tests.
 - Tenant-owned data change: positive authorization and negative cross-tenant
   integration tests.
-- Auth/BotID change: middleware/security tests and production hard-off cases.
+- Auth/bot-protection change: middleware/security tests and production hard-off cases.
 - API response change: route tests, OpenAPI tests, web schema tests.
 - UI workflow change: component tests and the relevant Playwright journey.
 - Hoppie change: provider/service tests with synthetic responses; never make a
@@ -395,10 +396,10 @@ Minimum focused expectations:
 
 The fast Playwright suite uses deterministic route fixtures and proves focused
 UI behavior. The separate integrated suite starts the real web and API against
-an explicitly confirmed disposable PostgreSQL database, deterministic local
+an in-memory local D1 database, deterministic local
 provider adapters, and a production-hard-off auth fixture. It contains one
 pilot and one dispatcher journey. Neither suite proves live Hoppie, Clerk,
-BotID, SimBrief, Navigraph, or production rewrites; those require deployed
+Cloudflare bot scoring, SimBrief, Navigraph, or production routing; those require deployed
 acceptance.
 
 The full local quality target is:

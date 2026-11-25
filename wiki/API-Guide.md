@@ -51,12 +51,14 @@ authentication.
 
 See [Authentication and Multi-Tenancy](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Authentication-and-Multi-Tenancy).
 
-## BotID and direct clients
+## Bot protection and direct clients
 
-Authenticated same-origin browser mutations under `/api/v1/*` are protected by
-Vercel BotID.
+Mutations under `/api/v1/*` are checked against the bot score Cloudflare
+attaches to each request (`request.cf.botManagement.score`). Verified bots and
+requests without a score pass; zones without Bot Management attach no score,
+and their bot protection and WAF rules remain the outer defence.
 
-### Deep Analysis
+### Strict (score 30 or higher)
 
 - `POST /api/v1/acars/messages`
 - `POST /api/v1/flights/bulk`
@@ -64,18 +66,17 @@ Vercel BotID.
 - `PUT /api/v1/tenant/acars-config`
 - `POST /api/v1/tenant/acars-config/test`
 
-### Basic
+### Basic (score 2 or higher)
 
 Every other authenticated `POST`, `PUT`, `PATCH`, or `DELETE` mounted after the
 business middleware.
 
 GET requests and `/api/v1/internal/*` are excluded. Public provider callbacks
-and device-bearer telemetry ingestion are mounted before Clerk and BotID and
-validate their own narrow credentials. A direct production `curl` mutation on
-a BotID-protected route is expected to receive `403`, even with a valid Clerk
-token. Read-only API clients remain possible; any other non-browser mutation
+and device-bearer telemetry ingestion are mounted before Clerk and the bot check and
+validate their own narrow credentials. A scripted production mutation that
+Cloudflare scores as automated receives `403`, even with a valid Clerk token. Read-only API clients remain possible; any other non-browser mutation
 requires an explicitly designed trusted-client authentication path rather than
-weakening BotID globally.
+weakening the bot check globally.
 
 ## Error envelope
 

@@ -1,6 +1,6 @@
 # ACARS and Hoppie
 
-VA Dispatch provides a dispatcher-only web ACARS workspace. Production uses [Hoppie's ACARS network](https://www.hoppie.nl/acars/) as a store-and-forward free-text telex transport. Local development and automated tests can use an isolated PostgreSQL-backed mock provider.
+VA Dispatch provides a dispatcher-only web ACARS workspace. Production uses [Hoppie's ACARS network](https://www.hoppie.nl/acars/) as a store-and-forward free-text telex transport. Local development and automated tests can use an isolated D1-backed mock provider.
 
 ## Two different credentials
 
@@ -67,7 +67,7 @@ flowchart TD
     K -->|Yes| L["Live Hoppie send/poll"]
 ```
 
-`VERCEL_ENV=production` takes precedence over `NODE_ENV` for this decision on Vercel. A stale production `ACARS_PROVIDER=mock` never enables simulation or mock delivery.
+`APP_ENV=production` takes precedence over `NODE_ENV` for this decision. A stale production `ACARS_PROVIDER=mock` never enables simulation or mock delivery.
 
 ## Outbound flow
 
@@ -75,7 +75,7 @@ flowchart TD
 sequenceDiagram
     participant D as Dispatcher browser
     participant A as API
-    participant DB as PostgreSQL
+    participant DB as D1
     participant H as Hoppie
 
     D->>A: POST /acars/messages
@@ -103,7 +103,7 @@ automatically retries an uncertain send.
 
 ## Inbound polling
 
-Vercel calls `/api/v1/internal/cron/acars-poll` every minute with `CRON_SECRET`. The handler:
+The API Worker's `* * * * *` cron trigger runs the poll job every minute (`/api/v1/internal/cron/acars-poll` with `CRON_SECRET` runs it manually). The job:
 
 1. skips all background work when the mock provider is effective;
 2. selects only tenants with a stored encrypted Hoppie logon;
@@ -193,5 +193,5 @@ Free-text messages are stored in the application database and can also remain in
 4. Verify `TENANT_SECRETS_KEY` matches the key used when the credential was saved.
 5. Confirm the station is not active in another poller and wait for a callsign lock to expire.
 6. Confirm personal and ground-station accounts use the same Hoppie network affiliation.
-7. Inspect Vercel cron execution and API logs using the request ID, never by logging credentials.
+7. Inspect the cron trigger's execution and the API Worker logs using the request ID, never by logging credentials.
 8. Avoid repeated retries when Hoppie reports rate limiting or uncertain transport failure.

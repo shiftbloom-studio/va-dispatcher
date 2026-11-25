@@ -1,6 +1,6 @@
 # VA Dispatch UI Elevation — Implementation Brief
 
-Elevate VA Dispatch into a modern, professional, multi-tenant airline operations product. Use the [selected visual direction](/Users/fzwork/.codex/generated_images/019ff5de-a35a-7c22-b7f2-f20e8275df95/exec-a9b46587-2081-435f-b392-03157b038da0.png) as the primary reference.
+Elevate VA Dispatch into a modern, professional, multi-tenant airline operations product. Use the selected visual direction as the primary reference.
 
 ## Visual direction
 

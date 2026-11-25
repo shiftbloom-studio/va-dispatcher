@@ -1,0 +1,3 @@
+# Secrets for `pnpm --filter @va-dispatch/web start` (the Workers build under
+# local workerd). Copy to .dev.vars, which is not committed.
+CLERK_SECRET_KEY=sk_test_...

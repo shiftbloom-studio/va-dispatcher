@@ -1,6 +1,6 @@
 # Data Model
 
-The canonical schema is `apps/api/src/db/schema.ts`, implemented with Drizzle ORM for PostgreSQL. UUID primary keys are generated in the database, and timestamps use timezone-aware PostgreSQL values.
+The canonical schema is `apps/api/src/db/schema.ts`, implemented with Drizzle ORM for Cloudflare D1 (SQLite). Migrations generated from it live in `apps/api/migrations`.
 
 ## Entity relationship overview
 
@@ -61,7 +61,7 @@ Tenant-local user profile and authorization record.
 | `navigraph_subject`, `navigraph_username`  | Navigraph OAuth identity                                                          |
 | `status`                                   | `active`, `invited`, or `disabled`                                                |
 
-`(tenant_id, clerk_user_id)` and `(tenant_id, pilot_callsign)` are unique. PostgreSQL permits multiple null callsigns. Schedule requests restrict membership deletion; flight and audit actor links use set-null behavior.
+`(tenant_id, clerk_user_id)` and `(tenant_id, pilot_callsign)` are unique. SQLite permits multiple null callsigns. Schedule requests restrict membership deletion; flight and audit actor links use set-null behavior.
 
 The application reuses the membership lifecycle instead of creating a second
 applicant identity store: `invited` plus the membership `role` is pending,
@@ -205,7 +205,7 @@ delivery: pending | accepted | rejected | ambiguous
 Cancellation preserves operational history. The privacy control plane supports
 approved dry-run/execute retention, verified export, correction, restriction,
 objection, anonymization/erasure, holds, and auditable external-provider tasks.
-Operators still define the lawful policy and complete Clerk, Vercel, Neon,
+Operators still define the lawful policy and complete Clerk, Cloudflare,
 Hoppie, backup, and legal work that the application cannot perform itself.
 
 Free-text fields—including notes, rejection/cancellation reasons, ACARS bodies, audit metadata, and settings JSON—can contain personal data even when the schema does not require it.
@@ -215,28 +215,26 @@ Free-text fields—including notes, rejection/cancellation reasons, ACARS bodies
 The repository exposes:
 
 ```bash
-pnpm db:push
-pnpm db:studio
+pnpm db:generate       # write a SQL migration from schema.ts
+pnpm db:migrate:local  # apply migrations to the local D1 database
 ```
 
-`apps/api/src/db/schema.ts` is canonical. This Shiftbloom project is
-pre-production and recreates an empty database when its schema changes, then
-runs `pnpm db:push` from the exact release commit. Never use `db:push` on a
-database containing data that must be preserved.
+`apps/api/src/db/schema.ts` is canonical. Generated migrations live in
+`apps/api/migrations`, and every production deploy applies pending migrations
+with `wrangler d1 migrations apply` before the new code goes live. D1 Time
+Travel can restore the database to any point in the last 30 days.
 
 For a schema change:
 
 1. Update `schema.ts`.
-2. Recreate a disposable database and apply the schema with `db:push`.
+2. Run `pnpm db:generate`, review the SQL, and apply it with `pnpm db:migrate:local`.
 3. Update repositories, services, serializers, OpenAPI, web schemas, and tests.
-4. Run the real PostgreSQL contracts against that fresh schema.
-5. If durable production data is introduced, stop and agree a new
-   data-evolution policy before changing the schema.
+4. Run the contract tests against local D1.
+5. Keep migrations additive where possible; a migration that drops or rewrites
+   data needs a deliberate backfill and rollback plan.
 
 ## Model boundaries
 
-- Browser analytics preference is intentionally local-only and versioned in
-  browser storage; it is not a server consent ledger.
 - Free-text and provider payloads may contain personal data even when the schema
   does not require it.
 - Audit evidence is append-oriented and access-controlled but not externally

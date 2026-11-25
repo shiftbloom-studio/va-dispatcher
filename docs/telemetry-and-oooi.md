@@ -61,7 +61,7 @@ An automatic event is written only when its field is unset, it has not been
 manually overridden, and the new server receipt time remains chronological
 with every OOOI value already stored. The field update, telemetry current
 state, track point, device sequence, lease, append-only provenance, and audit
-record are one PostgreSQL statement: any failure rolls all of them back.
+record are one atomic D1 batch: any failure rolls all of them back.
 Every inferred event also advances `flights.version` and records the exact
 `fromVersion` and `toVersion` in the audit metadata. Ordinary telemetry samples
 without an OOOI transition do not change the flight version.
@@ -90,8 +90,9 @@ therefore produce an ordered pair of versions or one explicit stale-version
 loser; neither can silently overwrite the other. Once a manual correction
 commits, its value and provenance are authoritative. A correction that would
 conflict with existing timestamps is rejected in full with no partial field,
-version, or provenance changes. PostgreSQL race tests cover both a concurrent
-manual correction and an unrelated versioned dispatcher edit.
+version, or provenance changes. D1 contract tests cover both a stale
+manual correction and an unrelated versioned dispatcher edit; D1 serializes
+writes, so the loser always sees the winner's committed version.
 
 ## Current state and retained track
 
@@ -122,7 +123,7 @@ who or which client supplied an event. An approved erasure workflow must first
 anonymize the relevant provenance references by setting
 `actor_membership_id` and/or `device_id` to `NULL`, while retaining the event,
 tenant, flight, source, occurrence, reason, and creation time. It may then
-delete the member or device under the rest of the privacy runbook. PostgreSQL
+delete the member or device under the rest of the privacy runbook. D1
 contract tests prove both the restriction and the explicit anonymization path.
 
 Every API response containing precise telemetry, device metadata, or a
@@ -133,12 +134,9 @@ issuance use `Cache-Control: no-store`.
 ## Local verification
 
 Normal tests never contact MSFS, a map provider, or any shared database. The
-PostgreSQL contract suite is opt-in and requires a disposable PostgreSQL URL:
+D1 contract suite (`telemetry.d1.test.ts`) runs with the regular API tests
+against a fresh in-memory local D1 database:
 
 ```bash
-TEST_DATABASE_URL=postgres://postgres:password@127.0.0.1:55439/test \
-  pnpm --filter @va-dispatch/api test:postgres
+pnpm --filter @va-dispatch/api test
 ```
-
-The suite creates and drops a unique schema. Do not point it at a shared or
-production database.

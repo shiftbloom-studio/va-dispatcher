@@ -10,7 +10,6 @@ packages/
 └── eslint-config/        Shared Next.js ESLint configuration
 docs/                     Operational, privacy, and maintainer documents
 wiki/                     Reviewable source mirror of this GitHub Wiki
-vercel.ts                 Multi-service deployment and ACARS cron
 ```
 
 ## Runtime topology
@@ -20,38 +19,38 @@ flowchart TB
     subgraph Browser
       UI["Next.js client components"]
       CK["Clerk session cookies"]
-      BT["BotID browser proof"]
-      PP["Local privacy preference"]
     end
 
-    subgraph Vercel
-      WEB["web service<br/>Next.js 16 App Router"]
-      API["api service<br/>Hono /api/v1"]
-      CRON["ACARS + privacy<br/>authenticated crons"]
+    subgraph Cloudflare
+      WEB["web Worker<br/>Next.js 16 via vinext"]
+      API["api Worker<br/>Hono /api/*"]
+      CRON["cron triggers<br/>ACARS + privacy"]
+      KV["KV data cache"]
+      R2["R2 tenant logos"]
+      DB["D1 database"]
     end
 
     CLERK["Clerk organizations"]
-    DB["Neon PostgreSQL"]
     HOPPIE["Hoppie's ACARS"]
     SIMBRIEF["SimBrief / Navigraph"]
     MSFS["MSFS client<br/>device token"]
 
     UI --> WEB
     CK --> WEB
-    BT --> API
-    WEB -->|"server identity calls"| API
+    WEB -->|"service binding"| API
+    WEB --> KV
     UI -->|"same-origin typed JSON"| API
     WEB --> CLERK
     API --> CLERK
     API --> DB
+    API --> R2
     API --> HOPPIE
     API --> SIMBRIEF
     MSFS --> API
     CRON --> API
-    PP -. "gates optional telemetry" .-> WEB
 ```
 
-`vercel.ts` routes `/api/*` to the API service and all other requests to the web service. It injects the API service URL into the web service as `API_INTERNAL_URL`. A two-project deployment is also supported by setting `API_ORIGIN` on the web project; the Next.js rewrite preserves same-origin browser calls.
+Both Workers share one hostname. The web Worker is the custom-domain origin; the API Worker claims `<host>/api/*` with a zone route, which takes precedence, so the browser only talks to one origin. Server components call the API through the `API` service binding, because a Worker cannot `fetch()` a route on its own zone. Unauthenticated public reads are cached in Workers KV for 60 seconds; per-user requests are never cached. See [`docs/cloudflare-deployment.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/docs/cloudflare-deployment.md).
 
 ## Web application layers
 
@@ -98,7 +97,7 @@ React Hook Form and Zod validate schedule and flight forms. `datetime-local` val
 flowchart LR
     R["Hono routes<br/>HTTP and Zod"] --> S["Domain services<br/>authorization and workflows"]
     S --> P["Repositories<br/>tenant-scoped Drizzle queries"]
-    P --> D["Neon PostgreSQL"]
+    P --> D["Cloudflare D1"]
     S --> A["ACARS provider interface"]
     A --> H["Hoppie or local mock"]
     S --> AU["Audit repository"]
@@ -113,7 +112,7 @@ At the application level:
 3. Errors are normalized into the public JSON envelope.
 4. Public docs and health routes are mounted.
 5. Secret-authenticated internal routes are mounted before business middleware.
-6. BotID protects browser mutations under the versioned business API.
+6. The Cloudflare bot-score check guards mutations under the versioned business API.
 7. The narrow application route verifies a Clerk user; every business route
    group additionally resolves active organization, tenant, membership, and
    role requirements.
@@ -149,21 +148,20 @@ The ACARS provider interface has Hoppie and DB-backed mock implementations. Prod
 
 The schema lives in `apps/api/src/db/schema.ts`. All operational tables carry `tenant_id`, and repository calls receive a tenant identifier from authenticated context.
 
-The application uses the Neon HTTP driver and does not maintain a persistent
-connection pool, supporting scale-to-zero operation. `schema.ts` is canonical
-while this Shiftbloom project is pre-production. Deployments create an empty
-database and apply it with `db:push`; the command must never target data that
-needs preserving. See [Data Model](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Data-Model).
+The API uses Drizzle's D1 driver through the Worker's `DB` binding, so there
+is no connection pool to manage. `schema.ts` is canonical; `pnpm db:generate`
+writes SQL migrations to `apps/api/migrations`, and every deploy applies
+pending migrations before the new code goes live. See [Data Model](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Data-Model).
 
 ## Security boundaries
 
 - **Identity boundary:** Clerk JWT and active organization claims.
 - **Tenant boundary:** Clerk organization maps to exactly one database tenant; all reads and mutations scope by it.
 - **Authorization boundary:** role hierarchy plus resource ownership checks.
-- **Automation boundary:** BotID for browser mutations and `CRON_SECRET` for internal jobs.
+- **Automation boundary:** Cloudflare bot score for mutations, cron triggers for scheduled jobs, and `CRON_SECRET` for manual internal runs.
 - **Secret boundary:** tenant Hoppie logons encrypted with AES-256-GCM using `TENANT_SECRETS_KEY`.
 - **Contract boundary:** Zod at API input and web response consumption.
-- **Privacy boundary:** optional analytics is off until affirmative browser consent; legal pages are public and Clerk-free.
+- **Privacy boundary:** no analytics or tracking; legal pages are public and Clerk-free.
 
 ## Design decisions
 
@@ -173,7 +171,7 @@ The URL exposes the active Virtual Airline and lets branding, Clerk organization
 
 ### Scale to zero
 
-Neon HTTP, Vercel functions, and Clerk avoid an always-on application server. No Redis or external queue is required for the current workload. The one-minute Hoppie cron is the only regular production wake-up.
+Workers, D1, R2, and Clerk avoid an always-on application server. No Redis or external queue is required for the current workload. The one-minute Hoppie cron trigger is the only regular production wake-up.
 
 ### Explicit state machines
 
@@ -192,7 +190,7 @@ message can be stored later.
 | ------------------------ | ------------------------------------------------------------------------------------------------ |
 | Database schema          | `apps/api/src/db/schema.ts`                                                                      |
 | Authentication and roles | `apps/api/src/middleware/auth.ts`, `apps/api/src/domain/members/roles.ts`                        |
-| BotID policy             | `apps/api/src/middleware/botid.ts`, `apps/web/src/instrumentation-client.ts`                     |
+| Bot-check policy         | `apps/api/src/middleware/human.ts`                                                               |
 | Schedule workflows       | `apps/api/src/domain/schedule-requests/`                                                         |
 | Flight workflows         | `apps/api/src/domain/flights/`                                                                   |
 | Dispatch releases        | `apps/api/src/db/repositories/dispatch-releases.ts`                                              |
@@ -205,4 +203,4 @@ message can be stored later.
 | Web response contracts   | `apps/web/src/lib/api/schemas.ts`                                                                |
 | Tenant identity          | `apps/web/src/lib/server-identity.ts`                                                            |
 | Legal/privacy controls   | `apps/web/src/lib/legal.ts`, `apps/web/src/lib/privacy-storage.ts`, `docs/privacy-compliance.md` |
-| Deployment topology      | `vercel.ts`, `apps/web/next.config.ts`                                                           |
+| Deployment topology      | `apps/api/wrangler.jsonc`, `apps/web/cloudflare.config.ts`                                       |

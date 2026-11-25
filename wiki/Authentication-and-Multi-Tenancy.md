@@ -10,7 +10,7 @@ sequenceDiagram
     participant W as Next.js
     participant C as Clerk
     participant A as Hono API
-    participant D as PostgreSQL
+    participant D as D1
 
     B->>W: GET /vsas/...
     W->>C: Resolve session and active organization
@@ -125,7 +125,7 @@ sequenceDiagram
     participant C as Clerk
     participant G as Global Clerk Admin
     participant A as Tenant Admin
-    participant D as PostgreSQL
+    participant D as D1
 
     U->>W: Open /vsas/waitlist
     W->>C: Join application waitlist
@@ -216,11 +216,11 @@ The following paths intentionally bypass Clerk middleware:
 
 This lets visitors review legal and privacy information before loading authentication code. Health and API documentation are public at the API service; business API routes remain authenticated.
 
-## BotID is not authentication
+## The bot check is not authentication
 
-BotID runs before authenticated business routes on mutating requests. It is an abuse-control layer, not an identity or role substitute. A request must pass BotID where applicable and then pass Clerk authentication, tenant resolution, and authorization.
+The Cloudflare bot-score check runs before authenticated business routes on mutating requests. It is an abuse-control layer, not an identity or role substitute. A request must pass the bot check where applicable and then pass Clerk authentication, tenant resolution, and authorization.
 
-Internal cron routes are excluded from BotID because they use `CRON_SECRET`.
+Internal cron routes are excluded from the bot check because they use `CRON_SECRET`.
 Development seed and integrated fixture routes are independently hard-disabled
 in production and use separate non-production authority.
 

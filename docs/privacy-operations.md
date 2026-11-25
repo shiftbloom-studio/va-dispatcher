@@ -17,8 +17,8 @@ approve the deployment's schedule and procedures before activating them.
 | ACARS               | Delete stored messages, raw Hoppie payload, and local mock queue                             |          30 days | Tenant/member holds exclude linked rows | Hoppie has no application deletion API; document its queue expiry      |
 | OAuth transactions  | Delete expired encrypted PKCE transactions                                                   |            1 day | Tenant/member holds exclude rows        | Navigraph authorization data is provider-managed                       |
 | Audit events        | Delete old tenant audit rows                                                                 |         365 days | Tenant/member holds exclude rows        | Append-only application history is not tamper-evident                  |
-| HTTP/security logs  | Provider task, never direct database deletion                                                |          30 days | Follow the provider hold process        | Vercel/project log settings and deletion support                       |
-| Backups/PITR        | Provider task, never overwrite a source database                                             |          30 days | Follow the provider hold process        | Neon retention/PITR and independent backup inventory                   |
+| HTTP/security logs  | Provider task, never direct database deletion                                                |          30 days | Follow the provider hold process        | Cloudflare Workers log settings and deletion                           |
+| Backups/PITR        | Provider task, never overwrite a source database                                             |          30 days | Follow the provider hold process        | D1 Time Travel window and independent backups                          |
 
 An active subject restriction is also treated as retention protection for
 every row that can be linked to that member. Tenant-only data without a subject
@@ -47,7 +47,7 @@ before the recurring job creates an execution.
 5. A failed checkpoint records a sanitized error and cursor. Fix the cause and
    explicitly retry it. Already committed batches are idempotent; the cursor
    never advances across a failed batch.
-6. Close the generated Vercel, backup, and Hoppie verification tasks. Record a
+6. Close the generated Cloudflare, backup, and Hoppie verification tasks. Record a
    useful operator note without copying personal data or credentials.
 
 Each completed run records tenant-scoped audit evidence containing policy,
@@ -114,8 +114,8 @@ Audit metadata is redacted through the same bounded redaction policy as the
 audit viewer. Export-page access is audited with counts and store names, never
 the exported payload. The response is `private, no-store`.
 
-Verifying an export creates provider/backup tasks for Clerk, Vercel, Neon,
-independent backups, Hoppie, and Navigraph/SimBrief. Finishing the local pages
+Verifying an export creates provider/backup tasks for Clerk, Cloudflare (logs and
+D1 Time Travel), independent backups, Hoppie, and Navigraph/SimBrief. Finishing the local pages
 moves the request to `awaiting_external` while any task is pending or failed;
 the last completed or documented-not-applicable task finalizes it. Do not mark
 the controller's response complete until every applicable task is closed.
@@ -127,10 +127,11 @@ the controller's response complete until every applicable task is closed.
   process. A waitlist-only email has no local membership subject and must be
   handled directly in Clerk. No broad Clerk deletion credential is held by the
   lifecycle job.
-- **Vercel:** configure log/analytics/security retention in the deployment and
+- **Cloudflare:** Workers logs follow the account's observability retention;
   use provider support or available tools for a verified request. VA Dispatch
   cannot prove provider deletion.
-- **Neon/backups:** configure PITR and snapshot retention, maintain a separate
+- **D1 Time Travel/backups:** D1 keeps 30 days of point-in-time history that
+  cannot be shortened per row; maintain a separate
   encrypted backup inventory, and allow old backups to expire. If restoration
   reintroduces deleted data, replay the approved deletion ledger before opening
   the restored service to users.

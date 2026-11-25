@@ -2,11 +2,13 @@
 
 ## Prerequisites
 
-- Node.js 24 or newer. The repository `.nvmrc` pins 26.7.0 for local development; CI verifies Node 24.15.0.
+- Node.js 26 or newer; `.nvmrc` pins the version CI uses.
 - pnpm 11.21.0, as declared by `packageManager`.
-- A PostgreSQL database, normally a Neon development database.
 - Optional Clerk development keys when testing real authentication.
 - Chromium installed through Playwright when running browser tests.
+
+No database server is needed. The API runs under `wrangler dev`, which keeps a
+local D1 database and R2 bucket in `apps/api/.wrangler`.
 
 Use the lockfile exactly:
 
@@ -16,26 +18,17 @@ pnpm install --frozen-lockfile
 
 ## Recommended local mode
 
-The fastest local setup uses a real development database, API development-header authentication, and the isolated mock ACARS adapter. It does not contact Clerk or Hoppie for business requests.
+The fastest local setup uses local D1, API development-header authentication, and the isolated mock ACARS adapter. It does not contact Clerk or Hoppie for business requests.
 
 ### 1. Configure the API
 
 ```bash
-cp apps/api/.env.example apps/api/.env
+cp apps/api/.dev.vars.example apps/api/.dev.vars
 ```
 
-Set at least:
-
-```dotenv
-NODE_ENV=development
-PORT=3001
-CORS_ORIGIN=http://localhost:3000
-DATABASE_URL=postgresql://...
-AUTH_DEV_BYPASS=true
-VSAS_CLERK_ORG_ID=org_vsas_dev
-ACARS_PROVIDER=mock
-CRON_SECRET=replace-this-local-value
-```
+`wrangler.jsonc` already sets `NODE_ENV=development`, the local origins, and
+`ACARS_PROVIDER=mock`. The example enables `AUTH_DEV_BYPASS=true` with
+`VSAS_CLERK_ORG_ID=org_vsas_dev`.
 
 `TENANT_SECRETS_KEY` is not needed for the mock provider, but configuring a valid development value lets you exercise encryption and organization settings:
 
@@ -54,7 +47,6 @@ cp apps/web/.env.example apps/web/.env.local
 For ordinary development against the local API:
 
 ```dotenv
-API_INTERNAL_URL=http://localhost:3001
 API_ORIGIN=http://localhost:3001
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
@@ -67,15 +59,13 @@ Configure development-safe legal values as described in [Configuration Reference
 
 ### 3. Apply the schema
 
-Create an empty disposable development database and apply the canonical schema:
-
 ```bash
-DATABASE_URL='postgresql://...' \
-pnpm db:push
+pnpm db:migrate:local
 ```
 
-This Shiftbloom project is pre-production. Recreate the database when the
-schema changes; never point `db:push` at data that must be preserved.
+This applies every migration in `apps/api/migrations` to the local D1
+database. After changing `apps/api/src/db/schema.ts`, run `pnpm db:generate`
+to write a new migration, then apply it again.
 
 ### 4. Start both services
 
@@ -85,7 +75,7 @@ pnpm dev
 
 - Web: `http://localhost:3000`
 - API: `http://localhost:3001`
-- Health: `http://localhost:3001/health`
+- Health: `http://localhost:3001/api/health`
 - Swagger: `http://localhost:3001/docs/swagger`
 - ReDoc: `http://localhost:3001/docs/redoc`
 
@@ -137,7 +127,7 @@ admin still requires the app control plane or no-active-admin recovery seam.
 
 Keep `ACARS_PROVIDER=mock` for normal development. The mock provider:
 
-- stores messages in PostgreSQL;
+- stores messages in D1;
 - can echo an acknowledgement;
 - exposes the dispatcher inbound simulator;
 - drains simulated messages synchronously during the explicit simulate request; and
@@ -147,24 +137,25 @@ To test Hoppie deliberately, configure a development tenant ground station throu
 
 ## Useful commands
 
-| Command                                   | Purpose                                         |
-| ----------------------------------------- | ----------------------------------------------- |
-| `pnpm dev`                                | Run API and web in parallel                     |
-| `pnpm dev:api`                            | Run Hono on port 3001                           |
-| `pnpm dev:web`                            | Run Next.js on port 3000                        |
-| `pnpm typecheck`                          | Type-check all workspaces                       |
-| `pnpm lint`                               | Lint workspaces that expose a lint script       |
-| `pnpm format:check`                       | Check repository formatting                     |
-| `pnpm test`                               | Run unit and component tests                    |
-| `pnpm test:coverage`                      | Run configured full-source coverage gates       |
-| `pnpm build`                              | Build every workspace                           |
-| `pnpm test:api`                           | Run API tests only                              |
-| `pnpm test:web`                           | Run web tests only                              |
-| `pnpm --filter @va-dispatch/web test:e2e` | Run Playwright smoke journeys                   |
-| `pnpm test:e2e:integrated`                | Run two real web/API/PostgreSQL journeys        |
-| `pnpm security:audit`                     | Reject high-severity dependency advisories      |
-| `pnpm db:push`                            | Apply the canonical schema to an empty database |
-| `pnpm db:studio`                          | Open Drizzle Studio                             |
+| Command                                   | Purpose                                    |
+| ----------------------------------------- | ------------------------------------------ |
+| `pnpm dev`                                | Run API and web in parallel                |
+| `pnpm dev:api`                            | Run the API Worker on port 3001            |
+| `pnpm dev:web`                            | Run Next.js on port 3000                   |
+| `pnpm typecheck`                          | Type-check all workspaces                  |
+| `pnpm lint`                               | Lint workspaces that expose a lint script  |
+| `pnpm format:check`                       | Check repository formatting                |
+| `pnpm test`                               | Run unit and component tests               |
+| `pnpm test:coverage`                      | Run configured full-source coverage gates  |
+| `pnpm build`                              | Build every workspace                      |
+| `pnpm test:api`                           | Run API tests only                         |
+| `pnpm test:web`                           | Run web tests only                         |
+| `pnpm --filter @va-dispatch/web test:e2e` | Run Playwright smoke journeys              |
+| `pnpm test:e2e:integrated`                | Run two real web/API/D1 journeys           |
+| `pnpm security:audit`                     | Reject high-severity dependency advisories |
+| `pnpm db:generate`                        | Write a migration from `schema.ts`         |
+| `pnpm db:migrate:local`                   | Apply migrations to the local D1 database  |
+| `pnpm build:web`                          | Build the web Worker with vinext           |
 
 ## Playwright
 
@@ -190,11 +181,11 @@ E2E_PORT=3200 pnpm --filter @va-dispatch/web test:e2e
 E2E_BASE_URL=https://preview.example.test pnpm --filter @va-dispatch/web test:e2e
 ```
 
-For real persistence through Next.js, Hono, repositories, and PostgreSQL, run
+For real persistence through Next.js, Hono, repositories, and D1, run
 the deliberately small integrated suite as documented in
 [`docs/integrated-e2e.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/docs/integrated-e2e.md).
-It requires an explicitly confirmed disposable database and blocks external
-provider traffic.
+It creates an in-memory D1 database for each run and blocks external provider
+traffic.
 
 ## Before editing Next.js code
 

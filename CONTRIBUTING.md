@@ -15,20 +15,19 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
 
-VA Dispatch is a pnpm monorepo and requires Node.js 24 or newer (the version in
+VA Dispatch is a pnpm monorepo and requires Node.js 26 or newer (the version in
 `.nvmrc` is recommended) and pnpm 11.
 
 ```bash
 pnpm install
-cp .env.example apps/api/.env
+cp apps/api/.dev.vars.example apps/api/.dev.vars
 # Configure apps/web/.env.local from apps/web/.env.example.
-DATABASE_URL='postgresql://...' pnpm db:push
+pnpm db:migrate:local
 pnpm dev
 ```
 
-`schema.ts` is canonical while this Shiftbloom project is pre-production.
-Recreate an empty database and use `db:push`; never run it against a database
-containing data that must be preserved.
+`apps/api/src/db/schema.ts` is canonical. After changing it, run
+`pnpm db:generate` and commit the new migration; never edit an applied one.
 
 Never commit credentials, personal data, production database contents, or
 third-party API secrets. Use only synthetic data in tests and bug reports.
@@ -48,10 +47,9 @@ pnpm build
 pnpm --filter @va-dispatch/web test:e2e
 ```
 
-CI also runs the two real web/API/PostgreSQL journeys. To run them locally,
-create and explicitly confirm a disposable database by following
-[`docs/integrated-e2e.md`](docs/integrated-e2e.md); never reuse a shared
-database for this suite.
+CI also runs the two real web/API journeys against an in-memory local D1
+database: `pnpm test:e2e:integrated`. See
+[`docs/integrated-e2e.md`](docs/integrated-e2e.md).
 
 Install the Playwright browser once before running browser tests locally:
 

@@ -5,8 +5,8 @@ VA Dispatch has two intentionally different Playwright suites:
 - `pnpm --filter @va-dispatch/web test:e2e` is the fast browser smoke suite. It
   uses deterministic route fixtures and does not prove database persistence.
 - `pnpm test:e2e:integrated` starts the real Next.js application and Hono API,
-  authenticates synthetic tenant members, and persists every operation in a
-  disposable PostgreSQL database.
+  authenticates synthetic tenant members, and persists every operation in an
+  in-memory local D1 database created for the run.
 
 The integrated suite is deliberately small. One pilot journey covers cold
 load, sign-in, role denial, schedule creation and cancellation, flight
@@ -17,19 +17,11 @@ send/poll/store behavior, and cross-tenant denial.
 
 ## Run locally
 
-Use a dedicated local PostgreSQL database whose name contains `e2e` or `test`.
-Never point the harness at a shared development, staging, or production
-database. The harness compares the connected database name with an explicit
-confirmation before changing data.
+The API process creates a fresh in-memory D1 database (Miniflare) and applies
+every migration on start, so no database setup is needed and nothing outside
+the run is touched:
 
 ```bash
-createdb va_dispatch_e2e
-
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/va_dispatch_e2e \
-pnpm db:push
-
-E2E_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/va_dispatch_e2e \
-E2E_CONFIRM_DATABASE=va_dispatch_e2e \
 pnpm test:e2e:integrated
 ```
 
@@ -39,16 +31,15 @@ Install Chromium once if Playwright reports that it is missing:
 pnpm --filter @va-dispatch/web exec playwright install chromium
 ```
 
-The API harness resets only tenants with the fixed synthetic Clerk
-organization IDs `org_e2e_vsas` and `org_e2e_other`. The database-name guard is
-an additional safety check, not permission to use a non-disposable database.
+The API harness seeds only tenants with the fixed synthetic Clerk organization
+IDs `org_e2e_vsas` and `org_e2e_other`.
 
 ## Isolation and provider boundaries
 
 The integrated process has a dedicated fixture authority, separate from
 `CRON_SECRET`. It seeds synthetic pilot, dispatcher, admin, and outside-tenant
 members. Browser identity still travels through the Next.js proxy, API auth
-context, role checks, tenant predicates, repositories, and PostgreSQL.
+context, role checks, tenant predicates, repositories, and D1.
 
 Fixture mode is rejected when `NODE_ENV=production`, requires an explicit
 high-entropy `E2E_FIXTURE_SECRET`, and cannot be enabled by
@@ -73,14 +64,13 @@ The integrated fixture is intentionally unavailable on a deployed production
 URL. A deployment acceptance pass therefore needs real, authorized test
 accounts and configuration:
 
-- a freshly schema-synced production database and a healthy private API service;
-- `API_INTERNAL_URL` from the Vercel service binding, or the documented
-  `API_ORIGIN` fallback, with `/api/*` rewrites reaching that API;
+- D1 migrations applied and a healthy API Worker, with the `<host>/api/*` zone
+  route and the web Worker's `API` service binding in place;
 - valid Clerk keys, email-enabled Waitlist mode, the configured vSAS
   organization, and pilot, dispatcher, and admin test memberships whose active
   organization matches `/vsas`;
 - complete mandatory `LEGAL_*` configuration;
-- Vercel OIDC/BotID enabled for protected browser mutations; and
+- Bot Management scores present on API requests (Security → Analytics); and
 - tenant Hoppie, SimBrief, and Navigraph configuration before exercising those
   live providers. Do not send operational ACARS traffic without an agreed test
   station and recipient.
@@ -104,8 +94,8 @@ Check each role in a fresh browser profile and after a hard reload:
    response produces a stable error view whose retry recovers.
 
 If a deployed reload loses styling or assets, inspect the web build output,
-service routing, and CDN responses for `/_next/*` before changing components.
+Worker routing, and CDN responses for `/_next/*` before changing components.
 If the tenant logo fails while other assets load, verify its stored public URL
-and object-store read policy. Repeated auth redirects normally indicate a
+and that the object exists in the R2 logo bucket. Repeated auth redirects normally indicate a
 mismatch between the URL slug, active Clerk organization, API-resolved tenant,
 or local membership; inspect those identities rather than bypassing the shell.

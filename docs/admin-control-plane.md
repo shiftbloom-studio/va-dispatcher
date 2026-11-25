@@ -31,8 +31,8 @@ The console sends and revokes pilot/dispatcher invitations through Clerk's
 Backend API. Invitation email stays in Clerk and in the admin-only live
 response; audit metadata records role and expiry without copying the address.
 The configured 7/14/30-day lifetime comes from organization settings.
-Production's tenant return URL comes from its explicit `APP_ORIGIN`; Preview
-uses Vercel's trusted branch URL and falls back to the exact deployment URL.
+The tenant return URL always comes from the explicit `APP_ORIGIN` of the
+environment (`APP_ENV=production` or `preview`).
 Invited users return to the public `/{slug}/sign-in` Clerk flow, which consumes
 the organization ticket for existing users or transfers new users into sign-up.
 After an organization invitation is accepted, first tenant access or directory

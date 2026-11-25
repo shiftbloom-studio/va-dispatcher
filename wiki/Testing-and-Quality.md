@@ -5,7 +5,7 @@ VA Dispatch combines backend unit/route tests, frontend unit/component tests, de
 ## Test inventory
 
 The repository has four distinct evidence layers: API/web unit and component
-tests, real PostgreSQL contracts, a fast fixture browser suite, and a two-
+tests, local D1 contracts, a fast fixture browser suite, and a two-
 journey integrated browser suite. File and assertion counts change; the
 important part is naming the layer and risk actually covered.
 
@@ -25,10 +25,10 @@ API tests use Vitest in a Node environment and cover:
 - tenant isolation across Clerk organizations;
 - member self-service callsign uniqueness;
 - admin Hoppie configuration secrecy and authorization;
-- cron authentication and Vercel-compatible GET handling;
-- BotID route policy and bot rejection;
+- cron authentication and the scheduled-handler cron mapping;
+- bot-score route policy and bot rejection;
 - security headers;
-- PostgreSQL unique-error recognition; and
+- D1 unique-error recognition; and
 - OpenAPI route completeness, unique operation IDs, descriptions, and resolvable references.
 - schedule/flight versions, idempotency, races, rollback, and tenant-coherent constraints;
 - SimBrief revision/callback atomicity and trusted attribution;
@@ -55,8 +55,7 @@ Web tests use Vitest, jsdom, Testing Library, and a `server-only` test shim. The
 - ACARS draft retention, setup gating, mock mode, and flight recipient selection;
 - member and organization settings;
 - strict legal configuration;
-- privacy preference parsing/storage;
-- consent UI and cross-tab behavior; and
+- English and German legal pages; and
 - live simulator presence/OOOI displays and device controls;
 - SimBrief/Navigraph planning and callback recovery; and
 - member, audit, and privacy control planes.
@@ -73,9 +72,10 @@ behavior. The integrated suite contains exactly two journeys:
    SimBrief/Navigraph, ACARS send/poll/storage, and cross-tenant denial.
 
 The integrated suite starts real Next.js and Hono processes and persists through
-repositories to a confirmed disposable PostgreSQL database. It blocks external
-provider traffic and uses a production-hard-off synthetic auth authority. It is
-not a live Clerk, BotID, Vercel rewrite, Hoppie, SimBrief, or Navigraph test.
+repositories to an in-memory local D1 database created for the run. It blocks
+external provider traffic and uses a production-hard-off synthetic auth
+authority. It is not a live Clerk, Cloudflare bot-score, zone-route, Hoppie,
+SimBrief, or Navigraph test.
 
 ## Coverage thresholds
 
@@ -119,17 +119,13 @@ Its main jobs cover:
 
 1. checkout with persisted credentials disabled;
 2. pnpm setup;
-3. Node 24.15.0 with pnpm cache;
+3. Node from `.nvmrc` with pnpm cache;
 4. frozen install;
-5. canonical schema push to a fresh PostgreSQL database and real PostgreSQL
-   contracts. Service containers publish a host port derived from the workflow
-   run id so concurrent jobs can share one Docker daemon. Containerized
-   runners reach that port through `.github/scripts/resolve-service-host.mjs`
-   (`127.0.0.1` when the port is in the job network namespace, otherwise the
-   Docker host gateway);
-6. format, lint, type, coverage, security audit, and production build;
+5. format, lint, type, coverage (including contract tests against local D1),
+   and the production build;
+6. a dry-run bundle of the API Worker;
 7. fast browser workflows; and
-8. isolated PostgreSQL integrated E2E with failure-only artifacts.
+8. integrated E2E against in-memory local D1 with failure-only artifacts.
 
 Concurrency cancels an older run for the same ref. Coverage and failure-report
 uploads continue when the account artifact quota is already exhausted; the
@@ -142,10 +138,9 @@ The separate `Security` workflow runs on pull requests, `main`, Mondays, and man
 - high-severity pnpm advisory audit;
 - dependency review on pull requests; and
 - CodeQL extended JavaScript/TypeScript analysis. The job installs Node.js
-  24.15.0 first, because the self-hosted runner image does not put `node` on
-  `PATH` and the TypeScript extractor requires it.
+  from `.nvmrc` first, because the TypeScript extractor requires it.
 
-Dependabot currently updates GitHub Actions and groups `github/codeql-action/*` so init and analyze stay on one SHA. pnpm package updates remain a reviewed manual process until the project's configured pnpm generation is supported by the chosen automation.
+Dependabot updates GitHub Actions (grouping `github/codeql-action/*` so init and analyze stay on one SHA) and npm dependencies.
 
 ## Toolchain notes
 
@@ -167,7 +162,7 @@ Do not perform broad dependency updates incidentally. Read release notes, check 
 | Schema field         | repository, serializer, web schema, null/backfill behavior, rollout                                               |
 | Clerk/tenant logic   | signed out, no org, wrong org, unknown tenant, role map/sync, pending/disabled membership, approval/removal races |
 | Hoppie behavior      | provider error class, no-secret error, explicit ambiguous outcome, no auto retry                                  |
-| BotID policy         | matching client/server level and excluded routes                                                                  |
+| Bot-check policy     | strict/basic route level and excluded routes                                                                      |
 | Optional third party | pre-consent absence, accept, reject, withdrawal, version expiry, cross-tab                                        |
 | UI workflow          | loading, empty, error, mutation success/failure, accessibility, browser journey                                   |
 | Legal copy/config    | strict production failure and rendered public pages                                                               |

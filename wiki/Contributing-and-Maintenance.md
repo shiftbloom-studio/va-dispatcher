@@ -84,8 +84,8 @@ Run API docs tests and open both Swagger UI and ReDoc after significant changes.
 
 ## Maintaining security and privacy controls
 
-- Keep BotID client and API route policies identical.
-- Keep optional analytics off by default and increment notice version after material changes.
+- Keep the strict bot-check route list in `apps/api/src/middleware/human.ts` in step with expensive or external-provider routes.
+- Ship no analytics or tracking; update both legal pages and their version after material changes.
 - Do not add an external script, iframe, font, map, or tracker without consent/data review.
 - Keep required legal config fail-closed in production.
 - Never include secrets or personal data in logs, tests, docs, screenshots, audit metadata, fixtures, or issue templates.
@@ -116,4 +116,4 @@ See [`docs/maintainer-setup.md`](https://github.com/shiftbloom-studio/va-dispatc
 
 ## Getting help
 
-Use [`SUPPORT.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/SUPPORT.md) and the support-question issue form. Third-party service issues may need Clerk, Neon, Vercel, or Hoppie support after the application request path has been isolated.
+Use [`SUPPORT.md`](https://github.com/shiftbloom-studio/va-dispatcher/blob/main/SUPPORT.md) and the support-question issue form. Third-party service issues may need Clerk, Cloudflare, or Hoppie support after the application request path has been isolated.

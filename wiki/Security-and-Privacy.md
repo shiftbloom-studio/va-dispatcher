@@ -6,10 +6,10 @@ VA Dispatch includes defense-in-depth and privacy-by-default controls, but the r
 
 ```mermaid
 flowchart LR
-    B["Browser"] -->|"Clerk session + BotID proof"| W["Web/API boundary"]
+    B["Browser"] -->|"Clerk session + Cloudflare bot score"| W["Web/API boundary"]
     W -->|"verified org -> tenant"| D["Tenant-scoped database"]
     W -->|"decrypted tenant credential"| H["Hoppie's ACARS"]
-    V["Vercel cron"] -->|"CRON_SECRET"| W
+    V["Worker cron trigger"] -->|"scheduled handler"| W
     O["Operator"] -->|"deployment secrets and legal config"| W
 ```
 
@@ -37,14 +37,14 @@ Compromise or misconfiguration at one boundary must not be assumed safe because 
 
 ### Abuse prevention
 
-Vercel BotID protects all browser mutations, with Deep Analysis on expensive or external-provider routes. Client and server route policies are deliberately duplicated and must remain identical.
+The API rejects mutations that Cloudflare's bot score marks as automated, with a stricter threshold on expensive or external-provider routes. Verified bots and requests without a score pass.
 
-BotID is excluded from reads and secret-authenticated internal routes. It complements—not replaces—authentication, authorization, input validation, provider controls, and rate-aware design.
+The bot check is excluded from reads and secret-authenticated internal routes. It complements—not replaces—authentication, authorization, input validation, provider controls, and rate-aware design.
 
 ### Input and response contracts
 
 - Zod validates route payloads, parameters, and queries.
-- PostgreSQL unique constraints protect tenant membership/callsign identities and ACARS deduplication.
+- D1 (SQLite) unique constraints protect tenant membership/callsign identities and ACARS deduplication.
 - The web parses every consumed success payload with Zod.
 - Errors use a bounded public envelope and unknown errors hide internal details.
 - Request IDs support correlation without exposing secrets.
@@ -82,37 +82,24 @@ Actions are pinned to full commit SHAs. Keep `github/codeql-action/init` and `gi
 
 ## Personal and linkable data inventory
 
-| System                    | Data                                                                                                                              |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Clerk                     | Waitlist email/state, user/org IDs, login/invitation email, role/invitation state, name, sessions, IP/device/security events      |
-| Memberships               | Clerk ID, active or requested role (according to status), display name, callsign, SimBrief/Navigraph identity, application/status |
-| Schedule requests         | Availability, preferences, notes, status, reasons, timestamps                                                                     |
-| Flights                   | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields                                                           |
-| Dispatch planning         | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP                                                            |
-| Simulator telemetry       | Device identity, position/phase samples, recent track, OOOI provenance                                                            |
-| ACARS                     | Station identifiers, message text, provider metadata, actor, timestamps                                                           |
-| Audit events              | Actor, action, entity IDs, metadata, time                                                                                         |
-| Privacy operations        | Policy, request/hold/task state, approvals, reports, export cursor                                                                |
-| Infrastructure            | Request IDs, IP and HTTP/security logs at providers                                                                               |
-| Optional Vercel telemetry | Consent-gated aggregated page/referrer/device/coarse location and Web Vitals data                                                 |
+| System              | Data                                                                                                                              |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Clerk               | Waitlist email/state, user/org IDs, login/invitation email, role/invitation state, name, sessions, IP/device/security events      |
+| Memberships         | Clerk ID, active or requested role (according to status), display name, callsign, SimBrief/Navigraph identity, application/status |
+| Schedule requests   | Availability, preferences, notes, status, reasons, timestamps                                                                     |
+| Flights             | Pilot assignment, route/schedule, notes, lifecycle reasons, OOOI fields                                                           |
+| Dispatch planning   | Release revisions, weather/fuel/payload, remarks, SimBrief request/OFP                                                            |
+| Simulator telemetry | Device identity, position/phase samples, recent track, OOOI provenance                                                            |
+| ACARS               | Station identifiers, message text, provider metadata, actor, timestamps                                                           |
+| Audit events        | Actor, action, entity IDs, metadata, time                                                                                         |
+| Privacy operations  | Policy, request/hold/task state, approvals, reports, export cursor                                                                |
+| Infrastructure      | Request IDs, IP and HTTP/security logs at providers                                                                               |
 
 Treat every free-text field as potentially personal. Do not solicit sensitive or unrelated information.
 
 ## Browser privacy controls
 
-Authentication cookies and BotID are treated as necessary service/security processing. Optional Vercel Web Analytics and Speed Insights remain off until affirmative consent.
-
-The browser stores one local preference record:
-
-```json
-{
-  "version": "2026-08-12.2",
-  "decidedAt": "2026-08-12T12:00:00.000Z",
-  "analyticsAllowed": false
-}
-```
-
-The legal-notice version invalidates an old decision after material notice changes. Preferences synchronize across open tabs. After analytics has initialized, withdrawal blocks every future event through a per-event consent check while leaving the clients mounted for stable application behavior.
+Clerk authentication cookies and the Cloudflare security cookies `__cf_bm` and `_cfuvid` are strictly necessary (TDDDG §25(2) Nr. 2), so there is no consent banner. The app ships no analytics or tracking.
 
 There is no advertising, marketing tracker, social plugin, remote font, map, or embedded-media service in the current user application.
 
@@ -155,7 +142,7 @@ backup. Before production, the controller must still establish:
 
 Before production, the controller must establish:
 
-- processor agreements for Clerk, Vercel, and Neon;
+- processor agreements for Clerk and Cloudflare;
 - subprocessor and international-transfer assessment;
 - an approved retention schedule for every data store and backup;
 - approved retention and data-subject operating procedures around the software;
@@ -182,7 +169,7 @@ For any auth, tenant, provider, database, or privacy change, review:
 
 - identity and tenant derivation;
 - role and resource ownership;
-- BotID client/server policy parity;
+- bot-score route policy;
 - route Zod and web response schemas;
 - secret exposure in responses, logs, errors, tests, screenshots, and audit metadata;
 - cross-tenant and disabled-membership cases;

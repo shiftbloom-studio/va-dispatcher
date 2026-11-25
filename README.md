@@ -11,8 +11,8 @@ and current limitations, see the
 [project Wiki](https://github.com/shiftbloom-studio/va-dispatcher/wiki).
 
 - **One tenant = one Virtual Airline** (first: **vSAS**)
-- **API**: Hono + TypeScript on Vercel Services (`apps/api`)
-- **Web**: Next.js pilot portal + dispatcher suite (`apps/web`)
+- **API**: Hono + TypeScript on Cloudflare Workers with D1 and R2 (`apps/api`)
+- **Web**: Next.js pilot portal + dispatcher suite, built for Workers with vinext (`apps/web`)
 - **ACARS**: Hoppie's ACARS with tenant-scoped encrypted ground-station credentials
 
 ## Monorepo
@@ -24,20 +24,20 @@ apps/web   — Next.js frontend (path tenancy at /vsas)
 
 ## Prerequisites
 
-- Node.js 24+ (26.7 recommended locally; Vercel currently builds on 24.x)
+- Node.js 26+
 - pnpm 11.21+
-- Neon Postgres + Clerk (Vercel Marketplace)
+- A Clerk application (optional locally: `AUTH_DEV_BYPASS=true`)
+- A Cloudflare account for deployment; local development needs none
 
 ## Quick start
 
 ```bash
 pnpm install
-cp .env.example apps/api/.env
+cp apps/api/.dev.vars.example apps/api/.dev.vars
 # configure apps/web/.env.local from apps/web/.env.example
-# fill DATABASE_URL, CLERK_SECRET_KEY, etc.
 
-DATABASE_URL='postgresql://...' pnpm db:push
-pnpm dev              # web :3000 + API :3001
+pnpm db:migrate:local # create the local D1 schema
+pnpm dev              # web :3000 (next dev) + API Worker :3001 (wrangler dev)
 ```
 
 Open `http://localhost:3000/vsas`. Health check: `GET http://localhost:3001/health`.
@@ -46,7 +46,7 @@ The API reference is available through
 [ReDoc](http://localhost:3001/docs/redoc), and the raw
 [OpenAPI document](http://localhost:3001/docs/openapi.json).
 
-The public legal pages are available at `/impressum` and `/privacy`. Configure
+The public legal pages are available in English at `/imprint` and `/privacy` and in German at `/impressum` and `/datenschutz`. Configure
 all required `LEGAL_*` values from `apps/web/.env.example` before production;
 production requests fail closed rather than publish placeholder operator data.
 See [`docs/privacy-compliance.md`](docs/privacy-compliance.md) for the deployment
@@ -99,76 +99,54 @@ Local development and automated tests can use the internal DB-backed adapter
 with `ACARS_PROVIDER=mock`. Its `POST /api/v1/acars/simulate` fixture is never
 enabled in production, even if a stale production variable says `mock`.
 
-## Cost model (no idle cost)
+## Cost model
 
-| Layer      | Choice                                   | Idle behavior                                  |
-| ---------- | ---------------------------------------- | ---------------------------------------------- |
-| Postgres   | **Neon Free / scale-to-zero**            | Suspends when unused → **$0 idle**             |
-| Auth       | **Clerk + B2B Authentication**           | Production custom roles require the add-on     |
-| API        | **Vercel Fluid Compute**                 | Active CPU pricing; no charge when not invoked |
-| ACARS cron | Every **1 min**, configured tenants only | Required for a live Hoppie ground station      |
+| Layer      | Choice                                   | Idle behavior                              |
+| ---------- | ---------------------------------------- | ------------------------------------------ |
+| Database   | **Cloudflare D1**                        | Billed per row read/written and storage    |
+| Logos      | **Cloudflare R2**                        | Storage only; no egress fees               |
+| Auth       | **Clerk + B2B Authentication**           | Production custom roles require the add-on |
+| Compute    | **Cloudflare Workers**                   | Billed per request and CPU time            |
+| ACARS cron | Every **1 min**, configured tenants only | Required for a live Hoppie ground station  |
 
-Do **not** add Redis/queues for v1 — they would add idle or minimum footprint.
-
-The production poll cron selects only tenants with an encrypted Hoppie logon.
-Set `ACARS_PROVIDER=hoppie` in production for an explicit, self-documenting
-configuration; the runtime enforces Hoppie there regardless. Vercel Pro is
-required for the one-minute schedule; slower cron schedules delay inbound
-messages but do not affect outbound sends.
+The poll cron selects only tenants with an encrypted Hoppie logon. Set
+`ACARS_PROVIDER=hoppie` in production for an explicit, self-documenting
+configuration; the runtime enforces Hoppie there regardless.
 
 ## Deploy
 
-Vercel Services (`vercel.ts`): `web` + `api`, rewrites `/api/*` → API. If the
-Services private beta is unavailable, deploy `apps/web` and `apps/api` as two
-projects and set `API_ORIGIN` on the web project to the API project's public
-origin; the Next.js rewrite keeps browser calls on same-origin `/api/*`.
-
-Normal releases are automatic: CI validates an internal pull request before a
-separate credentialed workflow deploys its preview; a successful `main` CI run
-deploys Production. Builds do not modify the database; `/api/ready` must confirm
-that the selected environment already has the required tenant/membership
-schema. See
-[`docs/maintainer-setup.md`](docs/maintainer-setup.md) for the one-time GitHub
-and Vercel configuration.
-
-Initial local provisioning remains manual:
-
-```bash
-vercel login
-vercel link
-# Prefer Neon Free / Launch (autosuspend). Avoid always-on compute plans.
-vercel integration add neon
-vercel integration add clerk
-vercel env pull apps/api/.env.local --yes
-# copy DATABASE_URL + CLERK_* into apps/api/.env for local
-DATABASE_URL='postgresql://...' pnpm db:push
-```
+Two Workers share one hostname: `va-dispatch-web` is the custom-domain origin,
+and `va-dispatch-api` claims `/api/*` with a zone route. Cloudflare Workers
+Builds deploys both from `main`; the API build applies pending D1 migrations
+first. Hostname, database ID, and operator details come from build variables,
+never from the repository. See
+[`docs/cloudflare-deployment.md`](docs/cloudflare-deployment.md) for the
+one-time setup, secrets, caching, and rollback.
 
 ## Scripts
 
-| Script                                    | Description                                    |
-| ----------------------------------------- | ---------------------------------------------- |
-| `pnpm dev:api`                            | Run API locally                                |
-| `pnpm dev:web`                            | Run the Next.js app locally                    |
-| `pnpm dev`                                | Run API and web together                       |
-| `pnpm test:api`                           | API unit and isolation tests                   |
-| `pnpm test:web`                           | Frontend unit and component tests              |
-| `pnpm test:coverage`                      | Full-source tests and coverage                 |
-| `pnpm security:audit`                     | High-severity dependency audit                 |
-| `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests              |
-| `pnpm test:e2e:integrated`                | Real web/API/PostgreSQL journeys               |
-| `pnpm db:push`                            | Apply the canonical schema to a fresh database |
-| `pnpm typecheck`                          | TypeScript check                               |
+| Script                                    | Description                               |
+| ----------------------------------------- | ----------------------------------------- |
+| `pnpm dev:api`                            | Run API locally                           |
+| `pnpm dev:web`                            | Run the Next.js app locally               |
+| `pnpm dev`                                | Run API and web together                  |
+| `pnpm test:api`                           | API unit and isolation tests              |
+| `pnpm test:web`                           | Frontend unit and component tests         |
+| `pnpm test:coverage`                      | Full-source tests and coverage            |
+| `pnpm security:audit`                     | High-severity dependency audit            |
+| `pnpm --filter @va-dispatch/web test:e2e` | Deterministic browser smoke tests         |
+| `pnpm test:e2e:integrated`                | Real web/API journeys on local D1         |
+| `pnpm db:generate`                        | Generate a D1 migration from `schema.ts`  |
+| `pnpm db:migrate:local`                   | Apply migrations to the local D1 database |
+| `pnpm typecheck`                          | TypeScript check                          |
 
-This Shiftbloom project is pre-production and uses `schema.ts` as its canonical
-database definition. Recreate an empty database and run `db:push`; never point
-that command at a database containing user data. If the product later becomes
-long-lived production software, define a new data-evolution policy first.
+`apps/api/src/db/schema.ts` is the canonical database definition. Change it,
+run `pnpm db:generate`, and commit the new file under `apps/api/migrations`;
+applied migrations are never edited.
 
-The integrated browser suite requires a separately confirmed disposable
-PostgreSQL database. See
-[`docs/integrated-e2e.md`](docs/integrated-e2e.md) for its guarded local command,
-provider isolation, and deployed-browser acceptance checklist.
+The integrated browser suite runs the API against an in-memory local D1
+database. See [`docs/integrated-e2e.md`](docs/integrated-e2e.md) for details
+and the deployed-browser acceptance checklist.
 
 ## Contributing
 

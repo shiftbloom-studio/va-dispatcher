@@ -42,7 +42,7 @@ operating procedures for the actual deployment with qualified counsel.
 | `audit_events`        | Actor, action, entity identifiers, metadata, timestamp                                                                                                                                                                                        |
 | Privacy workflows     | Policy versions, aggregate reports, verified request state, restrictions/objections, legal holds, and provider follow-up tasks                                                                                                                |
 | Infrastructure        | Request IDs, IP address and HTTP/security logs held by hosting and authentication providers                                                                                                                                                   |
-| Vercel telemetry      | Consent-gated aggregated routes, referrers, coarse location/device categories and Web Vitals; essential BotID challenge and security signals                                                                                                  |
+| Bot scoring           | Cloudflare bot score of each request and the `__cf_bm` bot-management cookie; used only to block automated abuse                                                                                                                              |
 
 Free-text fields can contain personal data even when the schema does not ask
 for it. Train dispatchers and members not to enter sensitive or unrelated data.
@@ -89,7 +89,7 @@ this feature must not be presented as optional analytics consent.
   The approved privacy lifecycle job physically expires disconnected current,
   lease, and track rows under the controller's telemetry retention class.
 - Transfers: the application does not send telemetry to a map or simulator
-  provider. It is processed by the configured Vercel and Neon infrastructure,
+  provider. It is processed by the configured Cloudflare infrastructure,
   whose transfer safeguards apply. The user's simulator client is the source,
   not an additional application processor.
 - Rights: data export and deletion procedures must include device records,
@@ -104,8 +104,8 @@ this feature must not be presented as optional analytics consent.
 
 ## Processor and transfer controls
 
-- Execute and retain the current data-processing agreements for Clerk, Vercel,
-  and Neon. Record their subprocessors, processing locations, deletion terms,
+- Execute and retain the current data-processing agreements for Clerk and
+  Cloudflare. Record their subprocessors, processing locations, deletion terms,
   and incident-notification channels.
 - Select EEA deployment/database regions where the contracted product supports
   them. Document any transfer outside the EEA, its adequacy decision or
@@ -162,16 +162,10 @@ Use and test the verified workflow in
 
 ## Cookies and browser storage
 
-The current build keeps Vercel Web Analytics and Speed Insights disabled until
-the user affirmatively allows anonymous analytics. Web Analytics is
-cookie-free, but consent also covers access to browser performance and device
-information. The optional clients load only after the first affirmative choice.
-They then remain initialized for stable route attribution, while a per-event
-consent check blocks every event whenever consent is withdrawn. Preference
-changes are also synchronized across open tabs. BotID remains active as a
-security control on protected mutations and sends browser challenge proof and
-security signals with those requests. The build has no advertising, marketing,
-social-media plugin, remote font, map, or embedded-media service.
+The current build uses only strictly necessary storage: Clerk session cookies
+and Cloudflare's `__cf_bm` and `_cfuvid` security cookies. It has no analytics,
+advertising, marketing, social-media plugin, remote font, map, or embedded-media
+service, so it shows no consent banner (Section 25(2) no. 2 TDDDG).
 
 Before adding any optional client-side service:
 
