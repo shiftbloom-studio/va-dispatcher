@@ -34,6 +34,14 @@ for (const file of [
 }
 
 let config = readFileSync(template, "utf8");
+// Optional bindings: drop their lines when the setting is empty.
+for (const key of ["AUTH_IDENTITY_WORKER"]) {
+  if (env[key]?.trim()) continue;
+  config = config
+    .split("\n")
+    .filter((line) => !line.includes(`<${key}>`))
+    .join("\n");
+}
 const keys = new Set(
   [...config.replace(/^\s*\/\/.*$/gm, "").matchAll(/<([A-Z0-9_]+)>/g)].map(
     (m) => m[1],

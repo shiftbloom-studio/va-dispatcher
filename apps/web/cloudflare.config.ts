@@ -81,6 +81,15 @@ export default defineConfig({
         ...(production
           ? { API: bindings.worker({ worker: "va-dispatch-api" }) }
           : {}),
+        // Optional: the identity provider's Worker in the same account, so
+        // calls to the issuer skip the zone's bot protection.
+        ...(production && process.env.AUTH_IDENTITY_WORKER?.trim()
+          ? {
+              IDENTITY: bindings.worker({
+                worker: process.env.AUTH_IDENTITY_WORKER.trim(),
+              }),
+            }
+          : {}),
         // Secrets: the OIDC client secret and the key that encrypts the
         // session cookie (32+ random characters).
         AUTH_CLIENT_SECRET: bindings.secret(),

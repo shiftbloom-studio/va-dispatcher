@@ -1,5 +1,6 @@
 import {
   createRemoteJWKSet,
+  customFetch,
   jwtVerify,
   type JWTPayload,
   type JWTVerifyGetKey,
@@ -7,6 +8,7 @@ import {
 
 import { env } from "../env.js";
 import { AppError } from "../lib/errors.js";
+import { identityFetch } from "../platform.js";
 
 /** Identity facts the API trusts from a verified access token. */
 export type VerifiedIdentity = {
@@ -46,7 +48,7 @@ async function jwksUrl(issuer: string): Promise<string> {
     ".well-known/openid-configuration",
     issuer.endsWith("/") ? issuer : `${issuer}/`,
   );
-  const response = await fetch(discovery);
+  const response = await identityFetch(issuer)(discovery);
   if (!response.ok) {
     throw new AppError("UPSTREAM", "Identity provider discovery failed", {
       status: 503,
@@ -65,7 +67,12 @@ async function signingKeys(issuer: string): Promise<JWTVerifyGetKey> {
   if (keysOverride) return keysOverride;
   const url = await jwksUrl(issuer);
   if (cachedKeys?.url !== url) {
-    cachedKeys = { url, keys: createRemoteJWKSet(new URL(url)) };
+    cachedKeys = {
+      url,
+      keys: createRemoteJWKSet(new URL(url), {
+        [customFetch]: identityFetch(issuer),
+      }),
+    };
   }
   return cachedKeys.keys;
 }

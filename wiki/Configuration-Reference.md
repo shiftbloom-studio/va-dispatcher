@@ -114,6 +114,7 @@ stem is the shared shiftbloom account service. Its operator registers VA Dispatc
 2. Include `dispatcher` and `pilot` in stem's `ORG_ROLES`.
 3. Create the vSAS organization for app `va-dispatcher` with slug exactly `vsas`, and set `VSAS_AUTH_ORG_ID` to its ID.
 4. Set `APP_ORIGIN` to the canonical public web origin, so invitation links return to `/:slug` on an allowed redirect origin.
+5. If stem runs as a Worker in the same Cloudflare account, set `AUTH_IDENTITY_WORKER` to its Worker name on both Workers Builds triggers. Calls to the issuer then use the `IDENTITY` service binding instead of the public hostname, so the issuer zone's bot protection cannot challenge them.
 
 Tenant administrators never need access to stem itself. Their organization role and the VA Dispatch `admin` role are tenant-scoped; clients, roles, and organization provisioning stay with the stem operator.
 
