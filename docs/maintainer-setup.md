@@ -64,8 +64,8 @@ An internal pull request runs all validation, then the default-branch `Deploy`
 workflow creates one serialized preview from that exact successful CI commit.
 It never checks out or executes pull-request code while holding the Vercel
 token. Before any `node` or `gh` command, each deploy job installs Node.js
-24.15.0 and a checksum-pinned GitHub CLI, because the self-hosted runner image
-does not provide them on `PATH`. The same setup installs `curl` only when it
+26 and a checksum-pinned GitHub CLI, so the jobs do not depend on what the
+runner image puts on `PATH`. The same setup installs `curl` only when it
 is missing; the Vercel API calls use `curl`. The Vercel build does not change the database,
 and the deployment succeeds only after `/api/ready` confirms the
 already-provisioned live schema.
