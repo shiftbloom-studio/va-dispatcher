@@ -53,7 +53,7 @@ describe("organization settings", () => {
             name: body.name,
             settings: tenant.settings,
             memberAccess: body.memberAccess,
-            clerkSynchronized: true,
+            directorySynchronized: true,
           });
         }
         if (path === "/tenant/acars-config" && options.method === "PUT") {

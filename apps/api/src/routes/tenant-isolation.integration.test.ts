@@ -14,14 +14,14 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
     requireAuth: createMiddleware(async (c, next) => {
       const orgId = c.req.header("X-Test-Clerk-Org") ?? "org_vsas";
       c.set("auth", {
-        clerkUserId: "user_dispatcher",
+        authUserId: "user_dispatcher",
         tenantId:
           orgId === "org_vsas"
             ? fixture.tenantId
             : "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         membershipId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         role: "dispatcher",
-        clerkOrgId: orgId,
+        authOrgId: orgId,
       });
       await next();
     }),

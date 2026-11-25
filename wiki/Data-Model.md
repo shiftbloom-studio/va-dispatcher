@@ -40,7 +40,7 @@ One row per Virtual Airline.
 | ------------------ | ------------------------------------------------------------------------------- |
 | `slug`             | Unique URL/application tenant key                                               |
 | `name`             | Operational display name                                                        |
-| `clerk_org_id`     | Unique Clerk organization mapping                                               |
+| `auth_org_id`      | Unique Clerk organization mapping                                               |
 | `hoppie_station`   | Shared ground-station callsign                                                  |
 | `hoppie_logon_enc` | AES-256-GCM encrypted Hoppie logon                                              |
 | `settings`         | Flexible JSON settings, including ACARS test metadata and `memberAccess` policy |
@@ -53,7 +53,7 @@ Tenant-local user profile and authorization record.
 
 | Important field                            | Purpose                                                                           |
 | ------------------------------------------ | --------------------------------------------------------------------------------- |
-| `clerk_user_id`                            | Clerk identity inside tenant                                                      |
+| `auth_user_id`                             | Clerk identity inside tenant                                                      |
 | `role`                                     | `pilot`, `dispatcher`, or `admin`; for an invited application, the requested role |
 | `display_name`                             | Optional tenant display name                                                      |
 | `pilot_callsign`                           | Optional personal aircraft ACARS callsign                                         |
@@ -61,7 +61,7 @@ Tenant-local user profile and authorization record.
 | `navigraph_subject`, `navigraph_username`  | Navigraph OAuth identity                                                          |
 | `status`                                   | `active`, `invited`, or `disabled`                                                |
 
-`(tenant_id, clerk_user_id)` and `(tenant_id, pilot_callsign)` are unique. SQLite permits multiple null callsigns. Schedule requests restrict membership deletion; flight and audit actor links use set-null behavior.
+`(tenant_id, auth_user_id)` and `(tenant_id, pilot_callsign)` are unique. SQLite permits multiple null callsigns. Schedule requests restrict membership deletion; flight and audit actor links use set-null behavior.
 
 The application reuses the membership lifecycle instead of creating a second
 applicant identity store: `invited` plus the membership `role` is pending,

@@ -49,7 +49,7 @@ const tenant: TenantConfig = {
 };
 
 const me: Me = {
-  user: { clerkUserId: "user_test" },
+  user: { authUserId: "user_test" },
   membership: {
     id: "membership_test",
     role: "admin",

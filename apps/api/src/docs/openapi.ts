@@ -130,8 +130,8 @@ const acarsMutationErrors = {
   "422": responseRef("UnprocessableEntity"),
 };
 
-const clerkOrDevSecurity = [
-  { clerkBearerAuth: [] },
+const bearerOrDevSecurity = [
+  { bearerAuth: [] },
   { devUserId: [], devOrgId: [], devRole: [] },
 ];
 
@@ -582,7 +582,7 @@ const schemas = {
     type: "object",
     required: [
       "id",
-      "clerkUserId",
+      "authUserId",
       "role",
       "requestedRole",
       "displayName",
@@ -593,7 +593,7 @@ const schemas = {
     ],
     properties: {
       id: schemaRef("Uuid"),
-      clerkUserId: { type: "string" },
+      authUserId: { type: "string" },
       role: schemaRef("Role"),
       requestedRole: { ...schemaRef("Role"), nullable: true },
       displayName: schemaRef("NullableString"),
@@ -688,7 +688,7 @@ const schemas = {
       "name",
       "settings",
       "memberAccess",
-      "clerkSynchronized",
+      "directorySynchronized",
     ],
     properties: {
       id: schemaRef("Uuid"),
@@ -696,7 +696,7 @@ const schemas = {
       name: { type: "string" },
       settings: schemaRef("ArbitraryObject"),
       memberAccess: schemaRef("MemberAccessSettings"),
-      clerkSynchronized: { type: "boolean" },
+      directorySynchronized: { type: "boolean" },
     },
   },
   TenantBrandResponse: {
@@ -1683,8 +1683,8 @@ const schemas = {
   SeedVsasInput: {
     type: "object",
     properties: {
-      clerkOrgId: { type: "string" },
-      adminClerkUserId: { type: "string" },
+      authOrgId: { type: "string" },
+      adminAuthUserId: { type: "string" },
       hoppieStation: { type: "string" },
     },
   },
@@ -1694,8 +1694,8 @@ const schemas = {
     properties: {
       user: {
         type: "object",
-        required: ["clerkUserId"],
-        properties: { clerkUserId: { type: "string" } },
+        required: ["authUserId"],
+        properties: { authUserId: { type: "string" } },
       },
       membership: {
         allOf: [schemaRef("MembershipProfile")],
@@ -1740,15 +1740,15 @@ const schemas = {
         required: [
           "reassignedFlightCount",
           "reassignedScheduleRequestCount",
-          "clerkSynchronized",
+          "directorySynchronized",
         ],
         properties: {
           reassignedFlightCount: { type: "integer", minimum: 0 },
           reassignedScheduleRequestCount: { type: "integer", minimum: 0 },
-          clerkSynchronized: {
+          directorySynchronized: {
             type: "boolean",
             description:
-              "Whether Clerk organization membership is synchronized with the application membership.",
+              "Whether identity-provider organization membership is synchronized with the application membership.",
           },
         },
       },
@@ -2307,12 +2307,12 @@ const schemas = {
       ok: { type: "boolean", example: true },
       tenant: {
         type: "object",
-        required: ["id", "slug", "name", "clerkOrgId", "hoppieStation"],
+        required: ["id", "slug", "name", "authOrgId", "hoppieStation"],
         properties: {
           id: schemaRef("Uuid"),
           slug: { type: "string" },
           name: { type: "string" },
-          clerkOrgId: { type: "string" },
+          authOrgId: { type: "string" },
           hoppieStation: { type: "string", nullable: true },
         },
       },
@@ -2375,7 +2375,7 @@ export const openApiDocument = {
     title: "VA Dispatch API",
     version: "0.1.0",
     description:
-      "Multi-tenant REST API for Virtual Airline scheduling, live dispatch, flights, SimBrief flight planning, simulator telemetry, membership administration, and ACARS messaging. All tenant data is resolved from authenticated Clerk membership or a scoped simulator-device credential; clients never supply a tenant ID.",
+      "Multi-tenant REST API for Virtual Airline scheduling, live dispatch, flights, SimBrief flight planning, simulator telemetry, membership administration, and ACARS messaging. All tenant data is resolved from authenticated organization membership or a scoped simulator-device credential; clients never supply a tenant ID.",
     license: {
       name: "AGPL-3.0-or-later",
       url: "https://www.gnu.org/licenses/agpl-3.0.html",
@@ -2395,7 +2395,7 @@ export const openApiDocument = {
       description: "Service-scoped alias when the /api prefix is stripped",
     },
   ],
-  security: clerkOrDevSecurity,
+  security: bearerOrDevSecurity,
   tags: [
     {
       name: "Health",
@@ -2731,7 +2731,7 @@ export const openApiDocument = {
         operationId: "getMembershipApplication",
         summary: "Get the caller's tenant membership application",
         description:
-          "Requires a verified Clerk user session, but no active organization membership. The tenant is resolved from the server-known slug.",
+          "Requires a verified user session, but no active organization membership. The tenant is resolved from the server-known slug.",
         parameters: [
           requiredQueryParameter("tenantSlug", "Virtual Airline tenant slug.", {
             type: "string",
@@ -2752,7 +2752,7 @@ export const openApiDocument = {
         operationId: "submitMembershipApplication",
         summary: "Apply to join a tenant",
         description:
-          "Requires a verified Clerk user session, but no active organization membership. A tenant administrator must approve the application before access becomes active.",
+          "Requires a verified user session, but no active organization membership. A tenant administrator must approve the application before access becomes active.",
         requestBody: jsonRequest(schemaRef("MembershipApplicationInput")),
         responses: {
           "200": jsonResponse(
@@ -2791,7 +2791,7 @@ export const openApiDocument = {
           "Requires the admin role. Pending invitations are not organization memberships and cannot be imported into the local tenant roster until accepted.",
         "x-required-role": "admin",
         parameters: [
-          queryParameter("offset", "Zero-based Clerk page offset.", {
+          queryParameter("offset", "Zero-based page offset.", {
             type: "integer",
             minimum: 0,
             default: 0,
@@ -2805,7 +2805,7 @@ export const openApiDocument = {
         ],
         responses: {
           "200": jsonResponse(
-            "Pending Clerk organization invitations.",
+            "Pending identity-provider organization invitations.",
             schemaRef("OrganizationInvitationListResponse"),
           ),
           ...authenticatedErrors,
@@ -2816,7 +2816,7 @@ export const openApiDocument = {
         operationId: "createOrganizationInvitation",
         summary: "Invite a pilot or dispatcher",
         description:
-          "Requires the admin role. Creates a Clerk organization invitation with the tenant's configured expiry and sends acceptance through the tenant's public Clerk sign-in flow. After acceptance, first tenant access or directory sync creates a new local membership; an existing pending or disabled local record remains inactive for explicit administrator review.",
+          "Requires the admin role. Creates a identity-provider organization invitation with the tenant's configured expiry and sends acceptance through the tenant's public sign-in flow. After acceptance, first tenant access or directory sync creates a new local membership; an existing pending or disabled local record remains inactive for explicit administrator review.",
         "x-required-role": "admin",
         requestBody: jsonRequest(
           schemaRef("CreateOrganizationInvitationInput"),
@@ -2842,7 +2842,7 @@ export const openApiDocument = {
             name: "invitationId",
             in: "path",
             required: true,
-            description: "Clerk organization invitation ID.",
+            description: "identity-provider organization invitation ID.",
             schema: { type: "string" },
           },
         ],
@@ -2863,7 +2863,7 @@ export const openApiDocument = {
         description: "Requires the dispatcher role or higher.",
         "x-required-role": "dispatcher",
         parameters: [
-          queryParameter("search", "Search name, callsign, or Clerk user ID.", {
+          queryParameter("search", "Search name, callsign, or user ID.", {
             type: "string",
             maxLength: 120,
           }),
@@ -2920,13 +2920,13 @@ export const openApiDocument = {
         operationId: "kickMember",
         summary: "Remove a member from the tenant",
         description:
-          "Requires the admin role. Disables application access atomically before removing the Clerk organization membership. Outstanding work requires an explicit active-pilot replacement.",
+          "Requires the admin role. Disables application access atomically before removing the identity-provider organization membership. Outstanding work requires an explicit active-pilot replacement.",
         "x-required-role": "admin",
         parameters: [pathParameter("id", "Membership ID.")],
         requestBody: jsonRequest(schemaRef("KickMemberInput")),
         responses: {
           "200": jsonResponse(
-            "Disabled member and Clerk synchronization state.",
+            "Disabled member and directory synchronization state.",
             schemaRef("MemberKickResponse"),
           ),
           ...mutationErrors,
@@ -2939,7 +2939,7 @@ export const openApiDocument = {
         operationId: "approveMembershipApplication",
         summary: "Approve a pending membership application",
         description:
-          "Requires the admin role. Synchronizes Clerk organization membership before activating the application membership.",
+          "Requires the admin role. Synchronizes identity-provider organization membership before activating the application membership.",
         "x-required-role": "admin",
         parameters: [pathParameter("id", "Membership application ID.")],
         requestBody: jsonRequest(
@@ -2993,9 +2993,9 @@ export const openApiDocument = {
       post: {
         tags: ["Members"],
         operationId: "syncMembers",
-        summary: "Synchronize members from Clerk",
+        summary: "Synchronize members from the identity provider",
         description:
-          "Requires the admin role. Pages the complete accepted Clerk organization-membership directory; pending organization invitations and application-wide account invitations are not members and are not imported. Missing stable Clerk user IDs and locally pending or disabled memberships are reported as incomplete skipped entries; local inactive state is never reactivated or rewritten by sync. Per-member changes and audits are atomic. If the final aggregate audit fails, the response reports summaryAuditRecorded=false without incorrectly claiming prior changes rolled back. In local development bypass mode the operation returns without contacting Clerk.",
+          "Requires the admin role. Pages the complete accepted organization-membership directory; pending organization invitations and application-wide account invitations are not members and are not imported. Missing stable user IDs and locally pending or disabled memberships are reported as incomplete skipped entries; local inactive state is never reactivated or rewritten by sync. Per-member changes and audits are atomic. If the final aggregate audit fails, the response reports summaryAuditRecorded=false without incorrectly claiming prior changes rolled back. In local development bypass mode the operation returns without contacting the identity provider.",
         "x-required-role": "admin",
         responses: {
           "200": jsonResponse(
@@ -4222,12 +4222,12 @@ export const openApiDocument = {
   },
   components: {
     securitySchemes: {
-      clerkBearerAuth: {
+      bearerAuth: {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT",
         description:
-          "Production Clerk session JWT with an active Organization claim.",
+          "Production identity-provider access token with an active Organization claim.",
       },
       devUserId: {
         type: "apiKey",
@@ -4240,7 +4240,7 @@ export const openApiDocument = {
         type: "apiKey",
         in: "header",
         name: "X-Dev-Org-Id",
-        description: "Local development Clerk Organization ID.",
+        description: "Local development organization ID.",
       },
       devRole: {
         type: "apiKey",

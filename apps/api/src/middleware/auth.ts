@@ -1,5 +1,4 @@
 import { createMiddleware } from "hono/factory";
-import { createClerkClient, verifyToken } from "@clerk/backend";
 import { env } from "../env.js";
 import { AppError } from "../lib/errors.js";
 import {
@@ -9,30 +8,31 @@ import {
   upsertMembership,
 } from "../db/repositories/memberships.js";
 import {
-  findTenantByClerkOrgId,
+  findTenantByAuthOrgId,
   upsertTenantBySlug,
 } from "../db/repositories/tenants.js";
-import { mapClerkOrgRole, roleAtLeast } from "../domain/members/roles.js";
+import { mapOrgRole, roleAtLeast } from "../domain/members/roles.js";
 import type { MemberRole, Membership, Tenant } from "../db/schema.js";
 import { hasDatabase } from "../db/client.js";
+import { verifyAccessToken } from "../auth/token.js";
 
 export type AuthContext = {
-  clerkUserId: string;
+  authUserId: string;
   tenantId: string;
   membershipId: string;
   role: MemberRole;
-  clerkOrgId: string;
+  authOrgId: string;
   tenant: Tenant;
   membership: Membership;
 };
 
-export type ClerkUserContext = {
-  clerkUserId: string;
+export type AuthUserContext = {
+  authUserId: string;
 };
 
 export type AppVariables = {
   auth: AuthContext;
-  clerkUser: ClerkUserContext;
+  authUser: AuthUserContext;
 };
 
 function bearerToken(authorizationHeader: string | undefined): string | null {
@@ -42,8 +42,8 @@ function bearerToken(authorizationHeader: string | undefined): string | null {
   return token;
 }
 
-/** Authenticate a Clerk user without requiring an active organization. */
-export const requireClerkUser = createMiddleware<{ Variables: AppVariables }>(
+/** Authenticate a user without requiring an active organization. */
+export const requireUser = createMiddleware<{ Variables: AppVariables }>(
   async (context, next) => {
     if (!hasDatabase()) {
       throw new AppError(
@@ -55,33 +55,17 @@ export const requireClerkUser = createMiddleware<{ Variables: AppVariables }>(
 
     const config = env();
     if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
-      context.set("clerkUser", {
-        clerkUserId: context.req.header("X-Dev-User-Id") ?? "user_dev",
+      context.set("authUser", {
+        authUserId: context.req.header("X-Dev-User-Id") ?? "user_dev",
       });
       await next();
       return;
     }
 
-    if (!config.CLERK_SECRET_KEY) {
-      throw new AppError("INTERNAL", "CLERK_SECRET_KEY is not configured", {
-        status: 503,
-      });
-    }
     const token = bearerToken(context.req.header("Authorization"));
     if (!token) throw new AppError("UNAUTHORIZED", "Missing bearer token");
-
-    let payload: { sub?: string };
-    try {
-      payload = (await verifyToken(token, {
-        secretKey: config.CLERK_SECRET_KEY,
-      })) as typeof payload;
-    } catch (error) {
-      throw new AppError("UNAUTHORIZED", "Invalid token", { cause: error });
-    }
-    if (!payload.sub) {
-      throw new AppError("UNAUTHORIZED", "Token missing subject");
-    }
-    context.set("clerkUser", { clerkUserId: payload.sub });
+    const identity = await verifyAccessToken(token);
+    context.set("authUser", { authUserId: identity.userId });
     await next();
   },
 );
@@ -89,7 +73,7 @@ export const requireClerkUser = createMiddleware<{ Variables: AppVariables }>(
 /**
  * Authenticate + resolve tenant membership.
  *
- * Production: Clerk JWT with org claim.
+ * Production: identity-provider access token with an org claim.
  * Dev bypass: AUTH_DEV_BYPASS=true and headers:
  *   X-Dev-User-Id, X-Dev-Org-Id, X-Dev-Role, X-Dev-Display-Name (optional)
  */
@@ -106,37 +90,37 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     const config = env();
 
     if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
-      const clerkUserId = context.req.header("X-Dev-User-Id") ?? "user_dev";
-      const clerkOrgId =
+      const authUserId = context.req.header("X-Dev-User-Id") ?? "user_dev";
+      const authOrgId =
         context.req.header("X-Dev-Org-Id") ??
-        config.VSAS_CLERK_ORG_ID ??
+        config.VSAS_AUTH_ORG_ID ??
         "org_vsas_dev";
-      const role = mapClerkOrgRole(context.req.header("X-Dev-Role") ?? "admin");
+      const role = mapOrgRole(context.req.header("X-Dev-Role") ?? "admin");
       const displayName =
         context.req.header("X-Dev-Display-Name") ?? "Dev User";
 
-      const tenant = await findTenantByClerkOrgId(clerkOrgId);
+      const tenant = await findTenantByAuthOrgId(authOrgId);
       if (!tenant) {
         throw new AppError(
           "FORBIDDEN",
           "Tenant not found for org — seed vSAS first",
-          { details: { clerkOrgId } },
+          { details: { authOrgId } },
         );
       }
 
       const membership = await upsertMembership({
         tenantId: tenant.id,
-        clerkUserId,
+        authUserId,
         role,
         displayName,
       });
 
       context.set("auth", {
-        clerkUserId,
+        authUserId,
         tenantId: tenant.id,
         membershipId: membership.id,
         role: membership.role,
-        clerkOrgId,
+        authOrgId,
         tenant,
         membership,
       });
@@ -144,52 +128,30 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       return;
     }
 
-    if (!config.CLERK_SECRET_KEY) {
-      throw new AppError("INTERNAL", "CLERK_SECRET_KEY is not configured", {
-        status: 503,
-      });
-    }
-
     const token = bearerToken(context.req.header("Authorization"));
     if (!token) {
       throw new AppError("UNAUTHORIZED", "Missing bearer token");
     }
 
-    let jwtPayload: {
-      sub?: string;
-      org_id?: string;
-      o?: { id?: string; rol?: string };
-      org_role?: string;
-    };
-    try {
-      jwtPayload = (await verifyToken(token, {
-        secretKey: config.CLERK_SECRET_KEY,
-      })) as typeof jwtPayload;
-    } catch (error) {
-      throw new AppError("UNAUTHORIZED", "Invalid token", { cause: error });
-    }
-
-    const clerkUserId = jwtPayload.sub;
-    const clerkOrgId = jwtPayload.org_id ?? jwtPayload.o?.id;
-    if (!clerkUserId) {
-      throw new AppError("UNAUTHORIZED", "Token missing subject");
-    }
-    if (!clerkOrgId) {
+    const identity = await verifyAccessToken(token);
+    const authUserId = identity.userId;
+    const authOrgId = identity.orgId;
+    if (!authOrgId) {
       throw new AppError(
         "FORBIDDEN",
         "Active organization required — select your Virtual Airline",
       );
     }
 
-    let tenant = await findTenantByClerkOrgId(clerkOrgId);
-    if (!tenant && clerkOrgId === config.VSAS_CLERK_ORG_ID) {
-      // The configured Clerk organization is the source of truth for the
+    let tenant = await findTenantByAuthOrgId(authOrgId);
+    if (!tenant && authOrgId === config.VSAS_AUTH_ORG_ID) {
+      // The configured identity organization is the source of truth for the
       // initial vSAS tenant. This also repairs a stale org ID after the database
-      // or Clerk has been reprovisioned without requiring a secret seed call.
+      // or the provider has been reprovisioned without a secret seed call.
       tenant = await upsertTenantBySlug({
         slug: "vsas",
         name: "vSAS",
-        clerkOrgId,
+        authOrgId,
       });
     }
     if (!tenant) {
@@ -199,24 +161,24 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       );
     }
 
-    let membership = await findMembership(tenant.id, clerkUserId);
-    const clerkRole = mapClerkOrgRole(jwtPayload.org_role ?? jwtPayload.o?.rol);
+    let membership = await findMembership(tenant.id, authUserId);
+    const orgRole = mapOrgRole(identity.orgRole);
     if (!membership) {
-      // Pilot and dispatcher authority can be provisioned from a Clerk role
+      // Pilot and dispatcher authority can be provisioned from an org role
       // that tenant administration assigned. Admin still requires the narrow
       // no-active-admin recovery path below.
       membership = await provisionMembershipWithAudit({
         tenantId: tenant.id,
-        clerkUserId,
-        role: clerkRole === "dispatcher" ? "dispatcher" : "pilot",
+        authUserId,
+        role: orgRole === "dispatcher" ? "dispatcher" : "pilot",
       });
     }
 
-    // Explicit break-glass recovery: a verified Clerk organization admin may
+    // Explicit break-glass recovery: a verified organization admin may
     // repair their own local membership only when no active app admin exists.
     // Normal role changes continue through the audited admin control plane.
     if (
-      clerkRole === "admin" &&
+      orgRole === "admin" &&
       (membership.role !== "admin" || membership.status !== "active")
     ) {
       const recovered = await recoverMembershipAsTenantAdmin({
@@ -231,11 +193,11 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     }
 
     context.set("auth", {
-      clerkUserId,
+      authUserId,
       tenantId: tenant.id,
       membershipId: membership.id,
       role: membership.role,
-      clerkOrgId,
+      authOrgId,
       tenant,
       membership,
     });
@@ -254,14 +216,4 @@ export function requireRole(requiredRole: MemberRole) {
       await next();
     },
   );
-}
-
-export function getClerkClient() {
-  const secretKey = env().CLERK_SECRET_KEY;
-  if (!secretKey) {
-    throw new AppError("INTERNAL", "CLERK_SECRET_KEY is not configured", {
-      status: 503,
-    });
-  }
-  return createClerkClient({ secretKey });
 }

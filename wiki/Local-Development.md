@@ -28,7 +28,7 @@ cp apps/api/.dev.vars.example apps/api/.dev.vars
 
 `wrangler.jsonc` already sets `NODE_ENV=development`, the local origins, and
 `ACARS_PROVIDER=mock`. The example enables `AUTH_DEV_BYPASS=true` with
-`VSAS_CLERK_ORG_ID=org_vsas_dev`.
+`VSAS_AUTH_ORG_ID=org_vsas_dev`.
 
 `TENANT_SECRETS_KEY` is not needed for the mock provider, but configuring a valid development value lets you exercise encryption and organization settings:
 
@@ -86,7 +86,7 @@ The development auth bypass still requires a tenant record. With `AUTH_DEV_BYPAS
 ```bash
 curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
   -H 'Content-Type: application/json' \
-  -d '{"clerkOrgId":"org_vsas_dev","adminClerkUserId":"user_dev"}'
+  -d '{"authOrgId":"org_vsas_dev","adminAuthUserId":"user_dev"}'
 ```
 
 Then open `http://localhost:3000/vsas`.
@@ -109,7 +109,7 @@ To exercise production-like authentication locally:
 2. Disable user-created organizations and Verified Domain enrollment; add
    `org:pilot` and `org:dispatcher` to the Primary Role Set.
 3. Create an organization whose slug is exactly `vsas`.
-4. Set its organization ID as `VSAS_CLERK_ORG_ID` in the API.
+4. Set its organization ID as `VSAS_AUTH_ORG_ID` in the API.
 5. Put the Clerk secret key in both server environments and the publishable key in the web environment.
 6. Set `APP_ORIGIN=http://localhost:3000` and `AUTH_DEV_BYPASS=false`.
 7. Seed or let the trusted configured organization repair the initial vSAS tenant on first authenticated access.

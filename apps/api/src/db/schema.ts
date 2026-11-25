@@ -207,7 +207,7 @@ export const privacyHoldStatusEnum = sqliteEnum("privacy_hold_status", [
 
 export const privacyExternalProviderEnum = sqliteEnum(
   "privacy_external_provider",
-  ["clerk", "cloudflare", "hoppie", "backup", "navigraph"],
+  ["identity", "cloudflare", "hoppie", "backup", "navigraph"],
 );
 
 export const privacyExternalTaskStatusEnum = sqliteEnum(
@@ -233,7 +233,7 @@ export const tenants = sqliteTable(
     id: uuidPk("id"),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
-    clerkOrgId: text("clerk_org_id").notNull(),
+    authOrgId: text("auth_org_id").notNull(),
     hoppieStation: text("hoppie_station"),
     hoppieLogonEnc: text("hoppie_logon_enc"),
     brandSeedColor: text("brand_seed_color").notNull().default("#e64646"),
@@ -254,7 +254,7 @@ export const tenants = sqliteTable(
       sql`${t.brandPresence} in ('restrained', 'balanced', 'high')`,
     ),
     uniqueIndex("tenants_slug_uidx").on(t.slug),
-    uniqueIndex("tenants_clerk_org_uidx").on(t.clerkOrgId),
+    uniqueIndex("tenants_auth_org_uidx").on(t.authOrgId),
     check(
       "tenants_brand_seed_color_check",
       sql`length(${t.brandSeedColor}) = 7 and ${t.brandSeedColor} glob '#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'`,
@@ -269,7 +269,7 @@ export const memberships = sqliteTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
-    clerkUserId: text("clerk_user_id").notNull(),
+    authUserId: text("auth_user_id").notNull(),
     // `invited` memberships are not authorized; their role is the requested
     // pilot/dispatcher role until a tenant administrator decides the request.
     role: memberRoleEnum("role").notNull().default("pilot"),
@@ -292,7 +292,7 @@ export const memberships = sqliteTable(
       "memberships_status_enum_check",
       sql`${t.status} in ('active', 'invited', 'disabled')`,
     ),
-    uniqueIndex("memberships_tenant_user_uidx").on(t.tenantId, t.clerkUserId),
+    uniqueIndex("memberships_tenant_user_uidx").on(t.tenantId, t.authUserId),
     uniqueIndex("memberships_tenant_id_uidx").on(t.tenantId, t.id),
     uniqueIndex("memberships_tenant_callsign_uidx").on(
       t.tenantId,
@@ -1441,7 +1441,7 @@ export const privacyExternalTasks = sqliteTable(
   (t) => [
     check(
       "privacy_external_tasks_provider_enum_check",
-      sql`${t.provider} in ('clerk', 'cloudflare', 'hoppie', 'backup', 'navigraph')`,
+      sql`${t.provider} in ('identity', 'cloudflare', 'hoppie', 'backup', 'navigraph')`,
     ),
     check(
       "privacy_external_tasks_status_enum_check",

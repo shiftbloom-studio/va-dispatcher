@@ -86,7 +86,7 @@ export const getServerIdentity = cache(
         kind: "ready",
         role,
         me: {
-          user: { clerkUserId: `e2e-${role}` },
+          user: { authUserId: `e2e-${role}` },
           membership: {
             id: `membership-${role}`,
             role,

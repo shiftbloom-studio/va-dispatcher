@@ -29,11 +29,11 @@ vi.mock("../middleware/auth.js", async () => {
       const role = (context.req.header("x-test-role") ??
         "pilot") as keyof typeof rank;
       context.set("auth", {
-        clerkUserId: "user-test",
+        authUserId: "user-test",
         tenantId: context.req.header("x-test-tenant") ?? "tenant-a",
         membershipId: "27000000-0000-4000-8000-000000000011",
         role,
-        clerkOrgId: "org-test",
+        authOrgId: "org-test",
       });
       await next();
     }),

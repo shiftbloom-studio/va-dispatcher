@@ -99,7 +99,8 @@ describe("ACARS polling cron", () => {
     loadEnv({
       NODE_ENV: "production",
       APP_ORIGIN: "https://app.example.test",
-      CLERK_SECRET_KEY: "sk_test_configured",
+      AUTH_ISSUER: "https://auth.example.test",
+      AUTH_AUDIENCE: "va-dispatch-api",
       TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
       CRON_SECRET: "production-cron-secret",
     });
@@ -110,7 +111,7 @@ describe("ACARS polling cron", () => {
         Authorization: "Bearer production-cron-secret",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ adminClerkUserId: "user_arbitrary_admin" }),
+      body: JSON.stringify({ adminAuthUserId: "user_arbitrary_admin" }),
     });
 
     expect(response.status).toBe(404);

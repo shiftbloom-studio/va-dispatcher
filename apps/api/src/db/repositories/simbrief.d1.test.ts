@@ -128,20 +128,20 @@ describe("SimBrief D1 atomicity contracts", () => {
         id: tenantId,
         slug: "vsas",
         name: "Virtual SAS",
-        clerkOrgId: "org_test",
+        authOrgId: "org_test",
       },
       {
         id: otherTenantId,
         slug: "other",
         name: "Other VA",
-        clerkOrgId: "org_other",
+        authOrgId: "org_other",
       },
     ]);
     await db.insert(memberships).values([
       {
         id: dispatcherId,
         tenantId,
-        clerkUserId: "dispatcher",
+        authUserId: "dispatcher",
         role: "dispatcher",
         displayName: "Trusted Dispatcher",
         pilotCallsign: "DISPATCH",
@@ -150,7 +150,7 @@ describe("SimBrief D1 atomicity contracts", () => {
       {
         id: pilotId,
         tenantId,
-        clerkUserId: "pilot",
+        authUserId: "pilot",
         role: "pilot",
         displayName: "Synthetic Pilot",
         pilotCallsign: "SAS123",

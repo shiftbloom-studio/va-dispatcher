@@ -44,12 +44,12 @@ describe("schedule request repository D1 contracts", () => {
       id: tenantId,
       slug: "vsas",
       name: "Virtual SAS",
-      clerkOrgId: "org_vsas",
+      authOrgId: "org_vsas",
     });
     await db.insert(memberships).values({
       id: pilotId,
       tenantId,
-      clerkUserId: "user_pilot",
+      authUserId: "user_pilot",
       role: "pilot",
       status: "active",
     });

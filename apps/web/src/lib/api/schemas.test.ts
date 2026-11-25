@@ -29,7 +29,7 @@ describe("live API contract smoke fixtures", () => {
   it("parses the current identity and membership serializer", () => {
     expect(
       meSchema.parse({
-        user: { clerkUserId: "user_1" },
+        user: { authUserId: "user_1" },
         membership: {
           id: "m1",
           role: "pilot",
@@ -196,7 +196,7 @@ describe("live API contract smoke fixtures", () => {
         items: [
           {
             id: "m1",
-            clerkUserId: "user_1",
+            authUserId: "user_1",
             role: "pilot",
             displayName: "A Pilot",
             pilotCallsign: "SAS101",

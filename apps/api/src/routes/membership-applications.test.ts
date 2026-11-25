@@ -6,19 +6,20 @@ const mocks = vi.hoisted(() => ({
   submitMembershipApplicationWithAudit: vi.fn(),
   cancelMembershipApplicationWithAudit: vi.fn(),
   findTenantBySlug: vi.fn(),
-  getClerkClient: vi.fn(),
+  getDirectory: vi.fn(),
 }));
 
 vi.mock("../middleware/auth.js", async () => {
   const { createMiddleware: middleware } = await import("hono/factory");
   return {
-    requireClerkUser: middleware(async (c, next) => {
-      c.set("clerkUser", { clerkUserId: "user-applicant" });
+    requireUser: middleware(async (c, next) => {
+      c.set("authUser", { authUserId: "user-applicant" });
       await next();
     }),
-    getClerkClient: mocks.getClerkClient,
   };
 });
+
+vi.mock("../auth/directory.js", () => ({ getDirectory: mocks.getDirectory }));
 
 vi.mock("../db/repositories/memberships.js", () => ({
   findMembership: mocks.findMembership,
@@ -42,7 +43,7 @@ app.route("/", membershipApplicationRoutes);
 const pendingMembership = {
   id: "27000000-0000-4000-8000-000000000001",
   tenantId: "tenant-vsas",
-  clerkUserId: "user-applicant",
+  authUserId: "user-applicant",
   role: "dispatcher" as const,
   displayName: "Verified Applicant",
   pilotCallsign: null,
@@ -72,16 +73,12 @@ describe("membership application routes", () => {
         : null,
     );
     mocks.findMembership.mockResolvedValue(null);
-    mocks.getClerkClient.mockReturnValue({
-      users: {
-        getUser: vi.fn().mockResolvedValue({
-          fullName: "Verified Applicant",
-          primaryEmailAddress: {
-            emailAddress: "applicant@example.test",
-            verification: { status: "verified" },
-          },
-        }),
-      },
+    mocks.getDirectory.mockReturnValue({
+      getUser: vi.fn().mockResolvedValue({
+        displayName: "Verified Applicant",
+        email: "applicant@example.test",
+        emailVerified: true,
+      }),
     });
     mocks.submitMembershipApplicationWithAudit.mockResolvedValue({
       membership: pendingMembership,
@@ -102,7 +99,7 @@ describe("membership application routes", () => {
         tenantSlug: "VSAS",
         requestedRole: "dispatcher",
         tenantId: "attacker-controlled",
-        clerkUserId: "attacker-controlled",
+        authUserId: "attacker-controlled",
       }),
     });
 
@@ -111,7 +108,7 @@ describe("membership application routes", () => {
     expect(mocks.findTenantBySlug).toHaveBeenCalledWith("vsas");
     expect(mocks.submitMembershipApplicationWithAudit).toHaveBeenCalledWith({
       tenantId: "tenant-vsas",
-      clerkUserId: "user-applicant",
+      authUserId: "user-applicant",
       requestedRole: "dispatcher",
       displayName: "Verified Applicant",
     });
@@ -159,7 +156,7 @@ describe("membership application routes", () => {
     });
 
     expect(response.status).toBe(403);
-    expect(mocks.getClerkClient).not.toHaveBeenCalled();
+    expect(mocks.getDirectory).not.toHaveBeenCalled();
     expect(mocks.submitMembershipApplicationWithAudit).not.toHaveBeenCalled();
   });
 
@@ -172,7 +169,7 @@ describe("membership application routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.cancelMembershipApplicationWithAudit).toHaveBeenCalledWith({
       tenantId: "tenant-vsas",
-      clerkUserId: "user-applicant",
+      authUserId: "user-applicant",
     });
     await expect(response.json()).resolves.toMatchObject({
       application: { state: "closed", requestedRole: "dispatcher" },

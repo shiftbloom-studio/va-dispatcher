@@ -50,7 +50,7 @@ const members = {
   items: [
     {
       id: "26000000-0000-4000-8000-000000000021",
-      clerkUserId: "user-pilot-one",
+      authUserId: "user-pilot-one",
       role: "pilot",
       displayName: "Pilot One",
       pilotCallsign: "SAS101",
@@ -65,7 +65,7 @@ const members = {
     },
     {
       id: "26000000-0000-4000-8000-000000000022",
-      clerkUserId: "user-pilot-two",
+      authUserId: "user-pilot-two",
       role: "pilot",
       displayName: "Pilot Two",
       pilotCallsign: "SAS102",
@@ -173,7 +173,7 @@ describe("admin member console", () => {
             status: "active",
             reassignedFlightCount: 0,
             reassignedScheduleRequestCount: 0,
-            clerkSynchronized: true,
+            directorySynchronized: true,
           });
         }
         if (
@@ -185,7 +185,7 @@ describe("admin member console", () => {
             role: "dispatcher",
             reassignedFlightCount: 1,
             reassignedScheduleRequestCount: 1,
-            clerkSynchronized: true,
+            directorySynchronized: true,
           });
         }
         if (
@@ -197,7 +197,7 @@ describe("admin member console", () => {
             status: "disabled",
             reassignedFlightCount: 0,
             reassignedScheduleRequestCount: 0,
-            clerkSynchronized: true,
+            directorySynchronized: true,
             completionAuditRecorded: true,
           });
         }
@@ -546,7 +546,7 @@ describe("admin member console", () => {
         {
           ...members.items[1],
           id: "26000000-0000-4000-8000-000000000031",
-          clerkUserId: "user-applicant",
+          authUserId: "user-applicant",
           displayName: "Dispatcher Applicant",
           status: "invited",
           requestedRole: "dispatcher",

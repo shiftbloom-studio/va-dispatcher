@@ -157,7 +157,7 @@ Tenant isolation is a hard security boundary, not a UI filter.
 - Keep the URL slug, Clerk organization slug, and `/me`/`/tenant` identity
   checks aligned in the web shell.
 
-The first vSAS organization is trusted through `VSAS_CLERK_ORG_ID`. On first
+The first vSAS organization is trusted through `VSAS_AUTH_ORG_ID`. On first
 authenticated access the API may create or repair the corresponding tenant,
 then auto-provision the user's membership. Do not generalize that bootstrap
 path to arbitrary organizations without a deliberate provisioning design.

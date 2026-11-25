@@ -39,7 +39,7 @@ The zone route takes precedence over the custom domain, so browser requests stay
 - Add `org:pilot` and `org:dispatcher` to the Primary Role Set alongside
   `org:admin`; use pilot as the new-member default.
 - Create the vSAS organization with slug `vsas`.
-- Store its ID in `VSAS_CLERK_ORG_ID`.
+- Store its ID in `VSAS_AUTH_ORG_ID`.
 - Keep Clerk Dashboard team access global-only. Review tenant application roles
   and organization membership periodically through VA Dispatch.
 
@@ -78,7 +78,7 @@ The zone route takes precedence over the custom domain, so browser requests stay
 5. Review and merge the green pull request. Workers Builds applies pending D1
    migrations and deploys both Workers from `main`.
 6. Check `GET /api/ready` on the production host.
-7. Verify `VSAS_CLERK_ORG_ID`, then let the first authenticated request from
+7. Verify `VSAS_AUTH_ORG_ID`, then let the first authenticated request from
    that exact organization create or repair the trusted vSAS mapping.
 8. Join `/vsas/waitlist`, invite the entry in Clerk, complete the invited
    Clerk Account Portal sign-up flow, confirm its fallback reaches `/vsas/join`,
@@ -99,7 +99,7 @@ detects a missing or incompatible workspace schema but does not repair it.
 ## Tenant bootstrap
 
 Production returns not found for `/internal/seed/vsas`. The first authenticated
-request from the exact `VSAS_CLERK_ORG_ID` creates or repairs the `vsas` tenant
+request from the exact `VSAS_AUTH_ORG_ID` creates or repairs the `vsas` tenant
 mapping. A new local membership is provisioned and audited as a pilot or
 dispatcher according to its verified Clerk role. A verified Clerk organization
 Admin may use the serialized recovery path only while the tenant has no active

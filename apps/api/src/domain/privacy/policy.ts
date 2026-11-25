@@ -112,14 +112,14 @@ export const privacyCorrectionSchema = z
       .transform((value) => value.toUpperCase())
       .nullable()
       .optional(),
-    clerkCorrectionRequested: z.boolean().default(false),
+    identityCorrectionRequested: z.boolean().default(false),
   })
   .strict()
   .refine(
     (value) =>
       value.displayName !== undefined ||
       value.pilotCallsign !== undefined ||
-      value.clerkCorrectionRequested,
+      value.identityCorrectionRequested,
     { message: "At least one correction is required" },
   );
 

@@ -10,7 +10,7 @@ vi.mock("@/lib/api/use-api", () => ({ useApi: () => apiMock }));
 
 const pilot = {
   id: "pilot-1",
-  clerkUserId: "user-pilot-1",
+  authUserId: "user-pilot-1",
   role: "pilot",
   pilotCallsign: "SAS101",
   displayName: "Test Pilot",

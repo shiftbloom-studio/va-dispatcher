@@ -70,8 +70,8 @@ internalRoutes.post(
     "json",
     z
       .object({
-        clerkOrgId: z.string().optional(),
-        adminClerkUserId: z.string().optional(),
+        authOrgId: z.string().optional(),
+        adminAuthUserId: z.string().optional(),
         hoppieStation: z.string().optional(),
       })
       .optional(),
@@ -94,21 +94,21 @@ internalRoutes.post(
     }
 
     const body = c.req.valid("json") ?? {};
-    const clerkOrgId =
-      body.clerkOrgId ?? config.VSAS_CLERK_ORG_ID ?? "org_vsas_dev";
+    const authOrgId =
+      body.authOrgId ?? config.VSAS_AUTH_ORG_ID ?? "org_vsas_dev";
 
     const tenant = await upsertTenantBySlug({
       slug: "vsas",
       name: "vSAS",
-      clerkOrgId,
+      authOrgId,
       hoppieStation: (body.hoppieStation ?? "VSAS").toUpperCase(),
     });
 
     let adminMembership = null;
-    if (body.adminClerkUserId) {
+    if (body.adminAuthUserId) {
       adminMembership = await upsertMembership({
         tenantId: tenant.id,
-        clerkUserId: body.adminClerkUserId,
+        authUserId: body.adminAuthUserId,
         role: "admin",
         displayName: "vSAS Admin",
         pilotCallsign: null,
@@ -121,7 +121,7 @@ internalRoutes.post(
         id: tenant.id,
         slug: tenant.slug,
         name: tenant.name,
-        clerkOrgId: tenant.clerkOrgId,
+        authOrgId: tenant.authOrgId,
         hoppieStation: tenant.hoppieStation,
       },
       adminMembershipId: adminMembership?.id ?? null,

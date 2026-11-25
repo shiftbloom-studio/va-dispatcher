@@ -249,7 +249,7 @@ function MemberAccessCard({
         {save.data ? (
           <p role="status" className="text-sm font-medium text-emerald-800">
             Membership access settings saved.
-            {!save.data.clerkSynchronized
+            {!save.data.directorySynchronized
               ? " Clerk synchronization is skipped in local auth-bypass mode."
               : ""}
           </p>

@@ -21,7 +21,7 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
           ? requestedRole
           : "pilot";
       c.set("auth", {
-        clerkUserId: `user_${role}`,
+        authUserId: `user_${role}`,
         tenantId: fixture.tenantId,
         membershipId: {
           pilot: fixture.pilotMembershipId,
@@ -29,7 +29,7 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
           admin: fixture.adminMembershipId,
         }[role],
         role,
-        clerkOrgId: "org_vsas",
+        authOrgId: "org_vsas",
       });
       await next();
     }),

@@ -46,7 +46,7 @@ X-Dev-Role: admin   # pilot | dispatcher | admin
 1. Configure Clerk for optional organization membership, disable end-user
    organization creation and Verified Domain enrollment, add `org:pilot` and
    `org:dispatcher`, create vSAS, and copy its org id to
-   `VSAS_CLERK_ORG_ID`.
+   `VSAS_AUTH_ORG_ID`.
 2. Deploy the API Worker; its deploy applies the D1 migrations in
    `migrations/`. Locally, run `pnpm db:migrate:local`.
 3. In production, sign in as a verified administrator of the configured Clerk
@@ -60,7 +60,7 @@ For a disposable local database only, the non-production convenience route is:
 curl -X POST http://localhost:3001/api/v1/internal/seed/vsas \
   -H "Authorization: Bearer $CRON_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"clerkOrgId":"org_...","adminClerkUserId":"user_..."}'
+  -d '{"authOrgId":"org_...","adminAuthUserId":"user_..."}'
 ```
 
 `/internal/seed/vsas` returns `404` in production regardless of

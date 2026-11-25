@@ -46,7 +46,7 @@ credentials instead of Clerk:
 - internal cron operations use `Authorization: Bearer <CRON_SECRET>`.
 
 `/internal/seed/vsas` is a non-production convenience route. Production returns
-not found and bootstraps only the exact `VSAS_CLERK_ORG_ID` through normal
+not found and bootstraps only the exact `VSAS_AUTH_ORG_ID` through normal
 authentication.
 
 See [Authentication and Multi-Tenancy](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Authentication-and-Multi-Tenancy).

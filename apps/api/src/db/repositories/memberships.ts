@@ -42,7 +42,7 @@ export type MembershipListItem = Membership & MemberWorkImpact;
 
 export async function findMembership(
   tenantId: string,
-  clerkUserId: string,
+  authUserId: string,
 ): Promise<Membership | null> {
   const db = getDb();
   const rows = await db
@@ -51,7 +51,7 @@ export async function findMembership(
     .where(
       and(
         eq(memberships.tenantId, tenantId),
-        eq(memberships.clerkUserId, clerkUserId),
+        eq(memberships.authUserId, authUserId),
       ),
     )
     .limit(1);
@@ -117,7 +117,7 @@ export async function listMemberships(input: {
       or(
         like(memberList.displayName, pattern),
         like(memberList.pilotCallsign, pattern),
-        like(memberList.clerkUserId, pattern),
+        like(memberList.authUserId, pattern),
       )!,
     );
   }
@@ -189,7 +189,7 @@ export async function listMemberships(input: {
     .select({
       id: memberList.id,
       tenantId: memberList.tenantId,
-      clerkUserId: memberList.clerkUserId,
+      authUserId: memberList.authUserId,
       role: memberList.role,
       displayName: memberList.displayName,
       pilotCallsign: memberList.pilotCallsign,
@@ -272,14 +272,14 @@ export async function getMemberWorkImpact(
 
 export async function upsertMembership(input: {
   tenantId: string;
-  clerkUserId: string;
+  authUserId: string;
   role: MemberRole;
   displayName?: string | null;
   pilotCallsign?: string | null;
   status?: Membership["status"];
 }): Promise<Membership> {
   const db = getDb();
-  const existing = await findMembership(input.tenantId, input.clerkUserId);
+  const existing = await findMembership(input.tenantId, input.authUserId);
   if (existing) {
     const [updated] = await db
       .update(memberships)
@@ -303,7 +303,7 @@ export async function upsertMembership(input: {
     .insert(memberships)
     .values({
       tenantId: input.tenantId,
-      clerkUserId: input.clerkUserId,
+      authUserId: input.authUserId,
       role: input.role,
       displayName: input.displayName ?? null,
       pilotCallsign: input.pilotCallsign ?? null,
@@ -317,7 +317,7 @@ export async function upsertMembership(input: {
 export async function createDirectoryMembershipWithAudit(input: {
   tenantId: string;
   actorMembershipId: string;
-  clerkUserId: string;
+  authUserId: string;
   role: MemberRole;
   displayName: string | null;
 }): Promise<Membership | null> {
@@ -328,12 +328,12 @@ export async function createDirectoryMembershipWithAudit(input: {
     guard(sql`NOT EXISTS (
       SELECT 1 FROM memberships
       WHERE tenant_id = ${input.tenantId}
-        AND clerk_user_id = ${input.clerkUserId}
+        AND auth_user_id = ${input.authUserId}
     )`),
     db.insert(memberships).values({
       id,
       tenantId: input.tenantId,
-      clerkUserId: input.clerkUserId,
+      authUserId: input.authUserId,
       role: input.role,
       displayName: input.displayName,
       status: "active",
@@ -361,10 +361,10 @@ export async function createDirectoryMembershipWithAudit(input: {
   return findMembershipById(input.tenantId, id);
 }
 
-/** First-login provisioning from a verified Clerk organization membership. */
+/** First-login provisioning from a verified organization membership. */
 export async function provisionMembershipWithAudit(input: {
   tenantId: string;
-  clerkUserId: string;
+  authUserId: string;
   role: Exclude<MemberRole, "admin">;
 }): Promise<Membership> {
   const db = getDb();
@@ -374,12 +374,12 @@ export async function provisionMembershipWithAudit(input: {
     guard(sql`NOT EXISTS (
       SELECT 1 FROM memberships
       WHERE tenant_id = ${input.tenantId}
-        AND clerk_user_id = ${input.clerkUserId}
+        AND auth_user_id = ${input.authUserId}
     )`),
     db.insert(memberships).values({
       id,
       tenantId: input.tenantId,
-      clerkUserId: input.clerkUserId,
+      authUserId: input.authUserId,
       role: input.role,
       status: "active",
       createdAt,
@@ -405,7 +405,7 @@ export async function provisionMembershipWithAudit(input: {
 
   // Another first request may have won the unique insert. Return that
   // tenant-scoped member; its winning batch also wrote the audit event.
-  const existing = await findMembership(input.tenantId, input.clerkUserId);
+  const existing = await findMembership(input.tenantId, input.authUserId);
   if (!existing) throw new Error("Provisioned membership disappeared");
   return existing;
 }
@@ -413,7 +413,7 @@ export async function provisionMembershipWithAudit(input: {
 /** Backward-compatible pilot seam used by repository contract tests. */
 export function provisionPilotMembershipWithAudit(input: {
   tenantId: string;
-  clerkUserId: string;
+  authUserId: string;
 }): Promise<Membership> {
   return provisionMembershipWithAudit({ ...input, role: "pilot" });
 }
@@ -424,13 +424,13 @@ export function provisionPilotMembershipWithAudit(input: {
  */
 export async function submitMembershipApplicationWithAudit(input: {
   tenantId: string;
-  clerkUserId: string;
+  authUserId: string;
   requestedRole: Exclude<MemberRole, "admin">;
   displayName: string | null;
 }): Promise<{ membership: Membership; submitted: boolean }> {
   const submittedAt = new Date();
   const applicant = sql`
-    tenant_id = ${input.tenantId} AND clerk_user_id = ${input.clerkUserId}
+    tenant_id = ${input.tenantId} AND auth_user_id = ${input.authUserId}
   `;
   const result = await runAtomic([
     guard(sql`NOT EXISTS (
@@ -438,15 +438,15 @@ export async function submitMembershipApplicationWithAudit(input: {
     )`),
     sql`
       INSERT INTO memberships (
-        id, tenant_id, clerk_user_id, role, display_name, status, created_at,
+        id, tenant_id, auth_user_id, role, display_name, status, created_at,
         updated_at
       )
       VALUES (
-        ${randomUUID()}, ${input.tenantId}, ${input.clerkUserId},
+        ${randomUUID()}, ${input.tenantId}, ${input.authUserId},
         ${input.requestedRole}, ${input.displayName}, 'invited',
         ${ms(submittedAt)}, ${ms(submittedAt)}
       )
-      ON CONFLICT (tenant_id, clerk_user_id) DO UPDATE
+      ON CONFLICT (tenant_id, auth_user_id) DO UPDATE
       SET role = excluded.role,
           display_name = coalesce(excluded.display_name, memberships.display_name),
           status = 'invited',
@@ -467,7 +467,7 @@ export async function submitMembershipApplicationWithAudit(input: {
       from: sql`memberships WHERE ${applicant}`,
     }),
   ]);
-  const membership = await findMembership(input.tenantId, input.clerkUserId);
+  const membership = await findMembership(input.tenantId, input.authUserId);
   if (!membership) throw new Error("Membership application disappeared");
   return { membership, submitted: result !== null };
 }
@@ -475,12 +475,12 @@ export async function submitMembershipApplicationWithAudit(input: {
 /** Cancel only the signed-in user's own pending application. */
 export async function cancelMembershipApplicationWithAudit(input: {
   tenantId: string;
-  clerkUserId: string;
+  authUserId: string;
 }): Promise<Membership | null> {
   const cancelledAt = new Date();
   const invited = sql`
     tenant_id = ${input.tenantId}
-    AND clerk_user_id = ${input.clerkUserId}
+    AND auth_user_id = ${input.authUserId}
     AND status = 'invited'
   `;
   const result = await runAtomic([
@@ -502,7 +502,7 @@ export async function cancelMembershipApplicationWithAudit(input: {
     `,
   ]);
   if (!result) return null;
-  return findMembership(input.tenantId, input.clerkUserId);
+  return findMembership(input.tenantId, input.authUserId);
 }
 
 /** Update self-owned profile/connected-account fields; role/status use the admin transaction. */
@@ -997,7 +997,7 @@ async function tryAdministrativeUpdate(
 }
 
 /**
- * Recovery seam for a verified Clerk organization administrator. It only acts
+ * Recovery seam for a verified organization administrator. It only acts
  * when a tenant has no active application administrator and records the repair.
  */
 export async function recoverMembershipAsTenantAdmin(input: {

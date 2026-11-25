@@ -13,10 +13,11 @@ Primary example: `apps/api/.dev.vars.example`; production values are in `apps/ap
 | `PORT`                                            | `3001`                           | Node test server only                                  | Positive integer; `wrangler dev` sets its own port                                                                                         |
 | `CORS_ORIGIN`                                     | `http://localhost:3000`          | Fallback cross-origin deployment                       | Comma-separated allowed web origins                                                                                                        |
 | `APP_ORIGIN`                                      | unset                            | Production and local real-provider flows               | Canonical public origin only; explicit HTTPS value is mandatory in Production                                                              |
-| `CLERK_SECRET_KEY`                                | unset                            | Real authentication and Clerk member sync              | Server secret; never expose as `NEXT_PUBLIC_*`                                                                                             |
-| `CLERK_PUBLISHABLE_KEY`                           | unset                            | Deployment integration may provide it                  | Parsed by API configuration; browser Clerk uses `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`                                                        |
+| `AUTH_ISSUER` / `AUTH_AUDIENCE`                   | unset                            | Real authentication                                    | OIDC issuer and expected audience of access tokens; required in production                                                                 |
+| `AUTH_JWKS_URL`                                   | issuer discovery                 | Optional                                               | Signing keys; defaults to `jwks_uri` from the issuer's discovery document                                                                  |
+| `AUTH_ADMIN_API_URL` / `AUTH_ADMIN_TOKEN`         | unset                            | Invitations and directory sync                         | Identity provider admin API; the token is a secret                                                                                         |
 | `AUTH_DEV_BYPASS`                                 | `false`                          | Local header-auth mode                                 | Allowed only when `NODE_ENV` is not `production`                                                                                           |
-| `VSAS_CLERK_ORG_ID`                               | unset                            | Trusted vSAS production mapping                        | Clerk organization ID allowed to create or repair the initial `vsas` tenant mapping                                                        |
+| `VSAS_AUTH_ORG_ID`                                | unset                            | Trusted vSAS production mapping                        | Clerk organization ID allowed to create or repair the initial `vsas` tenant mapping                                                        |
 | `ACARS_PROVIDER`                                  | `mock`                           | Declare `hoppie` in production                         | `mock` or `hoppie`; production runtime always resolves to Hoppie                                                                           |
 | `TENANT_SECRETS_KEY`                              | unset                            | Every production deployment; protected flows elsewhere | Exactly 32 random bytes, base64-encoded; protects tenant credentials and signed/sealed transient state                                     |
 | `CRON_SECRET`                                     | insecure development placeholder | Production ACARS/privacy cron calls                    | Long random bearer secret; replace the default                                                                                             |
@@ -118,7 +119,7 @@ The global Clerk application administrator must configure the instance once:
    `org:pilot` and `org:dispatcher`. Include them with `org:admin` in the
    Primary Role Set and make `org:pilot` the new-member default.
 7. Create the vSAS organization with slug exactly `vsas` and set
-   `VSAS_CLERK_ORG_ID` to its immutable ID.
+   `VSAS_AUTH_ORG_ID` to its immutable ID.
 8. In the Clerk Account Portal **Redirects** settings, set the sign-up fallback
    to the public `https://<web-origin>/vsas/join` URL. Dashboard-approved
    waitlist emails use the Account Portal sign-up page by default and do not

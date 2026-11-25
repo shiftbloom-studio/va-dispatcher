@@ -66,7 +66,7 @@ approval. The tenant-branded `/vsas/sign-up` route remains available for direct
 invitation flows that redirect into the application. This flow does not require
 Clerk's Invite-only (`restricted`) sign-up mode or the paid allowlist. The vSAS
 Clerk organization slug is
-`vsas`; set `VSAS_CLERK_ORG_ID` to its immutable ID. Tenant admins then manage
+`vsas`; set `VSAS_AUTH_ORG_ID` to its immutable ID. Tenant admins then manage
 the separate pilot/dispatcher application approval, roles, removal, and tenant
 membership settings inside VA Dispatch. See the Wiki configuration reference
 for the one-time global Clerk setup.

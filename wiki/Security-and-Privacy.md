@@ -22,7 +22,7 @@ Compromise or misconfiguration at one boundary must not be assumed safe because 
 - Clerk JWT verification on business routes.
 - Active organization required for business data; the narrow application route
   verifies a user without organization context and exposes no operational data.
-- Narrow trusted bootstrap for only `VSAS_CLERK_ORG_ID`.
+- Narrow trusted bootstrap for only `VSAS_AUTH_ORG_ID`.
 - Active local membership required.
 - Three-way web agreement among URL slug, Clerk organization, and API tenant.
 - Tenant-scoped repositories and explicit cross-tenant tests.

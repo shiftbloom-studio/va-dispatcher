@@ -41,8 +41,8 @@ The active Clerk organization slug differs from the URL. Select the vSAS organiz
 ### “This organization is not registered as a VA tenant”
 
 - Verify the Clerk organization ID, not only its name or slug.
-- Verify `VSAS_CLERK_ORG_ID` in the API.
-- Inspect the `tenants.clerk_org_id` mapping.
+- Verify `VSAS_AUTH_ORG_ID` in the API.
+- Inspect the `tenants.auth_org_id` mapping.
 - Sign in through the exact trusted vSAS organization to allow repair; the
   production seed endpoint deliberately returns not found.
 

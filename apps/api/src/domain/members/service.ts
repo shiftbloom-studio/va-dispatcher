@@ -9,7 +9,7 @@ import {
 import { writeAudit } from "../../db/repositories/audit.js";
 import type { Membership } from "../../db/schema.js";
 import { AppError } from "../../lib/errors.js";
-import { mapClerkOrgRole } from "./roles.js";
+import { mapOrgRole } from "./roles.js";
 
 export type MemberUpdateInput = AdministrativeMemberPatch & {
   reassignToMembershipId?: string;
@@ -119,14 +119,12 @@ function memberUpdateConflict(
   }
 }
 
+/** One organization membership as the identity provider reports it. */
 export type DirectoryMembership = {
+  userId: string | null;
   role: string;
-  publicUserData?: {
-    userId?: string | null;
-    firstName?: string | null;
-    lastName?: string | null;
-    identifier?: string | null;
-  } | null;
+  /** Full name, falling back to the sign-in identifier (email). */
+  displayName: string | null;
 };
 
 export type DirectoryPage = {
@@ -161,7 +159,7 @@ const DIRECTORY_PAGE_SIZE = 100;
 const MAX_REPORTED_FAILURES = 25;
 const MAX_DIRECTORY_PAGES = 10_000;
 
-/** Page the complete Clerk directory and converge each local member safely. */
+/** Page the complete identity-provider directory and converge each local member safely. */
 export async function syncMembersFromDirectory(input: {
   tenantId: string;
   actorMembershipId: string;
@@ -216,8 +214,8 @@ export async function syncMembersFromDirectory(input: {
     for (const [pageIndex, directoryMembership] of page.data.entries()) {
       const itemOffset = offset + pageIndex;
       result.seen += 1;
-      const clerkUserId = directoryMembership.publicUserData?.userId;
-      if (!clerkUserId) {
+      const authUserId = directoryMembership.userId;
+      if (!authUserId) {
         result.complete = false;
         result.skipped += 1;
         recordSyncFailure(result, {
@@ -228,15 +226,15 @@ export async function syncMembersFromDirectory(input: {
         continue;
       }
 
-      const role = mapClerkOrgRole(directoryMembership.role);
+      const role = mapOrgRole(directoryMembership.role);
       const displayName = directoryDisplayName(directoryMembership);
       try {
-        let existing = await findMembership(input.tenantId, clerkUserId);
+        let existing = await findMembership(input.tenantId, authUserId);
         if (!existing) {
           const created = await createDirectoryMembershipWithAudit({
             tenantId: input.tenantId,
             actorMembershipId: input.actorMembershipId,
-            clerkUserId,
+            authUserId,
             role,
             displayName,
           });
@@ -246,11 +244,11 @@ export async function syncMembersFromDirectory(input: {
           }
           // A concurrent sync may have won the unique insert. Re-read and
           // converge it through the same guarded update path.
-          existing = await findMembership(input.tenantId, clerkUserId);
+          existing = await findMembership(input.tenantId, authUserId);
           if (!existing) throw new Error("Directory member disappeared");
         }
 
-        // Local application/disable state is authoritative. Clerk directory
+        // Local application/disable state is authoritative. Provider directory
         // presence must never reactivate or rewrite a pending/disabled record;
         // surface it for explicit administrator review instead.
         if (existing.status !== "active") {
@@ -371,14 +369,7 @@ export function directoryPageLimitExceeded(
 }
 
 function directoryDisplayName(membership: DirectoryMembership): string | null {
-  const name = [
-    membership.publicUserData?.firstName,
-    membership.publicUserData?.lastName,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  return name || membership.publicUserData?.identifier?.trim() || null;
+  return membership.displayName?.trim() || null;
 }
 
 function recordSyncFailure(

@@ -39,7 +39,7 @@ export default defineConfig({
         E2E_FIXTURE_SECRET: fixtureSecret,
         ACARS_PROVIDER: "mock",
         CRON_SECRET: "isolated-e2e-cron-authority",
-        VSAS_CLERK_ORG_ID: "org_e2e_vsas",
+        VSAS_AUTH_ORG_ID: "org_e2e_vsas",
         TENANT_SECRETS_KEY: tenantSecretsKey,
         SIMBRIEF_API_KEY: "integrated-e2e-simbrief-api-key",
         SIMBRIEF_CALLBACK_URL: `${apiOrigin}/api/v1/simbrief/callback`,

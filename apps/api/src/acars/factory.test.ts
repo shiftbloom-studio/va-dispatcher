@@ -11,7 +11,7 @@ const tenant: Tenant = {
   id: "tenant_test",
   slug: "vsas",
   name: "Virtual SAS",
-  clerkOrgId: "org_test",
+  authOrgId: "org_test",
   hoppieStation: "SAS",
   hoppieLogonEnc: null,
   brandSeedColor: "#e64646",
@@ -25,7 +25,8 @@ const tenant: Tenant = {
 
 const productionEnvironment = {
   APP_ORIGIN: "https://app.example.test",
-  CLERK_SECRET_KEY: "sk_test_configured",
+  AUTH_ISSUER: "https://auth.example.test",
+  AUTH_AUDIENCE: "va-dispatch-api",
   TENANT_SECRETS_KEY: Buffer.alloc(32).toString("base64"),
   CRON_SECRET: "production-cron-secret",
 } as const;

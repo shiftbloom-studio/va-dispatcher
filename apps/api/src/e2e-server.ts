@@ -24,26 +24,26 @@ installProviderNetworkBoundary();
 
 const fixtureIdentities = {
   pilot: {
-    clerkUserId: "user_e2e_pilot",
-    clerkOrgId: "org_e2e_vsas",
+    authUserId: "user_e2e_pilot",
+    authOrgId: "org_e2e_vsas",
     role: "pilot",
     displayName: "Integrated Test Pilot",
   },
   dispatcher: {
-    clerkUserId: "user_e2e_dispatcher",
-    clerkOrgId: "org_e2e_vsas",
+    authUserId: "user_e2e_dispatcher",
+    authOrgId: "org_e2e_vsas",
     role: "dispatcher",
     displayName: "Integrated Test Dispatcher",
   },
   admin: {
-    clerkUserId: "user_e2e_admin",
-    clerkOrgId: "org_e2e_vsas",
+    authUserId: "user_e2e_admin",
+    authOrgId: "org_e2e_vsas",
     role: "admin",
     displayName: "Integrated Test Administrator",
   },
   outsider: {
-    clerkUserId: "user_e2e_outsider",
-    clerkOrgId: "org_e2e_other",
+    authUserId: "user_e2e_outsider",
+    authOrgId: "org_e2e_other",
     role: "pilot",
     displayName: "Outside Test Pilot",
   },
@@ -116,8 +116,8 @@ async function fixtureFetch(request: Request): Promise<Response> {
   }
 
   const headers = new Headers(request.headers);
-  headers.set("X-Dev-User-Id", identity.clerkUserId);
-  headers.set("X-Dev-Org-Id", identity.clerkOrgId);
+  headers.set("X-Dev-User-Id", identity.authUserId);
+  headers.set("X-Dev-Org-Id", identity.authOrgId);
   headers.set("X-Dev-Role", identity.role);
   headers.set("X-Dev-Display-Name", identity.displayName);
   headers.delete("X-E2E-Identity");
@@ -148,7 +148,7 @@ async function resetFixtureData() {
       id: FIXTURE_IDS.tenant,
       slug: "vsas",
       name: "Virtual SAS",
-      clerkOrgId: "org_e2e_vsas",
+      authOrgId: "org_e2e_vsas",
       hoppieStation: "VSAS",
       brandSeedColor: "#e64646",
       brandPresence: "balanced",
@@ -158,7 +158,7 @@ async function resetFixtureData() {
       id: FIXTURE_IDS.otherTenant,
       slug: "other-va",
       name: "Other Virtual Airline",
-      clerkOrgId: "org_e2e_other",
+      authOrgId: "org_e2e_other",
       hoppieStation: "OTHER",
       brandSeedColor: "#3159a7",
       brandPresence: "restrained",
@@ -169,7 +169,7 @@ async function resetFixtureData() {
     {
       id: FIXTURE_IDS.pilot,
       tenantId: FIXTURE_IDS.tenant,
-      clerkUserId: "user_e2e_pilot",
+      authUserId: "user_e2e_pilot",
       role: "pilot",
       displayName: "Integrated Test Pilot",
       pilotCallsign: "SAS101",
@@ -178,7 +178,7 @@ async function resetFixtureData() {
     {
       id: FIXTURE_IDS.dispatcher,
       tenantId: FIXTURE_IDS.tenant,
-      clerkUserId: "user_e2e_dispatcher",
+      authUserId: "user_e2e_dispatcher",
       role: "dispatcher",
       displayName: "Integrated Test Dispatcher",
       pilotCallsign: "VSASOPS",
@@ -187,7 +187,7 @@ async function resetFixtureData() {
     {
       id: FIXTURE_IDS.admin,
       tenantId: FIXTURE_IDS.tenant,
-      clerkUserId: "user_e2e_admin",
+      authUserId: "user_e2e_admin",
       role: "admin",
       displayName: "Integrated Test Administrator",
       pilotCallsign: "VSASADM",
@@ -196,7 +196,7 @@ async function resetFixtureData() {
     {
       id: FIXTURE_IDS.outsider,
       tenantId: FIXTURE_IDS.otherTenant,
-      clerkUserId: "user_e2e_outsider",
+      authUserId: "user_e2e_outsider",
       role: "pilot",
       displayName: "Outside Test Pilot",
       pilotCallsign: "OTHER01",

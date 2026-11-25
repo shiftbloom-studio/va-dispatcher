@@ -28,12 +28,8 @@ import {
 function directoryMember(index: number) {
   return {
     role: "org:member",
-    publicUserData: {
-      userId: `user_${index}`,
-      firstName: "Pilot",
-      lastName: String(index),
-      identifier: `pilot${index}@example.invalid`,
-    },
+    userId: `user_${index}`,
+    displayName: `Pilot ${index}`,
   };
 }
 
@@ -43,9 +39,9 @@ describe("member administration service", () => {
     mocks.findMembership.mockResolvedValue(null);
     mocks.createDirectoryMembershipWithAudit.mockImplementation(
       async (input) => ({
-        id: `membership_${input.clerkUserId}`,
+        id: `membership_${input.authUserId}`,
         tenantId: input.tenantId,
-        clerkUserId: input.clerkUserId,
+        authUserId: input.authUserId,
         role: input.role,
         displayName: input.displayName,
         pilotCallsign: null,
@@ -131,7 +127,7 @@ describe("member administration service", () => {
       actorMembershipId: "admin-1",
       organizationId: "org-1",
       loadPage: async () => ({
-        data: [{ role: "org:pilot", publicUserData: null }],
+        data: [{ role: "org:pilot", userId: null, displayName: null }],
         totalCount: 1,
       }),
     });
@@ -154,7 +150,7 @@ describe("member administration service", () => {
       mocks.findMembership.mockResolvedValue({
         id: "membership-1",
         tenantId: "tenant-1",
-        clerkUserId: "user_0",
+        authUserId: "user_0",
         role: "pilot",
         displayName: "Pilot 0",
         pilotCallsign: null,
@@ -200,7 +196,7 @@ describe("member administration service", () => {
     mocks.findMembership.mockResolvedValue({
       id: "membership-1",
       tenantId: "tenant-1",
-      clerkUserId: "user_0",
+      authUserId: "user_0",
       role: "pilot",
       displayName: "Old name",
       pilotCallsign: null,
@@ -263,11 +259,11 @@ describe("member administration service", () => {
     );
     mocks.createDirectoryMembershipWithAudit.mockImplementation(
       async (input) => {
-        if (input.clerkUserId === "user_100") throw new Error("synthetic");
+        if (input.authUserId === "user_100") throw new Error("synthetic");
         return {
-          id: input.clerkUserId,
+          id: input.authUserId,
           tenantId: input.tenantId,
-          clerkUserId: input.clerkUserId,
+          authUserId: input.authUserId,
           role: input.role,
           displayName: input.displayName,
           pilotCallsign: null,

@@ -235,7 +235,7 @@ CREATE TABLE `flights` (
 CREATE TABLE `memberships` (
 	`id` text PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))),
 	`tenant_id` text NOT NULL,
-	`clerk_user_id` text NOT NULL,
+	`auth_user_id` text NOT NULL,
 	`role` text DEFAULT 'pilot' NOT NULL,
 	`display_name` text,
 	`pilot_callsign` text,
@@ -295,7 +295,7 @@ CREATE TABLE `privacy_external_tasks` (
 	CONSTRAINT `fk_privacy_external_tasks_request_id_privacy_subject_requests_id_fk` FOREIGN KEY (`request_id`) REFERENCES `privacy_subject_requests`(`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_privacy_external_tasks_run_id_privacy_retention_runs_id_fk` FOREIGN KEY (`run_id`) REFERENCES `privacy_retention_runs`(`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_privacy_external_tasks_completed_by_membership_id_memberships_id_fk` FOREIGN KEY (`completed_by_membership_id`) REFERENCES `memberships`(`id`) ON DELETE SET NULL,
-	CONSTRAINT "privacy_external_tasks_provider_enum_check" CHECK("provider" in ('clerk', 'cloudflare', 'hoppie', 'backup', 'navigraph')),
+	CONSTRAINT "privacy_external_tasks_provider_enum_check" CHECK("provider" in ('identity', 'cloudflare', 'hoppie', 'backup', 'navigraph')),
 	CONSTRAINT "privacy_external_tasks_status_enum_check" CHECK("status" in ('pending', 'completed', 'not_applicable', 'failed')),
 	CONSTRAINT "privacy_external_tasks_parent_check" CHECK(("request_id" is not null) + ("run_id" is not null) = 1)
 );
@@ -530,7 +530,7 @@ CREATE TABLE `tenants` (
 	`id` text PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))),
 	`slug` text NOT NULL,
 	`name` text NOT NULL,
-	`clerk_org_id` text NOT NULL,
+	`auth_org_id` text NOT NULL,
 	`hoppie_station` text,
 	`hoppie_logon_enc` text,
 	`brand_seed_color` text DEFAULT '#e64646' NOT NULL,
@@ -565,7 +565,7 @@ CREATE INDEX `flights_tenant_status_idx` ON `flights` (`tenant_id`,`status`);-->
 CREATE INDEX `flights_tenant_etd_idx` ON `flights` (`tenant_id`,`etd`);--> statement-breakpoint
 CREATE INDEX `flights_tenant_pilot_idx` ON `flights` (`tenant_id`,`pilot_membership_id`);--> statement-breakpoint
 CREATE INDEX `flights_schedule_request_idx` ON `flights` (`schedule_request_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `memberships_tenant_user_uidx` ON `memberships` (`tenant_id`,`clerk_user_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `memberships_tenant_user_uidx` ON `memberships` (`tenant_id`,`auth_user_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `memberships_tenant_id_uidx` ON `memberships` (`tenant_id`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `memberships_tenant_callsign_uidx` ON `memberships` (`tenant_id`,`pilot_callsign`);--> statement-breakpoint
 CREATE UNIQUE INDEX `memberships_tenant_simbrief_user_uidx` ON `memberships` (`tenant_id`,`simbrief_user_id`);--> statement-breakpoint
@@ -602,4 +602,4 @@ CREATE INDEX `simulator_devices_tenant_member_idx` ON `simulator_devices` (`tena
 CREATE UNIQUE INDEX `simulator_devices_tenant_id_uidx` ON `simulator_devices` (`tenant_id`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `simulator_devices_tenant_member_id_uidx` ON `simulator_devices` (`tenant_id`,`membership_id`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `tenants_slug_uidx` ON `tenants` (`slug`);--> statement-breakpoint
-CREATE UNIQUE INDEX `tenants_clerk_org_uidx` ON `tenants` (`clerk_org_id`);
+CREATE UNIQUE INDEX `tenants_auth_org_uidx` ON `tenants` (`auth_org_id`);

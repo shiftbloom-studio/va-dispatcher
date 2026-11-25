@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
     id: "tenant_test",
     slug: "vsas",
     name: "Virtual SAS",
-    clerkOrgId: "org_test",
+    authOrgId: "org_test",
     hoppieStation: "VSAS",
     hoppieLogonEnc: null,
     settings: {},
@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   membership: {
     id: "membership_test",
     tenantId: "tenant_test",
-    clerkUserId: "user_test",
+    authUserId: "user_test",
     role: "pilot" as const,
     displayName: "Fabian",
     pilotCallsign: "SAS123",
@@ -36,11 +36,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../middleware/auth.js", () => ({
   requireAuth: createMiddleware(async (c, next) => {
     c.set("auth", {
-      clerkUserId: "user_test",
+      authUserId: "user_test",
       tenantId: "tenant_test",
       membershipId: "membership_test",
       role: mocks.role,
-      clerkOrgId: "org_test",
+      authOrgId: "org_test",
       tenant: mocks.tenant,
       membership: mocks.membership,
     });
@@ -74,7 +74,7 @@ describe("member account settings", () => {
     mocks.updateMembership.mockResolvedValue({
       id: "membership_test",
       tenantId: "tenant_test",
-      clerkUserId: "user_test",
+      authUserId: "user_test",
       role: "pilot",
       displayName: "Fabian",
       pilotCallsign: "SAS123",
@@ -122,7 +122,7 @@ describe("member account settings", () => {
     mocks.updateMembership.mockResolvedValue({
       id: "membership_test",
       tenantId: "tenant_test",
-      clerkUserId: "user_test",
+      authUserId: "user_test",
       role: "dispatcher",
       displayName: "Dispatcher",
       pilotCallsign: "OPS123",

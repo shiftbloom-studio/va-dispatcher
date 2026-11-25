@@ -323,13 +323,13 @@ describe("privacy lifecycle service", () => {
         kind: "correction",
         payload: {
           displayName: "Corrected Pilot",
-          clerkCorrectionRequested: true,
+          identityCorrectionRequested: true,
         },
       }),
     );
     mocks.correctMembershipForPrivacy.mockResolvedValue(true);
     mocks.listExternalRequestTasks.mockResolvedValue([
-      { provider: "clerk", status: "pending" },
+      { provider: "identity", status: "pending" },
     ]);
     mocks.completePrivacyRequest.mockResolvedValue(
       exportRequest({ kind: "correction", status: "awaiting_external" }),
@@ -355,7 +355,7 @@ describe("privacy lifecycle service", () => {
         requestId: REQUEST,
         tasks: [
           expect.objectContaining({
-            provider: "clerk",
+            provider: "identity",
             action: "correct_identity_record",
           }),
         ],
@@ -419,7 +419,7 @@ describe("privacy lifecycle service", () => {
   it("exports every inventoried local store including provider payloads", async () => {
     mocks.findPrivacySubjectRequest.mockResolvedValue(exportRequest());
     mocks.listExternalRequestTasks.mockResolvedValue([
-      { provider: "clerk", status: "pending" },
+      { provider: "identity", status: "pending" },
     ]);
     mocks.listPrivacyExportStoreRecords.mockImplementation(
       async ({ store }) => [
@@ -551,7 +551,7 @@ describe("privacy lifecycle service", () => {
       tenantId: TENANT,
       requestId: REQUEST,
       tasks: expect.arrayContaining([
-        expect.objectContaining({ provider: "clerk" }),
+        expect.objectContaining({ provider: "identity" }),
         expect.objectContaining({
           provider: "cloudflare",
           action: "export_or_assess_subject_logs",

@@ -13,12 +13,9 @@ import {
   memberRoleApplicationsEnabled,
 } from "../domain/tenants/member-access.js";
 import { env } from "../env.js";
-import {
-  getClerkClient,
-  requireClerkUser,
-  type AppVariables,
-} from "../middleware/auth.js";
+import { requireUser, type AppVariables } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
+import { getDirectory, type DirectoryUser } from "../auth/directory.js";
 import type { Membership } from "../db/schema.js";
 
 export const membershipApplicationRoutes = new Hono<{
@@ -32,7 +29,7 @@ const applicationInputSchema = z.object({
   requestedRole: z.enum(["pilot", "dispatcher"]),
 });
 
-membershipApplicationRoutes.use("/membership-application", requireClerkUser);
+membershipApplicationRoutes.use("/membership-application", requireUser);
 
 const privateApplicationResponse: MiddlewareHandler<{
   Variables: AppVariables;
@@ -49,9 +46,9 @@ membershipApplicationRoutes.get(
   "/membership-application",
   zValidator("query", applicationQuerySchema),
   async (c) => {
-    const { clerkUserId } = c.get("clerkUser");
+    const { authUserId } = c.get("authUser");
     const tenant = await requireTenant(c.req.valid("query").tenantSlug);
-    const membership = await findMembership(tenant.id, clerkUserId);
+    const membership = await findMembership(tenant.id, authUserId);
     return c.json(applicationResponse(tenant.settings, membership));
   },
 );
@@ -60,7 +57,7 @@ membershipApplicationRoutes.post(
   "/membership-application",
   zValidator("json", applicationInputSchema),
   async (c) => {
-    const { clerkUserId } = c.get("clerkUser");
+    const { authUserId } = c.get("authUser");
     const body = c.req.valid("json");
     const tenant = await requireTenant(body.tenantSlug);
     const access = memberAccessSettings(tenant.settings);
@@ -71,15 +68,15 @@ membershipApplicationRoutes.post(
       );
     }
 
-    const existing = await findMembership(tenant.id, clerkUserId);
+    const existing = await findMembership(tenant.id, authUserId);
     if (existing?.status === "active") {
       return c.json(applicationResponse(tenant.settings, existing));
     }
 
-    const displayName = await verifiedClerkDisplayName(clerkUserId);
+    const displayName = await verifiedDisplayName(authUserId);
     const result = await submitMembershipApplicationWithAudit({
       tenantId: tenant.id,
-      clerkUserId,
+      authUserId,
       requestedRole: body.requestedRole,
       displayName,
     });
@@ -94,11 +91,11 @@ membershipApplicationRoutes.delete(
   "/membership-application",
   zValidator("query", applicationQuerySchema),
   async (c) => {
-    const { clerkUserId } = c.get("clerkUser");
+    const { authUserId } = c.get("authUser");
     const tenant = await requireTenant(c.req.valid("query").tenantSlug);
     const cancelled = await cancelMembershipApplicationWithAudit({
       tenantId: tenant.id,
-      clerkUserId,
+      authUserId,
     });
     if (!cancelled) {
       throw new AppError(
@@ -116,33 +113,28 @@ async function requireTenant(slug: string) {
   return tenant;
 }
 
-async function verifiedClerkDisplayName(
-  clerkUserId: string,
-): Promise<string | null> {
+async function verifiedDisplayName(authUserId: string): Promise<string | null> {
   const config = env();
   if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
     return "Dev Applicant";
   }
-  let user: Awaited<
-    ReturnType<ReturnType<typeof getClerkClient>["users"]["getUser"]>
-  >;
+  let user: DirectoryUser;
   try {
-    user = await getClerkClient().users.getUser(clerkUserId);
+    user = await getDirectory().getUser(authUserId);
   } catch (error) {
     throw new AppError(
       "UPSTREAM",
-      "Clerk could not verify this account; try again",
+      "The identity provider could not verify this account; try again",
       { cause: error },
     );
   }
-  const primaryEmail = user.primaryEmailAddress;
-  if (!primaryEmail || primaryEmail.verification?.status !== "verified") {
+  if (!user.email || !user.emailVerified) {
     throw new AppError(
       "UNPROCESSABLE",
       "Verify your primary email address before applying",
     );
   }
-  return user.fullName?.trim() || primaryEmail.emailAddress;
+  return user.displayName?.trim() || user.email;
 }
 
 function applicationResponse(

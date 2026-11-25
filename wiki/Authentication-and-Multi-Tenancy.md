@@ -51,7 +51,7 @@ resolves the requested tenant from the server-known URL slug and never accepts
 a tenant ID or user ID from the browser. It exposes no operational data and
 marks every response `private, no-store`.
 
-The configured `VSAS_CLERK_ORG_ID` is a narrow bootstrap exception: if that exact organization is missing from the database, the API can create or repair the tenant with slug `vsas`. Arbitrary organizations are never auto-created as tenants.
+The configured `VSAS_AUTH_ORG_ID` is a narrow bootstrap exception: if that exact organization is missing from the database, the API can create or repair the tenant with slug `vsas`. Arbitrary organizations are never auto-created as tenants.
 
 ## Membership provisioning and roles
 

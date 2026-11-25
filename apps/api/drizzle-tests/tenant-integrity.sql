@@ -4,12 +4,12 @@
 
 BEGIN;
 
-INSERT INTO tenants (id, slug, name, clerk_org_id)
+INSERT INTO tenants (id, slug, name, auth_org_id)
 VALUES
   ('10000000-0000-4000-8000-000000000001', 'test-one', 'Test One', 'org_test_one'),
   ('20000000-0000-4000-8000-000000000002', 'test-two', 'Test Two', 'org_test_two');
 
-INSERT INTO memberships (id, tenant_id, clerk_user_id, role, status)
+INSERT INTO memberships (id, tenant_id, auth_user_id, role, status)
 VALUES
   ('11000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'user_one', 'pilot', 'active'),
   ('12000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'user_nullable', 'pilot', 'active'),

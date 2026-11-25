@@ -1,13 +1,8 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { isClerkAPIResponseError } from "@clerk/backend/errors";
 import type { AppVariables } from "../middleware/auth.js";
-import {
-  getClerkClient,
-  requireAuth,
-  requireRole,
-} from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import {
   findMembershipById,
   listMemberships,
@@ -21,7 +16,11 @@ import { env, resolveAppOrigin } from "../env.js";
 import { acarsStationSchema } from "../domain/acars/validation.js";
 import { isUniqueViolation } from "../lib/db-errors.js";
 import { AppError } from "../lib/errors.js";
-import { clerkOrgRole } from "../domain/members/roles.js";
+import {
+  DirectoryError,
+  getDirectory,
+  type DirectoryInvitation,
+} from "../auth/directory.js";
 import { memberAccessSettings } from "../domain/tenants/member-access.js";
 import { writeAudit } from "../db/repositories/audit.js";
 
@@ -108,20 +107,18 @@ membersRoutes.get(
   zValidator("query", invitationQuerySchema),
   async (c) => {
     const auth = c.get("auth");
-    if (clerkBypassed()) return c.json({ items: [], totalCount: 0 });
+    if (directoryBypassed()) return c.json({ items: [], totalCount: 0 });
     try {
-      const page =
-        await getClerkClient().organizations.getOrganizationInvitationList({
-          organizationId: auth.clerkOrgId,
-          status: ["pending"],
-          ...c.req.valid("query"),
-        });
+      const page = await getDirectory().listInvitations({
+        orgId: auth.authOrgId,
+        ...c.req.valid("query"),
+      });
       return c.json({
         items: page.data.map(publicInvitation),
         totalCount: page.totalCount,
       });
     } catch (error) {
-      throw publicClerkError(error, "Clerk invitations could not be loaded");
+      throw publicDirectoryError(error, "Invitations could not be loaded");
     }
   },
 );
@@ -132,44 +129,43 @@ membersRoutes.post(
   zValidator("json", invitationInputSchema),
   async (c) => {
     const auth = c.get("auth");
-    if (clerkBypassed()) {
+    if (directoryBypassed()) {
       throw new AppError(
         "UNPROCESSABLE",
-        "Clerk invitations are unavailable in development auth-bypass mode",
+        "Invitations are unavailable in development auth-bypass mode",
       );
     }
     const body = c.req.valid("json");
     const redirectUrl = invitationRedirectUrl(auth.tenant.slug);
     let invitation;
     try {
-      invitation =
-        await getClerkClient().organizations.createOrganizationInvitation({
-          organizationId: auth.clerkOrgId,
-          inviterUserId: auth.clerkUserId,
-          emailAddress: body.emailAddress,
-          role: clerkOrgRole(body.role),
-          expiresInDays: memberAccessSettings(auth.tenant.settings)
-            .invitationExpiryDays,
-          redirectUrl,
-          publicMetadata: {
-            vaDispatchRole: body.role,
-            tenantSlug: auth.tenant.slug,
-          },
-        });
+      invitation = await getDirectory().createInvitation({
+        orgId: auth.authOrgId,
+        inviterUserId: auth.authUserId,
+        emailAddress: body.emailAddress,
+        role: body.role,
+        expiresInDays: memberAccessSettings(auth.tenant.settings)
+          .invitationExpiryDays,
+        redirectUrl,
+        metadata: {
+          vaDispatchRole: body.role,
+          tenantSlug: auth.tenant.slug,
+        },
+      });
     } catch (error) {
-      throw publicClerkError(error, "Clerk could not create the invitation", {
+      throw publicDirectoryError(error, "The invitation could not be created", {
         notFound:
-          "Clerk could not find the configured organization or selected tenant role",
+          "The identity provider could not find the organization or selected tenant role",
         conflict:
-          "Clerk already has a pending invitation or organization membership for this email",
+          "This email already has a pending invitation or organization membership",
         conflictCodes: [
           "organization_invitation_not_unique",
           "already_a_member_in_organization",
         ],
         forbidden:
-          "Clerk does not allow this organization invitation. Verify organization invitation support, tenant role configuration, and membership capacity",
+          "The identity provider does not allow this invitation. Verify the tenant role configuration and membership capacity",
         unprocessable:
-          "Clerk rejected the invitation. Verify that organization invitations are enabled, the selected tenant role exists, and the invitation return URL is allowed",
+          "The identity provider rejected the invitation. Verify that the selected tenant role exists and the invitation return URL is allowed",
       });
     }
     let auditRecorded = true;
@@ -197,22 +193,21 @@ membersRoutes.delete(
   requireRole("admin"),
   async (c) => {
     const auth = c.get("auth");
-    if (clerkBypassed()) {
+    if (directoryBypassed()) {
       throw new AppError(
         "UNPROCESSABLE",
-        "Clerk invitations are unavailable in development auth-bypass mode",
+        "Invitations are unavailable in development auth-bypass mode",
       );
     }
     let invitation;
     try {
-      invitation =
-        await getClerkClient().organizations.revokeOrganizationInvitation({
-          organizationId: auth.clerkOrgId,
-          invitationId: c.req.param("invitationId"),
-          requestingUserId: auth.clerkUserId,
-        });
+      invitation = await getDirectory().revokeInvitation({
+        orgId: auth.authOrgId,
+        invitationId: c.req.param("invitationId"),
+        requestingUserId: auth.authUserId,
+      });
     } catch (error) {
-      throw publicClerkError(error, "Clerk could not revoke the invitation");
+      throw publicDirectoryError(error, "The invitation could not be revoked");
     }
     let auditRecorded = true;
     try {
@@ -244,10 +239,10 @@ membersRoutes.post(
     const body = c.req.valid("json");
     const role =
       body.role ?? (membership.role === "admin" ? "pilot" : membership.role);
-    if (!clerkBypassed()) {
-      await ensureClerkMembership({
-        organizationId: auth.clerkOrgId,
-        clerkUserId: membership.clerkUserId,
+    if (!directoryBypassed()) {
+      await ensureDirectoryMembership({
+        organizationId: auth.authOrgId,
+        authUserId: membership.authUserId,
         role,
       });
     }
@@ -266,7 +261,7 @@ membersRoutes.post(
       ...publicMember(result.membership),
       reassignedFlightCount: result.reassignedFlightCount,
       reassignedScheduleRequestCount: result.reassignedScheduleRequestCount,
-      clerkSynchronized: !clerkBypassed(),
+      directorySynchronized: !directoryBypassed(),
     });
   },
 );
@@ -291,7 +286,7 @@ membersRoutes.post(
       ...publicMember(result.membership),
       reassignedFlightCount: result.reassignedFlightCount,
       reassignedScheduleRequestCount: result.reassignedScheduleRequestCount,
-      clerkSynchronized: true,
+      directorySynchronized: true,
     });
   },
 );
@@ -350,13 +345,13 @@ membersRoutes.patch(
     }
     const nextRole = patch.role ?? current.role;
     const nextStatus = patch.status ?? current.status;
-    const needsClerkSync =
+    const needsDirectorySync =
       nextStatus === "active" &&
       (current.status !== "active" || nextRole !== current.role);
-    if (needsClerkSync && !clerkBypassed()) {
-      await ensureClerkMembership({
-        organizationId: auth.clerkOrgId,
-        clerkUserId: current.clerkUserId,
+    if (needsDirectorySync && !directoryBypassed()) {
+      await ensureDirectoryMembership({
+        organizationId: auth.authOrgId,
+        authUserId: current.authUserId,
         role: nextRole,
       });
     }
@@ -371,19 +366,19 @@ membersRoutes.patch(
         ...publicMember(result.membership),
         reassignedFlightCount: result.reassignedFlightCount,
         reassignedScheduleRequestCount: result.reassignedScheduleRequestCount,
-        clerkSynchronized: !needsClerkSync || !clerkBypassed(),
+        directorySynchronized: !needsDirectorySync || !directoryBypassed(),
       });
     } catch (error) {
-      if (needsClerkSync && !clerkBypassed()) {
+      if (needsDirectorySync && !directoryBypassed()) {
         try {
-          await ensureClerkMembership({
-            organizationId: auth.clerkOrgId,
-            clerkUserId: current.clerkUserId,
+          await ensureDirectoryMembership({
+            organizationId: auth.authOrgId,
+            authUserId: current.authUserId,
             role: current.role,
           });
         } catch {
           // The application membership remains authoritative and unchanged.
-          // A later explicit save or directory sync can repair Clerk drift.
+          // A later explicit save or directory sync can repair provider drift.
         }
       }
       if (isUniqueViolation(error)) {
@@ -430,14 +425,14 @@ membersRoutes.delete(
       reassignedScheduleRequestCount = result.reassignedScheduleRequestCount;
     }
 
-    const clerkSynchronized = clerkBypassed()
+    const directorySynchronized = directoryBypassed()
       ? false
-      : await removeClerkMembership({
-          organizationId: auth.clerkOrgId,
-          clerkUserId: membership.clerkUserId,
+      : await removeDirectoryMembership({
+          organizationId: auth.authOrgId,
+          authUserId: membership.authUserId,
         });
     let completionAuditRecorded = false;
-    if (clerkSynchronized) {
+    if (directorySynchronized) {
       try {
         await writeAudit({
           tenantId: auth.tenantId,
@@ -445,7 +440,7 @@ membersRoutes.delete(
           action: "membership.kicked",
           entityType: "membership",
           entityId: membership.id,
-          meta: { clerkMembershipRemoved: true },
+          meta: { directoryMembershipRemoved: true },
         });
         completionAuditRecorded = true;
       } catch {
@@ -456,7 +451,7 @@ membersRoutes.delete(
       ...publicMember(membership),
       reassignedFlightCount,
       reassignedScheduleRequestCount,
-      clerkSynchronized,
+      directorySynchronized,
       completionAuditRecorded,
     });
   },
@@ -478,24 +473,23 @@ membersRoutes.post("/members/sync", requireRole("admin"), async (c) => {
       skipped: 0,
       failed: 0,
       failures: [],
-      note: "Dev bypass — no Clerk org sync",
+      note: "Dev bypass — no directory sync",
     });
   }
 
-  const clerkClient = getClerkClient();
+  const directory = getDirectory();
   const result = await syncMembersFromDirectory({
     tenantId: auth.tenantId,
     actorMembershipId: auth.membershipId,
-    organizationId: auth.clerkOrgId,
-    loadPage: (page) =>
-      clerkClient.organizations.getOrganizationMembershipList(page),
+    organizationId: auth.authOrgId,
+    loadPage: (page) => directory.listMemberships(page),
   });
   return c.json(result);
 });
 
 function publicMember(membership: {
   id: string;
-  clerkUserId: string;
+  authUserId: string;
   role: "pilot" | "dispatcher" | "admin";
   displayName: string | null;
   pilotCallsign: string | null;
@@ -509,7 +503,7 @@ function publicMember(membership: {
 }) {
   return {
     id: membership.id,
-    clerkUserId: membership.clerkUserId,
+    authUserId: membership.authUserId,
     role: membership.role,
     requestedRole: membership.status === "invited" ? membership.role : null,
     displayName: membership.displayName,
@@ -538,73 +532,46 @@ async function requireApplication(tenantId: string, membershipId: string) {
   return membership;
 }
 
-async function ensureClerkMembership(input: {
+async function ensureDirectoryMembership(input: {
   organizationId: string;
-  clerkUserId: string;
+  authUserId: string;
   role: "pilot" | "dispatcher" | "admin";
 }): Promise<void> {
-  const client = getClerkClient();
   try {
-    const existing = await client.organizations.getOrganizationMembershipList({
-      organizationId: input.organizationId,
-      userId: [input.clerkUserId],
-      limit: 1,
+    await getDirectory().setMembershipRole({
+      orgId: input.organizationId,
+      userId: input.authUserId,
+      role: input.role,
     });
-    const payload = {
-      organizationId: input.organizationId,
-      userId: input.clerkUserId,
-      role: clerkOrgRole(input.role),
-    };
-    if (existing.data.length > 0) {
-      await client.organizations.updateOrganizationMembership(payload);
-    } else {
-      await client.organizations.createOrganizationMembership(payload);
-    }
   } catch (error) {
-    throw publicClerkError(
+    throw publicDirectoryError(
       error,
-      "Clerk could not synchronize the organization membership",
+      "The identity provider could not synchronize the organization membership",
     );
   }
 }
 
-async function removeClerkMembership(input: {
+async function removeDirectoryMembership(input: {
   organizationId: string;
-  clerkUserId: string;
+  authUserId: string;
 }): Promise<boolean> {
-  const client = getClerkClient();
   try {
-    const existing = await client.organizations.getOrganizationMembershipList({
-      organizationId: input.organizationId,
-      userId: [input.clerkUserId],
-      limit: 1,
+    await getDirectory().removeMembership({
+      orgId: input.organizationId,
+      userId: input.authUserId,
     });
-    if (existing.data.length > 0) {
-      await client.organizations.deleteOrganizationMembership({
-        organizationId: input.organizationId,
-        userId: input.clerkUserId,
-      });
-    }
     return true;
   } catch {
     return false;
   }
 }
 
-function publicInvitation(invitation: {
-  id: string;
-  emailAddress: string;
-  role: string;
-  status?: "pending" | "accepted" | "revoked" | "expired";
-  createdAt: number;
-  updatedAt: number;
-  expiresAt: number;
-}) {
+function publicInvitation(invitation: DirectoryInvitation) {
   return {
     id: invitation.id,
     emailAddress: invitation.emailAddress,
     role: invitation.role,
-    status: invitation.status ?? "pending",
+    status: invitation.status,
     createdAt: new Date(invitation.createdAt).toISOString(),
     updatedAt: new Date(invitation.updatedAt).toISOString(),
     expiresAt: new Date(invitation.expiresAt).toISOString(),
@@ -620,19 +587,19 @@ function invitationRedirectUrl(slug: string): string {
       { status: 503 },
     );
   }
-  // Clerk appends its organization-invitation ticket and account status to
+  // The identity provider appends its invitation ticket and account status to
   // this public page. The embedded SignIn component handles both existing
   // users and the transfer to sign-up for new users; the protected tenant root
   // cannot do that without dropping the ticket.
   return new URL(`/${slug}/sign-in`, origin).toString();
 }
 
-function clerkBypassed(): boolean {
+function directoryBypassed(): boolean {
   const config = env();
   return config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production";
 }
 
-function publicClerkError(
+function publicDirectoryError(
   error: unknown,
   message: string,
   statusMessages: {
@@ -643,12 +610,10 @@ function publicClerkError(
     unprocessable?: string;
   } = {},
 ): AppError {
-  if (isClerkAPIResponseError(error)) {
+  if (error instanceof DirectoryError) {
     if (
       statusMessages.conflict &&
-      statusMessages.conflictCodes?.some((code) =>
-        error.errors.some((clerkError) => clerkError.code === code),
-      )
+      statusMessages.conflictCodes?.some((code) => error.code === code)
     ) {
       return new AppError("CONFLICT", statusMessages.conflict, {
         cause: error,
@@ -677,10 +642,14 @@ function publicClerkError(
       );
     }
     if (error.status === 429) {
-      return new AppError("UPSTREAM", "Clerk rate limit reached; try later", {
-        status: 429,
-        cause: error,
-      });
+      return new AppError(
+        "UPSTREAM",
+        "Identity provider rate limit reached; try later",
+        {
+          status: 429,
+          cause: error,
+        },
+      );
     }
   }
   return new AppError("UPSTREAM", message, { cause: error });

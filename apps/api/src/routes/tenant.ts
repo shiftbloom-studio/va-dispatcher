@@ -2,13 +2,10 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
-import {
-  getClerkClient,
-  requireAuth,
-  requireRole,
-} from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { findTenantById, updateTenant } from "../db/repositories/tenants.js";
 import { AppError } from "../lib/errors.js";
+import { getDirectory } from "../auth/directory.js";
 import { decryptSecret, encryptSecret } from "../lib/crypto.js";
 import { env } from "../env.js";
 import { writeAudit } from "../db/repositories/audit.js";
@@ -110,21 +107,23 @@ tenantRoutes.patch(
     const body = c.req.valid("json");
     const current = await requireTenant(auth.tenantId);
     const config = env();
-    let clerkSynchronized = true;
-    const clerkNameChanged = Boolean(body.name && body.name !== current.name);
-    if (clerkNameChanged) {
+    let directorySynchronized = true;
+    const directoryNameChanged = Boolean(
+      body.name && body.name !== current.name,
+    );
+    if (directoryNameChanged) {
       if (config.AUTH_DEV_BYPASS && config.NODE_ENV !== "production") {
-        clerkSynchronized = false;
+        directorySynchronized = false;
       } else {
         try {
-          await getClerkClient().organizations.updateOrganization(
-            auth.clerkOrgId,
-            { name: body.name },
-          );
+          await getDirectory().renameOrganization({
+            orgId: auth.authOrgId,
+            name: body.name!,
+          });
         } catch (error) {
           throw new AppError(
             "UPSTREAM",
-            "Clerk could not update the organization name; no local settings were changed",
+            "The identity provider could not update the organization name; no local settings were changed",
             { cause: error },
           );
         }
@@ -143,12 +142,12 @@ tenantRoutes.patch(
         ...(settings === undefined ? {} : { settings }),
       });
     } catch (error) {
-      if (clerkNameChanged && clerkSynchronized) {
+      if (directoryNameChanged && directorySynchronized) {
         try {
-          await getClerkClient().organizations.updateOrganization(
-            auth.clerkOrgId,
-            { name: current.name },
-          );
+          await getDirectory().renameOrganization({
+            orgId: auth.authOrgId,
+            name: current.name,
+          });
         } catch {
           // Preserve the original database error. The next explicit save can
           // converge the provider name, and no local authority was changed.
@@ -157,12 +156,12 @@ tenantRoutes.patch(
       throw error;
     }
     if (!updated) {
-      if (clerkNameChanged && clerkSynchronized) {
+      if (directoryNameChanged && directorySynchronized) {
         try {
-          await getClerkClient().organizations.updateOrganization(
-            auth.clerkOrgId,
-            { name: current.name },
-          );
+          await getDirectory().renameOrganization({
+            orgId: auth.authOrgId,
+            name: current.name,
+          });
         } catch {
           // The tenant vanished locally; do not mask that primary condition.
         }
@@ -175,7 +174,7 @@ tenantRoutes.patch(
       action: "tenant.patch",
       entityType: "tenant",
       entityId: auth.tenantId,
-      meta: { fields: Object.keys(body), clerkSynchronized },
+      meta: { fields: Object.keys(body), directorySynchronized },
     });
     return c.json({
       id: updated.id,
@@ -183,7 +182,7 @@ tenantRoutes.patch(
       name: updated.name,
       settings: updated.settings,
       memberAccess: memberAccessSettings(updated.settings),
-      clerkSynchronized,
+      directorySynchronized,
     });
   },
 );

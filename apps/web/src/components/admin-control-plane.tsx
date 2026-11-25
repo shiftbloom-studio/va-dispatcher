@@ -694,7 +694,7 @@ function ApplicationDecision({
             {member.displayName ?? "Unnamed applicant"}
           </p>
           <p className="break-all text-sm text-slate-600">
-            Clerk user {member.clerkUserId}
+            Clerk user {member.authUserId}
           </p>
         </div>
         <div className="w-full lg:w-48">
@@ -830,7 +830,7 @@ function MemberEditor({
     <Card className="overflow-hidden">
       <CardHeader
         title={member.displayName ?? member.pilotCallsign ?? "Unnamed member"}
-        description={`Clerk user ${member.clerkUserId}`}
+        description={`Clerk user ${member.authUserId}`}
         action={
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
             {member.status}
@@ -946,7 +946,7 @@ function MemberEditor({
             Member saved. {mutation.data.reassignedFlightCount} flight(s) and{" "}
             {mutation.data.reassignedScheduleRequestCount} request(s)
             reassigned.
-            {!mutation.data.clerkSynchronized
+            {!mutation.data.directorySynchronized
               ? " Clerk synchronization is still required."
               : ""}
           </p>
@@ -985,14 +985,14 @@ function MemberEditor({
           </Button>
           {kick.data ? (
             <p
-              role={kick.data.clerkSynchronized ? "status" : "alert"}
+              role={kick.data.directorySynchronized ? "status" : "alert"}
               className={`mt-3 rounded-lg p-3 text-sm ${
-                kick.data.clerkSynchronized
+                kick.data.directorySynchronized
                   ? "bg-emerald-50 text-emerald-900"
                   : "bg-amber-50 text-amber-950"
               }`}
             >
-              {kick.data.clerkSynchronized
+              {kick.data.directorySynchronized
                 ? "Member removed from the organization and disabled locally."
                 : "VA Dispatch access is disabled, but Clerk removal failed. Retry this action to finish synchronization."}
             </p>

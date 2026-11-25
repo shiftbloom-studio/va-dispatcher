@@ -90,11 +90,11 @@ export function createApp() {
   v1.route("/", simbriefPublicRoutes);
   v1.route("/", publicRoutes);
   // Simulator clients authenticate with revocable per-device bearer tokens,
-  // not Clerk or the browser bot check. Keep this narrow route before business auth.
+  // not user auth or the browser bot check. Keep this narrow route before business auth.
   v1.route("/", telemetryClientRoutes);
   v1.use("*", requireHuman);
   // Signed-in applicants do not have an active organization yet. This narrow
-  // route verifies the Clerk user but deliberately does not require tenant auth.
+  // route verifies the user but deliberately does not require tenant auth.
   v1.route("/", membershipApplicationRoutes);
   v1.route("/", meRoutes);
   v1.route("/", tenantRoutes);

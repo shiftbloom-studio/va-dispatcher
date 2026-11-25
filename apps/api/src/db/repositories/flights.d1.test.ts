@@ -58,27 +58,27 @@ describe("flight repository D1 contracts", () => {
         id: tenantId,
         slug: "vsas",
         name: "Virtual SAS",
-        clerkOrgId: "org_vsas",
+        authOrgId: "org_vsas",
       },
       {
         id: otherTenantId,
         slug: "other",
         name: "Other VA",
-        clerkOrgId: "org_other",
+        authOrgId: "org_other",
       },
     ]);
     await db.insert(memberships).values([
       {
         id: pilotMembershipId,
         tenantId,
-        clerkUserId: "user_pilot",
+        authUserId: "user_pilot",
         role: "pilot",
         status: "active",
       },
       {
         id: dispatcherMembershipId,
         tenantId,
-        clerkUserId: "user_dispatcher",
+        authUserId: "user_dispatcher",
         role: "dispatcher",
         status: "active",
       },

@@ -18,11 +18,11 @@ meRoutes.use("/me", requireAuth);
 meRoutes.use("/me/*", requireAuth);
 
 meRoutes.get("/me", async (c) => {
-  const { clerkUserId, membership, tenant } = c.get("auth");
+  const { authUserId, membership, tenant } = c.get("auth");
 
   return c.json({
     user: {
-      clerkUserId,
+      authUserId,
     },
     membership: {
       id: membership.id,

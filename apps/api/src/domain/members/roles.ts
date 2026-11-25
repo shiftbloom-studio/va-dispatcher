@@ -19,19 +19,12 @@ export function assertRole(actual: MemberRole, required: MemberRole): void {
   }
 }
 
-/** Map Clerk organization role keys to app roles. */
-export function mapClerkOrgRole(
-  clerkRole: string | null | undefined,
-): MemberRole {
-  if (!clerkRole) return "pilot";
-  const normalized = clerkRole.replace(/^org:/, "").toLowerCase();
+/** Map identity-provider organization roles (`admin`, `org:pilot`, ...) to app roles. */
+export function mapOrgRole(orgRole: string | null | undefined): MemberRole {
+  if (!orgRole) return "pilot";
+  const normalized = orgRole.replace(/^org:/, "").toLowerCase();
   if (normalized === "admin" || normalized === "owner") return "admin";
   if (normalized === "dispatcher") return "dispatcher";
   if (normalized === "pilot" || normalized === "member") return "pilot";
   return "pilot";
-}
-
-/** Clerk role keys are instance-defined once and assigned per tenant member. */
-export function clerkOrgRole(role: MemberRole): `org:${MemberRole}` {
-  return `org:${role}`;
 }
