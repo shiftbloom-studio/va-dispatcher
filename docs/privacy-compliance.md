@@ -174,7 +174,7 @@ Before adding any optional client-side service:
 2. implement purpose-specific, off-by-default consent with equally accessible
    accept and reject controls;
 3. prevent the script, iframe, request, cookie, or local-storage access before
-   consent—hiding an already loaded service is insufficient;
+   consent - hiding an already loaded service is insufficient;
 4. make withdrawal as easy as consent and stop future optional processing;
 5. version the notice so existing users see the changed choice; and
 6. verify behavior in a fresh browser profile and after rejection, acceptance,

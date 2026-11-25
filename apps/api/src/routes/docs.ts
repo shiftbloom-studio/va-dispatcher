@@ -13,7 +13,7 @@ const swaggerHtml = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Interactive VA Dispatch API documentation" />
-    <title>VA Dispatch API — Swagger UI</title>
+    <title>VA Dispatch API - Swagger UI</title>
     <link rel="stylesheet" href="${swaggerAssetRoot}/swagger-ui.css" />
   </head>
   <body>
@@ -38,7 +38,7 @@ const redocHtml = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="VA Dispatch API reference documentation" />
-    <title>VA Dispatch API — ReDoc</title>
+    <title>VA Dispatch API - ReDoc</title>
   </head>
   <body>
     <redoc spec-url="./openapi.json"></redoc>

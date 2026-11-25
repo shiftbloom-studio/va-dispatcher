@@ -121,7 +121,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       if (!tenant) {
         throw new AppError(
           "FORBIDDEN",
-          "Tenant not found for org — seed vSAS first",
+          "Tenant not found for org - seed vSAS first",
           { details: { authOrgId } },
         );
       }

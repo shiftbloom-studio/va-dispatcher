@@ -92,7 +92,7 @@ export function FlightPlanningDialog({
             </p>
             <h2 className="mt-1 truncate font-display text-xl font-black text-[#17213d] sm:text-2xl">
               {detail.data
-                ? `${detail.data.flight.flightNumber} · ${detail.data.flight.depIcao} — ${detail.data.flight.arrIcao}`
+                ? `${detail.data.flight.flightNumber} · ${detail.data.flight.depIcao} - ${detail.data.flight.arrIcao}`
                 : "Loading flight…"}
             </h2>
           </div>
@@ -937,8 +937,8 @@ export function DispatchReleaseSnapshot({
       </div>
       <dl className="mt-4 grid gap-x-5 gap-y-3 text-sm sm:grid-cols-3">
         <ReleaseDatum label="Route" value={release.operationalRoute} wide />
-        <ReleaseDatum label="SID" value={release.sid ?? "—"} />
-        <ReleaseDatum label="STAR" value={release.star ?? "—"} />
+        <ReleaseDatum label="SID" value={release.sid ?? "-"} />
+        <ReleaseDatum label="STAR" value={release.star ?? "-"} />
         <ReleaseDatum label="Cruise" value={`FL${release.cruiseLevel}`} />
         <ReleaseDatum label="Alternate" value={release.alternateIcao} />
         <ReleaseDatum
@@ -1159,7 +1159,7 @@ function fuelTotal(fields: ReleaseFields): number {
 
 function pilotOptionLabel(pilot: Member): string {
   const callsign = pilot.pilotCallsign ?? "NO CALLSIGN";
-  return `${callsign} — ${pilot.displayName ?? callsign}`;
+  return `${callsign} - ${pilot.displayName ?? callsign}`;
 }
 
 function weatherText(value: unknown): string {

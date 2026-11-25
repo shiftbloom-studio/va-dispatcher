@@ -473,7 +473,7 @@ membersRoutes.post("/members/sync", requireRole("admin"), async (c) => {
       skipped: 0,
       failed: 0,
       failures: [],
-      note: "Dev bypass — no directory sync",
+      note: "Dev bypass - no directory sync",
     });
   }
 

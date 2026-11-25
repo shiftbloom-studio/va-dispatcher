@@ -1,4 +1,4 @@
-# VA Dispatch UI Elevation — Implementation Brief
+# VA Dispatch UI Elevation - Implementation Brief
 
 Elevate VA Dispatch into a modern, professional, multi-tenant airline operations product. Use the selected visual direction as the primary reference.
 
@@ -8,7 +8,7 @@ Elevate VA Dispatch into a modern, professional, multi-tenant airline operations
 - Keep the interface light-first; do not add dark mode in this scope.
 - Avoid large radii, pill-shaped navigation, playful visuals, and "rounded boxes inside rounded boxes."
 - Prefer crisp dividers, structured whitespace, strong data typography, square or nearly square controls, and flat status lanes.
-- Make the product distinctive through airline identity, typographic hierarchy, operational data, and subtle wayfinding motifs—not decorative clutter.
+- Make the product distinctive through airline identity, typographic hierarchy, operational data, and subtle wayfinding motifs - not decorative clutter.
 - Animation should be restrained and functional: state changes, hover and focus feedback, board updates, and directional movement. Respect reduced-motion preferences.
 - Apply the elevation across the whole tenant journey: authentication, dispatcher workspace, pilot portal, settings, forms, dialogs, empty, loading, and error states, and responsive navigation.
 - The reference image supplies the visual composition, not a requirement to add its invented navigation items or placeholder data.
@@ -85,9 +85,9 @@ Use layered status tracking:
 
 The dashboard KPI strip should contain:
 
-- **Active flights** — live current count.
-- **On-time performance** — based on actual tracked departure information, not manual status changes or placeholder data.
-- **Scheduled vs Finished** — month-to-date progress for the current UTC calendar month.
+- **Active flights** - live current count.
+- **On-time performance** - based on actual tracked departure information, not manual status changes or placeholder data.
+- **Scheduled vs Finished** - month-to-date progress for the current UTC calendar month.
 
 All definitions must be visible to users and based on real data. Missing tracking coverage should be disclosed rather than silently counted as late or on time.
 

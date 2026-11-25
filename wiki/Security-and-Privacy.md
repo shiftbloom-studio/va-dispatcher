@@ -39,7 +39,7 @@ Compromise or misconfiguration at one boundary must not be assumed safe because 
 
 The API rejects mutations that Cloudflare's bot score marks as automated, with a stricter threshold on expensive or external-provider routes. Verified bots and requests without a score pass.
 
-The bot check is excluded from reads and secret-authenticated internal routes. It complements—not replaces—authentication, authorization, input validation, provider controls, and rate-aware design.
+The bot check is excluded from reads and secret-authenticated internal routes. It complements - not replaces - authentication, authorization, input validation, provider controls, and rate-aware design.
 
 ### Input and response contracts
 

@@ -162,21 +162,21 @@ external-provider tasks.
 | ------------------------------------------------ | :---: | :--------: | :---: |
 | View or edit own profile and callsign            |  Yes  |    Yes     |  Yes  |
 | Manage own SimBrief/Navigraph/device links       |  Yes  |    Yes     |  Yes  |
-| Create and view own schedule requests            |  Yes  |     —      |   —   |
-| Accept or decline own assigned offers            |  Yes  |     —      |   —   |
-| Generate prepared SimBrief plan and view OFP     |  Yes  |     —      |   —   |
-| View all tenant requests and flights             |   —   |    Yes     |  Yes  |
-| Review, reject, or fulfill requests              |   —   |    Yes     |  Yes  |
-| Create, plan, edit, monitor, and advance flights |   —   |    Yes     |  Yes  |
-| Use dispatcher ACARS workspace                   |   —   |    Yes     |  Yes  |
-| List tenant members                              |   —   |    Yes     |  Yes  |
+| Create and view own schedule requests            |  Yes  | - | - |
+| Accept or decline own assigned offers            |  Yes  | - | - |
+| Generate prepared SimBrief plan and view OFP     |  Yes  | - | - |
+| View all tenant requests and flights             | - |    Yes     |  Yes  |
+| Review, reject, or fulfill requests              | - |    Yes     |  Yes  |
+| Create, plan, edit, monitor, and advance flights | - |    Yes     |  Yes  |
+| Use dispatcher ACARS workspace                   | - |    Yes     |  Yes  |
+| List tenant members                              | - |    Yes     |  Yes  |
 | Apply for pilot/dispatcher tenant membership     |  Yes  |    Yes     |  Yes  |
-| Synchronize stem members                         |   —   |     —      |  Yes  |
-| Invite, approve, reject, or remove members       |   —   |     —      |  Yes  |
-| Change member roles/status and audit access      |   —   |     —      |  Yes  |
-| Configure tenant membership policy/name          |   —   |     —      |  Yes  |
-| Operate privacy lifecycle workflows              |   —   |     —      |  Yes  |
-| Configure organization Hoppie credentials        |   —   |     —      |  Yes  |
+| Synchronize stem members                         | - | - |  Yes  |
+| Invite, approve, reject, or remove members       | - | - |  Yes  |
+| Change member roles/status and audit access      | - | - |  Yes  |
+| Configure tenant membership policy/name          | - | - |  Yes  |
+| Operate privacy lifecycle workflows              | - | - |  Yes  |
+| Configure organization Hoppie credentials        | - | - |  Yes  |
 
 ## Operational language
 

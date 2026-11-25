@@ -54,7 +54,7 @@ belongs to the tenant URL. A role granted moments ago appears in the token at
 the next refresh or sign-in. If
 the user already has a disabled/invited local record, review it in VA Dispatch;
 do not delete application history or bypass local status. A failed removal can
-also leave a safe disabled record plus a stale stem membership—repeat **Remove
+also leave a safe disabled record plus a stale stem membership - repeat **Remove
 from organization** to finish provider synchronization.
 
 ### Invitation sends an error or sync finds no new member
