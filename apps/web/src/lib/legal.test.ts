@@ -15,7 +15,7 @@ const completeEnvironment = {
 
 describe("legal configuration", () => {
   it("builds an international telephone URI without the domestic trunk prefix", () => {
-    expect(toTelephoneUri("+49 (0) 163 8552 708")).toBe("tel:+491638552708");
+    expect(toTelephoneUri("+49 (0) 30 1234567")).toBe("tel:+49301234567");
   });
 
   it("rejects incomplete production configuration", () => {
