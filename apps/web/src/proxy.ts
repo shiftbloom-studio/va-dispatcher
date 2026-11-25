@@ -25,6 +25,7 @@ const clerkFreePaths = new Set([
   "/datenschutz",
   "/impressum",
   "/imprint",
+  "/robots.txt",
 ]);
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {

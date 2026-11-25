@@ -51,6 +51,10 @@ export default defineConfig({
       compatibilityDate: "2026-11-25",
       // nodejs_compat also populates process.env from vars and secrets.
       compatibilityFlags: ["nodejs_compat"],
+      // workers.dev and preview URLs would bypass the zone's WAF and rate
+      // limiting, so the Worker is only reachable on its custom domain.
+      workersDev: false,
+      previewUrls: false,
       observability: { enabled: true },
       assets: {
         htmlHandling: "none",
