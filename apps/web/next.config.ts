@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import { withBotId } from "botid/next/config";
 
 const securityHeaders = [
   {
@@ -32,17 +31,6 @@ const nextConfig: NextConfig = {
   experimental: {
     useTypeScriptCli: true,
   },
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**.public.blob.vercel-storage.com",
-        port: "",
-        pathname: "/tenant-logos/**",
-        search: "",
-      },
-    ],
-  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
@@ -58,18 +46,10 @@ const nextConfig: NextConfig = {
         destination: "/icon.svg",
         permanent: true,
       },
-      {
-        source: "/imprint",
-        destination: "/impressum",
-        permanent: true,
-      },
-      {
-        source: "/datenschutz",
-        destination: "/privacy",
-        permanent: true,
-      },
     ];
   },
+  // In production the API Worker owns <host>/api/* through a zone route, so
+  // only local development needs this proxy to `wrangler dev`.
   async rewrites() {
     const apiOrigin =
       process.env.API_ORIGIN ??
@@ -84,4 +64,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withBotId(nextConfig);
+export default nextConfig;

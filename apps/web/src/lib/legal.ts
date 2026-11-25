@@ -1,5 +1,10 @@
-export const LEGAL_NOTICE_VERSION = "2026-08-18.1";
-export const LEGAL_NOTICE_LAST_UPDATED = "18 August 2026";
+export const LEGAL_NOTICE_VERSION = "2026-11-25.1";
+export const LEGAL_NOTICE_LAST_UPDATED = {
+  en: "25 November 2026",
+  de: "25. November 2026",
+} as const;
+
+export type LegalLocale = "en" | "de";
 
 type Environment = Record<string, string | undefined>;
 

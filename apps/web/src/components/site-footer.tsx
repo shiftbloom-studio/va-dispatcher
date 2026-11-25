@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { LegalNotice } from "@/components/legal-notice";
-import { CookieSettingsButton } from "@/components/privacy-controls";
 
 export function SiteFooter({ className = "" }: { className?: string }) {
   return (
@@ -11,11 +10,11 @@ export function SiteFooter({ className = "" }: { className?: string }) {
         className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2"
       >
         <Link
-          href="/impressum"
+          href="/imprint"
           prefetch={false}
           className="rounded-sm underline decoration-slate-300 underline-offset-4 transition hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
-          Impressum
+          Imprint
         </Link>
         <Link
           href="/privacy"
@@ -24,7 +23,6 @@ export function SiteFooter({ className = "" }: { className?: string }) {
         >
           Privacy Notice
         </Link>
-        <CookieSettingsButton />
       </nav>
       <LegalNotice className="mt-3 text-center leading-5" />
     </footer>
