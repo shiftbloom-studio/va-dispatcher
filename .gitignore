@@ -30,3 +30,7 @@ blob-report
 .wrangler
 .dev.vars
 wrangler.deploy.jsonc
+
+# vinext (web Worker build)
+.cloudflare
+.vinext

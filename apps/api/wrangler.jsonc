@@ -33,6 +33,10 @@
   "env": {
     "production": {
       "name": "va-dispatch-api",
+      // Takes precedence over the web Worker's custom domain for /api/*.
+      "routes": [
+        { "pattern": "<VA_HOSTNAME>/api/*", "zone_name": "<VA_ZONE_NAME>" },
+      ],
       "d1_databases": [
         {
           "binding": "DB",

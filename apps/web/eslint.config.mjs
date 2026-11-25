@@ -6,6 +6,10 @@ export default defineConfig([
   ...nextTypeScript,
   globalIgnores([
     ".next/**",
+    ".cloudflare/**",
+    ".vinext/**",
+    ".wrangler/**",
+    "dist/**",
     "coverage/**",
     "playwright-report/**",
     "test-results/**",
