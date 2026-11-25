@@ -27,7 +27,7 @@
     "botid": "1.5.11",
     "drizzle-orm": "1.0.0-rc.4",
     "hono": "4.13.1",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
