@@ -1,8 +1,9 @@
 // Template. Values written as <PLACEHOLDER> are filled from environment variables by
 // scripts/render-config.mjs, which writes wrangler.deploy.jsonc (not committed).
 // Top-level settings are for local development (`pnpm dev`); deploys use
-// `--env production`. The API has no public route of its own: the web Worker
-// forwards /api/* through its API service binding, so both share one origin.
+// `--env production`. In production the API Worker claims <VA_HOSTNAME>/api/*
+// with a zone route, so web and API share one origin. Server components in the
+// web Worker reach the API through a service binding instead.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "va-dispatch-api",
