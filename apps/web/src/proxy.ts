@@ -23,6 +23,7 @@ const sessionFreePaths = new Set([
   "/impressum",
   "/imprint",
   "/robots.txt",
+  "/llms.txt",
 ]);
 
 export default async function proxy(request: NextRequest) {
