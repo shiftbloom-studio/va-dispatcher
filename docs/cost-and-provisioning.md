@@ -42,7 +42,7 @@ Goal: **near-zero cost when nobody is using the tool**, while staying ready for 
 ## Provisioning steps
 
 ```bash
-cd /Users/fzwork/work/va-dispatch
+cd va-dispatcher
 vercel login          # browser once
 vercel link           # create/link project (Hobby is fine)
 
