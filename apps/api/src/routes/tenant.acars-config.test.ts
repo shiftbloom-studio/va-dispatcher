@@ -25,6 +25,7 @@ vi.mock("../middleware/auth.js", async (importOriginal) => {
         membershipId: "membership_test",
         role: state.role,
         authOrgId: "org_test",
+        signIn: { method: "passkey", at: Math.floor(Date.now() / 1000) },
       });
       await next();
     }),

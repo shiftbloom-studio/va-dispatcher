@@ -2,7 +2,12 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  assertRecentPasskey,
+  requireAuth,
+  requireRecentPasskey,
+  requireRole,
+} from "../middleware/auth.js";
 import {
   findMembershipById,
   listMemberships,
@@ -326,6 +331,10 @@ membersRoutes.patch(
     const auth = c.get("auth");
     const id = c.req.param("id");
     const patch = c.req.valid("json");
+    // Profile edits stay quick; changing someone's access needs a passkey.
+    if (patch.role !== undefined || patch.status !== undefined) {
+      assertRecentPasskey(auth);
+    }
     if (patch.reassignToMembershipId === id) {
       throw new AppError("BAD_REQUEST", "A member cannot replace themselves");
     }
@@ -395,6 +404,7 @@ membersRoutes.patch(
 membersRoutes.delete(
   "/members/:id",
   requireRole("admin"),
+  requireRecentPasskey,
   zValidator("json", kickMemberSchema),
   async (c) => {
     const auth = c.get("auth");

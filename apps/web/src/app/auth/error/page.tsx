@@ -9,6 +9,8 @@ const REASONS: Record<string, string> = {
     "The sign-in link expired or was opened in another browser. Start again from the sign-in page.",
   provider:
     "The account service could not complete the sign-in. Try again in a moment.",
+  account:
+    "You confirmed with a different account than the one you are signed in with. Nothing was changed. Go back and confirm with your own account.",
 };
 
 export const metadata = { title: "Sign-in failed" };

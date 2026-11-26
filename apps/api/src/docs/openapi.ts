@@ -497,6 +497,7 @@ const schemas = {
       "INVALID_TRANSITION",
       "UNPROCESSABLE",
       "UPSTREAM",
+      "STEP_UP_REQUIRED",
       "INTERNAL",
     ],
   },

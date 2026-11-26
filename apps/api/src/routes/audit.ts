@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  requireAuth,
+  requireRecentPasskey,
+  requireRole,
+} from "../middleware/auth.js";
 import { queryAuditEvents } from "../domain/audit/service.js";
 import { writeAudit } from "../db/repositories/audit.js";
 
@@ -59,6 +63,7 @@ auditRoutes.get(
 
 auditRoutes.get(
   "/audit-events/export",
+  requireRecentPasskey,
   zValidator("query", auditExportSchema),
   async (c) => {
     const auth = c.get("auth");

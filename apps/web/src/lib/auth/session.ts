@@ -26,6 +26,11 @@ export type AuthTransaction = {
   nonce: string;
   codeVerifier: string;
   returnTo: string;
+  /**
+   * Set for a step-up: the signed-in person. The new sign-in must be the
+   * same account, or the current session stays as it is.
+   */
+  stepUpSub?: string;
 };
 
 const secure = process.env.NODE_ENV === "production";

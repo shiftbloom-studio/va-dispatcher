@@ -75,7 +75,24 @@ describe("access token verification", () => {
       email: "pilot@example.test",
       emailVerified: true,
       name: "Test Pilot",
+      signIn: { method: "unknown", at: null },
     });
+  });
+
+  it("reads how and when the person signed in", async () => {
+    const signedInAt = Math.floor(Date.now() / 1000) - 30;
+    await expect(
+      verifyAccessToken(
+        await token({ auth_method: "passkey", signed_in_at: signedInAt }),
+      ),
+    ).resolves.toMatchObject({
+      signIn: { method: "passkey", at: signedInAt },
+    });
+    await expect(
+      verifyAccessToken(
+        await token({ auth_method: "webauthn", signed_in_at: "yesterday" }),
+      ),
+    ).resolves.toMatchObject({ signIn: { method: "unknown", at: null } });
   });
 
   it("accepts a token without organizations", async () => {
@@ -86,6 +103,7 @@ describe("access token verification", () => {
         email: null,
         emailVerified: false,
         name: null,
+        signIn: { method: "unknown", at: null },
       },
     );
   });

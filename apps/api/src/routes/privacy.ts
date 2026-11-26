@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  requireAuth,
+  requireRecentPasskey,
+  requireRole,
+} from "../middleware/auth.js";
 import * as privacyService from "../domain/privacy/service.js";
 import { retentionPolicyConfigSchema } from "../domain/privacy/policy.js";
 
@@ -180,6 +184,7 @@ privacyRoutes.post(
 
 privacyRoutes.post(
   "/privacy/requests/:id/process",
+  requireRecentPasskey,
   zValidator("param", idParamSchema),
   zValidator(
     "json",
@@ -199,6 +204,7 @@ privacyRoutes.post(
 
 privacyRoutes.get(
   "/privacy/requests/:id/export",
+  requireRecentPasskey,
   zValidator("param", idParamSchema),
   zValidator(
     "query",

@@ -25,6 +25,8 @@ vi.mock("../middleware/auth.js", async () => {
   const { createMiddleware } = await import("hono/factory");
   const rank = { pilot: 1, dispatcher: 2, admin: 3 } as const;
   return {
+    // Covered in middleware/auth.step-up.test.ts.
+    requireRecentPasskey: createMiddleware(async (_context, next) => next()),
     requireAuth: createMiddleware(async (context, next) => {
       const role = (context.req.header("x-test-role") ??
         "pilot") as keyof typeof rank;
