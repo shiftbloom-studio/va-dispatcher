@@ -73,7 +73,11 @@ async function refreshSession(request: NextRequest) {
   }
   const session = await readSession(value, config);
   const result = session
-    ? await ensureFreshSession(session, config)
+    ? await ensureFreshSession(
+        session,
+        config,
+        request.headers.get("cf-connecting-ip"),
+      )
     : ({ kind: "expired" } as const);
   if (result.kind === "fresh") return NextResponse.next();
 

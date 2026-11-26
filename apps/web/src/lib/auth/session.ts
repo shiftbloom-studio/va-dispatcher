@@ -88,6 +88,8 @@ export type RefreshResult =
 export async function ensureFreshSession(
   session: Session,
   config: AuthConfig,
+  /** The person's IP (cf-connecting-ip), passed on for stem's rate limits. */
+  clientIp?: string | null,
 ): Promise<RefreshResult> {
   if (accessTokenFresh(session)) return { kind: "fresh", session };
   if (!session.refreshToken) {
@@ -96,7 +98,7 @@ export async function ensureFreshSession(
       : { kind: "expired" };
   }
   try {
-    const tokens = await refreshTokens(config, session.refreshToken);
+    const tokens = await refreshTokens(config, session.refreshToken, clientIp);
     return {
       kind: "refreshed",
       session: {

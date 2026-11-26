@@ -96,8 +96,13 @@ describe("session refresh", () => {
     const result = await ensureFreshSession(
       session({ accessTokenExpiresAt: now() + 30 }),
       config,
+      "203.0.113.7",
     );
-    expect(mocks.refreshTokens).toHaveBeenCalledWith(config, "refresh-1");
+    expect(mocks.refreshTokens).toHaveBeenCalledWith(
+      config,
+      "refresh-1",
+      "203.0.113.7",
+    );
     expect(result).toMatchObject({
       kind: "refreshed",
       session: {

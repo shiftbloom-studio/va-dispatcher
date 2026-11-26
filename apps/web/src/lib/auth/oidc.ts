@@ -71,9 +71,16 @@ function basicAuth(config: AuthConfig) {
   return `Basic ${btoa(`${id}:${secret}`)}`;
 }
 
+/**
+ * Header that tells stem's app gateway which person a call is made for, so
+ * its rate limits apply per person. stem reads it only through the gateway.
+ */
+export const CLIENT_IP_HEADER = "x-stem-client-ip";
+
 async function tokenRequest(
   config: AuthConfig,
   params: Record<string, string>,
+  clientIp?: string | null,
 ): Promise<TokenSet> {
   const { token_endpoint } = await discover(config.issuer);
   const response = await identityFetch(config.issuer)(token_endpoint, {
@@ -82,6 +89,7 @@ async function tokenRequest(
       Authorization: basicAuth(config),
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
+      ...(clientIp ? { [CLIENT_IP_HEADER]: clientIp } : {}),
     },
     body: new URLSearchParams({ ...params, resource: config.resource }),
   });
@@ -140,24 +148,39 @@ export async function authorizationUrl(
 
 export function exchangeCode(
   config: AuthConfig,
-  input: { code: string; codeVerifier: string; redirectUri: string },
+  input: {
+    code: string;
+    codeVerifier: string;
+    redirectUri: string;
+    /** The signed-in person's IP (cf-connecting-ip), for stem's rate limits. */
+    clientIp?: string | null;
+  },
 ): Promise<TokenSet> {
-  return tokenRequest(config, {
-    grant_type: "authorization_code",
-    code: input.code,
-    code_verifier: input.codeVerifier,
-    redirect_uri: input.redirectUri,
-  });
+  return tokenRequest(
+    config,
+    {
+      grant_type: "authorization_code",
+      code: input.code,
+      code_verifier: input.codeVerifier,
+      redirect_uri: input.redirectUri,
+    },
+    input.clientIp,
+  );
 }
 
 export function refreshTokens(
   config: AuthConfig,
   refreshToken: string,
+  clientIp?: string | null,
 ): Promise<TokenSet> {
-  return tokenRequest(config, {
-    grant_type: "refresh_token",
-    refresh_token: refreshToken,
-  });
+  return tokenRequest(
+    config,
+    {
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    },
+    clientIp,
+  );
 }
 
 export type IdTokenProfile = {

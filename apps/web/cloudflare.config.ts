@@ -82,11 +82,15 @@ export default defineConfig({
           ? { API: bindings.worker({ worker: "va-dispatch-api" }) }
           : {}),
         // Optional: the identity provider's Worker in the same account, so
-        // calls to the issuer skip the zone's bot protection.
+        // calls to the issuer skip the zone's bot protection. stem's
+        // AppGateway entrypoint knows the calling app from the props and
+        // keeps rate limits per person (see the x-stem-client-ip header).
         ...(production && process.env.AUTH_IDENTITY_WORKER?.trim()
           ? {
               IDENTITY: bindings.worker({
                 worker: process.env.AUTH_IDENTITY_WORKER.trim(),
+                exportName: "AppGateway",
+                props: { app: "va-dispatcher" },
               }),
             }
           : {}),
