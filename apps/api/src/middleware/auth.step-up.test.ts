@@ -81,6 +81,16 @@ describe("passkey step-up", () => {
     }
   });
 
+  it("treats an empty AUTH_STEP_UP_SECONDS as not set", async () => {
+    resetEnvCache();
+    loadEnv({ NODE_ENV: "test", AUTH_STEP_UP_SECONDS: "" });
+    const { status } = await call({ method: "email_code", at: now() });
+    expect(status).toBe(403);
+    await expect(
+      call({ method: "passkey", at: now() - 601 }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
+
   it("can be turned off with AUTH_STEP_UP_SECONDS=0", async () => {
     resetEnvCache();
     loadEnv({ NODE_ENV: "test", AUTH_STEP_UP_SECONDS: "0" });

@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
 import {
+  assertRecentPasskey,
   requireAuth,
   requireRecentPasskey,
   requireRole,
@@ -48,6 +49,7 @@ privacyRoutes.post(
 
 privacyRoutes.post(
   "/privacy/policies/:id/approve",
+  requireRecentPasskey,
   zValidator("param", idParamSchema),
   async (context) => {
     const auth = context.get("auth");
@@ -76,6 +78,8 @@ privacyRoutes.post(
   async (context) => {
     const auth = context.get("auth");
     const body = context.req.valid("json");
+    // A dry run only reports; a real run deletes data in bulk.
+    if (body.mode === "execute") assertRecentPasskey(auth);
     const run = await privacyService.queueRetentionRun({
       tenantId: auth.tenantId,
       actorMembershipId: auth.membershipId,
@@ -100,6 +104,8 @@ privacyRoutes.get(
 
 privacyRoutes.post(
   "/privacy/retention/runs/:id/retry",
+  // A retried run may be a real (deleting) run.
+  requireRecentPasskey,
   zValidator("param", idParamSchema),
   async (context) => {
     const auth = context.get("auth");
@@ -270,6 +276,7 @@ privacyRoutes.post(
 
 privacyRoutes.post(
   "/privacy/legal-holds/:id/release",
+  requireRecentPasskey,
   zValidator("param", idParamSchema),
   async (context) => {
     const auth = context.get("auth");
