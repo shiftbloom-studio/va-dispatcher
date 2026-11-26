@@ -45,7 +45,11 @@ export async function GET(request: NextRequest) {
     config,
   );
   const result = session
-    ? await ensureFreshSession(session, config)
+    ? await ensureFreshSession(
+        session,
+        config,
+        request.headers.get("cf-connecting-ip"),
+      )
     : ({ kind: "expired" } as const);
 
   if (result.kind === "expired") {
