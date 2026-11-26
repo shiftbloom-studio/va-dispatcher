@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
       code,
       codeVerifier: tx.codeVerifier,
       redirectUri: callbackUri(request),
+      clientIp: request.headers.get("cf-connecting-ip"),
     });
     if (!tokens.idToken) return failure(request, "provider");
     const profile = await verifyIdToken(config, tokens.idToken, tx.nonce);

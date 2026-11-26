@@ -39,10 +39,12 @@
         { "pattern": "<VA_HOSTNAME>/api/*", "zone_name": "<VA_ZONE_NAME>" },
       ],
       // Optional: the identity provider's Worker in the same account. Calls to
-      // the issuer then skip the zone's bot protection. The entry is dropped
-      // when AUTH_IDENTITY_WORKER is unset.
+      // the issuer then skip the zone's bot protection. stem's AppGateway
+      // entrypoint knows the calling app from the props. The entry is dropped
+      // when AUTH_IDENTITY_WORKER is unset, so it stays on one line.
       "services": [
-        { "binding": "IDENTITY", "service": "<AUTH_IDENTITY_WORKER>" },
+        // prettier-ignore
+        { "binding": "IDENTITY", "service": "<AUTH_IDENTITY_WORKER>", "entrypoint": "AppGateway", "props": { "app": "va-dispatcher" } },
       ],
       "d1_databases": [
         {
