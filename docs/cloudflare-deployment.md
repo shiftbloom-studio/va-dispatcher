@@ -87,6 +87,12 @@ all on Cloudflare.
    on the issuer's zone can challenge them, and sign-in fails with
    `/auth/error?reason=provider`.
 
+   The binding targets stem's `AppGateway` entrypoint with
+   `props: { app: "va-dispatcher" }`, so that stem build needs the gateway and
+   an app named `va-dispatcher`. The web Worker sends the person's
+   `cf-connecting-ip` as `x-stem-client-ip` on code exchange and refresh calls,
+   so stem's token rate limits stay per person.
+
 4. **Secrets** (Settings → Variables and Secrets, or `wrangler secret put`):
    - API: `AUTH_CLIENT_SECRET`, `TENANT_SECRETS_KEY`, `CRON_SECRET`,
      `SIMBRIEF_API_KEY`, `NAVIGRAPH_CLIENT_ID`, `NAVIGRAPH_CLIENT_SECRET`
