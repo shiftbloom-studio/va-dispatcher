@@ -51,14 +51,18 @@ const fixtureIdentities = {
 
 type FixtureIdentity = keyof typeof fixtureIdentities;
 
-const server = serve({
-  fetch: fixtureFetch,
-  hostname: "127.0.0.1",
-  port: config.PORT,
-});
-
-console.log(
-  `VA Dispatch integrated E2E API listening on http://127.0.0.1:${config.PORT}`,
+const server = serve(
+  {
+    fetch: fixtureFetch,
+    hostname: "127.0.0.1",
+    port: config.PORT,
+  },
+  // Log the bound address the server reports, not a value read from the env config.
+  (info) => {
+    console.log(
+      `VA Dispatch integrated E2E API listening on http://127.0.0.1:${info.port}`,
+    );
+  },
 );
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
