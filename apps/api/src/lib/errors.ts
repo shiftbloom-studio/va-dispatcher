@@ -7,6 +7,7 @@ export type ErrorCode =
   | "INVALID_TRANSITION"
   | "UNPROCESSABLE"
   | "UPSTREAM"
+  | "STEP_UP_REQUIRED"
   | "INTERNAL";
 
 export class AppError extends Error {
@@ -34,6 +35,7 @@ function statusForCode(code: ErrorCode): number {
     case "UNAUTHORIZED":
       return 401;
     case "FORBIDDEN":
+    case "STEP_UP_REQUIRED":
       return 403;
     case "NOT_FOUND":
       return 404;

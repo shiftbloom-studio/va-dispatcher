@@ -22,6 +22,18 @@ export type VerifiedIdentity = {
   email: string | null;
   emailVerified: boolean;
   name: string | null;
+  /** How and when the person signed in to stem for this session. */
+  signIn: SignIn;
+};
+
+/**
+ * Sign-in strength from stem's `auth_method` and `signed_in_at` claims.
+ * Anything other than a passkey counts as an email code.
+ */
+export type SignIn = {
+  method: "passkey" | "email_code" | "unknown";
+  /** Unix seconds, or null when the provider did not say. */
+  at: number | null;
 };
 
 type AccessTokenClaims = JWTPayload & {
@@ -31,6 +43,8 @@ type AccessTokenClaims = JWTPayload & {
   email?: unknown;
   email_verified?: unknown;
   name?: unknown;
+  auth_method?: unknown;
+  signed_in_at?: unknown;
 };
 
 let cachedKeys: { url: string; keys: JWTVerifyGetKey } | null = null;
@@ -125,7 +139,21 @@ export async function verifyAccessToken(
     email: optionalString(payload.email),
     emailVerified: payload.email_verified === true,
     name: optionalString(payload.name),
+    signIn: signInClaims(payload),
   };
+}
+
+function signInClaims(payload: AccessTokenClaims): SignIn {
+  const method =
+    payload.auth_method === "passkey" || payload.auth_method === "email_code"
+      ? payload.auth_method
+      : "unknown";
+  const at =
+    typeof payload.signed_in_at === "number" &&
+    Number.isFinite(payload.signed_in_at)
+      ? payload.signed_in_at
+      : null;
+  return { method, at };
 }
 
 function orgRoles(value: unknown): Record<string, string> {

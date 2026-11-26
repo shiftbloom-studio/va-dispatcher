@@ -52,6 +52,11 @@ export async function GET(request: NextRequest) {
     });
     if (!tokens.idToken) return failure(request, "provider");
     const profile = await verifyIdToken(config, tokens.idToken, tx.nonce);
+    // A step-up confirms the person who is already signed in. Another
+    // account must not replace the session behind a sensitive action.
+    if (tx.stepUpSub && profile.sub !== tx.stepUpSub) {
+      return failure(request, "account");
+    }
     session = {
       ...profile,
       accessToken: tokens.accessToken,

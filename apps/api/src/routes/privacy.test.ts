@@ -23,13 +23,34 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../middleware/auth.js", async () => {
   const { createMiddleware } = await import("hono/factory");
+  const { AppError } = await import("../lib/errors.js");
   const rank = { pilot: 1, dispatcher: 2, admin: 3 } as const;
+  // The check itself is covered in middleware/auth.step-up.test.ts; here
+  // `x-test-stale-sign-in: 1` stands for a sign-in that fails it.
+  const stale = new Set<string>();
+  const assertRecentPasskey = (auth: { authUserId: string }) => {
+    if (stale.has(auth.authUserId)) {
+      throw new AppError("STEP_UP_REQUIRED", "Confirm with your passkey", {
+        details: { stepUp: { reason: "stale", maxAge: 600 } },
+      });
+    }
+  };
   return {
+    assertRecentPasskey,
+    requireRecentPasskey: createMiddleware(async (context, next) => {
+      assertRecentPasskey(context.get("auth"));
+      await next();
+    }),
     requireAuth: createMiddleware(async (context, next) => {
       const role = (context.req.header("x-test-role") ??
         "pilot") as keyof typeof rank;
+      const authUserId =
+        context.req.header("x-test-stale-sign-in") === "1"
+          ? "user-stale"
+          : "user-test";
+      if (authUserId === "user-stale") stale.add(authUserId);
       context.set("auth", {
-        authUserId: "user-test",
+        authUserId,
         tenantId: context.req.header("x-test-tenant") ?? "tenant-a",
         membershipId: "27000000-0000-4000-8000-000000000011",
         role,
@@ -183,6 +204,52 @@ describe("privacy control-plane routes", () => {
       limit: 250,
       cursor: "next",
     });
+  });
+
+  it("needs a recent passkey for deleting and releasing actions", async () => {
+    const stale = { "x-test-role": "admin", "x-test-stale-sign-in": "1" };
+    const id = "27000000-0000-4000-8000-000000000041";
+    const json = (body: unknown) => ({
+      method: "POST",
+      headers: { ...stale, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const guarded: Array<[string, RequestInit]> = [
+      [`/privacy/policies/${id}/approve`, { method: "POST", headers: stale }],
+      [
+        "/privacy/retention/runs",
+        json({ mode: "execute", idempotencyKey: "execute-run-1" }),
+      ],
+      [
+        `/privacy/retention/runs/${id}/retry`,
+        { method: "POST", headers: stale },
+      ],
+      [
+        `/privacy/legal-holds/${id}/release`,
+        { method: "POST", headers: stale },
+      ],
+      [`/privacy/requests/${id}/process`, json({})],
+      [`/privacy/requests/${id}/export`, { headers: stale }],
+    ];
+    for (const [path, init] of guarded) {
+      const response = await app.request(path, init);
+      expect(response.status, path).toBe(403);
+      const body = (await response.json()) as { error: { code: string } };
+      expect(body.error.code, path).toBe("STEP_UP_REQUIRED");
+    }
+    expect(mocks.approvePolicy).not.toHaveBeenCalled();
+    expect(mocks.queueRetentionRun).not.toHaveBeenCalled();
+    expect(mocks.retryRun).not.toHaveBeenCalled();
+    expect(mocks.releaseHold).not.toHaveBeenCalled();
+    expect(mocks.processSubjectRequest).not.toHaveBeenCalled();
+    expect(mocks.exportPrivacyRequestPage).not.toHaveBeenCalled();
+
+    // A dry run only reports, so it stays available.
+    const dryRun = await app.request(
+      "/privacy/retention/runs",
+      json({ mode: "dry_run", idempotencyKey: "dry-run-0001" }),
+    );
+    expect(dryRun.status).toBe(202);
   });
 
   it("rejects member workflows without a member subject", async () => {

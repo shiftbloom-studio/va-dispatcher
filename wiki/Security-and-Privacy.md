@@ -34,6 +34,10 @@ Compromise or misconfiguration at one boundary must not be assumed safe because 
 - Dispatcher-only operations board, member list, and ACARS.
 - Admin-only invitation/application decisions, tenant/member mutations,
   removal, directory sync, and Hoppie configuration.
+- A recent passkey sign-in for role and status changes, member removal,
+  Hoppie credentials, privacy request processing and exports, retention
+  policy approval, real retention runs, legal hold release, and audit
+  exports (see [Authentication and Multi-Tenancy](https://github.com/shiftbloom-studio/va-dispatcher/wiki/Authentication-and-Multi-Tenancy)).
 
 ### Abuse prevention
 

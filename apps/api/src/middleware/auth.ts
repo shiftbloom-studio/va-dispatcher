@@ -15,7 +15,7 @@ import {
 import { mapOrgRole, roleAtLeast } from "../domain/members/roles.js";
 import type { MemberRole, Membership, Tenant } from "../db/schema.js";
 import { hasDatabase } from "../db/client.js";
-import { verifyAccessToken } from "../auth/token.js";
+import { verifyAccessToken, type SignIn } from "../auth/token.js";
 
 /** Request header naming the tenant (Virtual Airline slug) a call is about. */
 export const TENANT_SLUG_HEADER = "X-Tenant-Slug";
@@ -28,6 +28,8 @@ export type AuthContext = {
   authOrgId: string;
   tenant: Tenant;
   membership: Membership;
+  /** Sign-in strength from the access token. Missing means unknown. */
+  signIn?: SignIn;
 };
 
 export type AuthUserContext = {
@@ -141,6 +143,8 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
         authOrgId,
         tenant,
         membership,
+        // The development bypass has no real sign-in to check.
+        signIn: { method: "passkey", at: Math.floor(Date.now() / 1000) },
       });
       await next();
       return;
@@ -199,6 +203,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
       authOrgId,
       tenant,
       membership,
+      signIn: identity.signIn,
     });
 
     await next();
@@ -274,3 +279,41 @@ export function requireRole(requiredRole: MemberRole) {
     },
   );
 }
+
+/**
+ * For sensitive admin actions: the caller must have signed in to stem with a
+ * passkey within AUTH_STEP_UP_SECONDS. An email code never passes, so access
+ * to someone's inbox alone cannot change roles, credentials or personal data.
+ *
+ * `details.stepUp.reason` tells the web app what to do:
+ * - "stale": the sign-in is too old. Send the person through stem again
+ *   (prompt=login), then they retry the action.
+ * - "passkey": they just signed in, but not with a passkey. Signing in again
+ *   would not help; they need to add a passkey on their stem account first.
+ */
+export function assertRecentPasskey(auth: AuthContext): void {
+  const maxAge = env().AUTH_STEP_UP_SECONDS;
+  if (maxAge === 0) return;
+  const { signIn } = auth;
+  const now = Math.floor(Date.now() / 1000);
+  const fresh =
+    typeof signIn?.at === "number" &&
+    signIn.at <= now + 60 &&
+    now - signIn.at <= maxAge;
+  if (fresh && signIn?.method === "passkey") return;
+  throw new AppError(
+    "STEP_UP_REQUIRED",
+    fresh
+      ? "This action needs a passkey. Add one on your stem account page, then try again."
+      : "Confirm it's you with your passkey to continue.",
+    { details: { stepUp: { reason: fresh ? "passkey" : "stale", maxAge } } },
+  );
+}
+
+/** Route middleware form of {@link assertRecentPasskey}. */
+export const requireRecentPasskey = createMiddleware<{
+  Variables: AppVariables;
+}>(async (context, next) => {
+  assertRecentPasskey(context.get("auth"));
+  await next();
+});

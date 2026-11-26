@@ -159,6 +159,17 @@ Tenant isolation and role authorization are separate checks.
 
 Pilot decisions also check ownership of the individual flight. All repository calls include the authenticated tenant ID; UUID knowledge alone does not grant cross-tenant access.
 
+## Passkey step-up for sensitive admin actions
+
+Some admin actions need a passkey sign-in to stem from the last ten minutes (`AUTH_STEP_UP_SECONDS`), based on the access token's `auth_method` and `signed_in_at` claims:
+
+- changing a member's role or status, and removing a member;
+- saving or clearing the Hoppie ACARS credentials;
+- processing and exporting privacy requests, approving a retention policy, running or retrying a real (deleting) retention run, and releasing a legal hold;
+- exporting the audit log.
+
+When the sign-in is too old, the API answers `403 STEP_UP_REQUIRED` with `details.stepUp.reason: "stale"`. The web app sends the person to `/auth/login?step_up=1`, which asks stem to confirm them again (`prompt=login`, `acr_values=phr`, passkey offered first) and returns to the same page, where they retry the action. The callback only accepts a step-up from the account that is already signed in. An email code never passes: right after signing in with one, the reason is `"passkey"` and the app shows that the person needs to add a passkey on their stem account page first.
+
 ## Static web tenants and database tenants
 
 The backend schema and API are tenant-scoped, but `apps/web/src/lib/tenant.ts` currently contains one static branding entry: `vsas`.

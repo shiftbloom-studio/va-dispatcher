@@ -128,6 +128,11 @@ export async function authorizationUrl(
     state: string;
     nonce: string;
     codeChallenge: string;
+    /**
+     * Ask stem to confirm the person again, offering their passkey first,
+     * before a sensitive action (step-up).
+     */
+    stepUp?: boolean;
   },
 ): Promise<string> {
   const { authorization_endpoint } = await discover(config.issuer);
@@ -142,6 +147,8 @@ export async function authorizationUrl(
     code_challenge: input.codeChallenge,
     code_challenge_method: "S256",
     resource: config.resource,
+    // OpenID EAP "phishing-resistant": stem offers the passkey first.
+    ...(input.stepUp ? { prompt: "login", acr_values: "phr" } : {}),
   }).toString();
   return url.toString();
 }

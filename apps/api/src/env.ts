@@ -36,6 +36,14 @@ const envSchema = z.object({
     z.string().min(1).optional(),
   ),
   AUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  /**
+   * Sensitive admin actions need a passkey sign-in at most this many seconds
+   * old. 0 turns the check off.
+   */
+  AUTH_STEP_UP_SECONDS: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.coerce.number().int().min(0).max(86_400).default(600),
+  ),
   // Internal local/test transport selector. Production always resolves to
   // Hoppie and fails closed until the tenant credential is configured.
   ACARS_PROVIDER: z.enum(["mock", "hoppie"]).default("mock"),

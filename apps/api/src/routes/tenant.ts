@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../middleware/auth.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  requireAuth,
+  requireRecentPasskey,
+  requireRole,
+} from "../middleware/auth.js";
 import { findTenantById, updateTenant } from "../db/repositories/tenants.js";
 import { AppError } from "../lib/errors.js";
 import { getDirectory } from "../auth/directory.js";
@@ -301,6 +305,7 @@ tenantRoutes.delete("/tenant/brand/logo", requireRole("admin"), async (c) => {
 tenantRoutes.put(
   "/tenant/acars-config",
   requireRole("admin"),
+  requireRecentPasskey,
   zValidator(
     "json",
     z.object({
@@ -395,26 +400,31 @@ tenantRoutes.post(
   },
 );
 
-tenantRoutes.delete("/tenant/acars-config", requireRole("admin"), async (c) => {
-  const auth = c.get("auth");
-  const tenant = await requireTenant(auth.tenantId);
-  const updated = await updateTenant(auth.tenantId, {
-    hoppieLogonEnc: null,
-    settings: withoutHoppieLastTestedAt(tenant.settings),
-  });
-  if (!updated) throw new AppError("NOT_FOUND", "Tenant not found");
+tenantRoutes.delete(
+  "/tenant/acars-config",
+  requireRole("admin"),
+  requireRecentPasskey,
+  async (c) => {
+    const auth = c.get("auth");
+    const tenant = await requireTenant(auth.tenantId);
+    const updated = await updateTenant(auth.tenantId, {
+      hoppieLogonEnc: null,
+      settings: withoutHoppieLastTestedAt(tenant.settings),
+    });
+    if (!updated) throw new AppError("NOT_FOUND", "Tenant not found");
 
-  await writeAudit({
-    tenantId: auth.tenantId,
-    actorMembershipId: auth.membershipId,
-    action: "tenant.acars_config_clear",
-    entityType: "tenant",
-    entityId: auth.tenantId,
-    meta: { hoppieStation: tenant.hoppieStation },
-  });
+    await writeAudit({
+      tenantId: auth.tenantId,
+      actorMembershipId: auth.membershipId,
+      action: "tenant.acars_config_clear",
+      entityType: "tenant",
+      entityId: auth.tenantId,
+      meta: { hoppieStation: tenant.hoppieStation },
+    });
 
-  return c.json(acarsConfigResponse(updated));
-});
+    return c.json(acarsConfigResponse(updated));
+  },
+);
 
 async function requireTenant(tenantId: string): Promise<Tenant> {
   const tenant = await findTenantById(tenantId);
