@@ -62,7 +62,7 @@ export default defineConfig({
       // limiting, so the Worker is only reachable on its custom domain.
       workersDev: false,
       previewUrls: false,
-      observability: { enabled: true },
+      observability: { enabled: true, issues: { enabled: true } },
       assets: {
         htmlHandling: "none",
         notFoundHandling: "none",
