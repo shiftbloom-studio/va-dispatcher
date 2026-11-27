@@ -48,8 +48,9 @@ const redocHtml = `<!doctype html>
 
 export const docsRoutes = new Hono();
 
+// Redirect only to the known mount points, never to a path taken from the request.
 docsRoutes.get("/", (c) => {
-  const basePath = c.req.path.replace(/\/$/, "");
+  const basePath = c.req.path.startsWith("/api/") ? "/api/docs" : "/docs";
   return c.redirect(`${basePath}/swagger`);
 });
 

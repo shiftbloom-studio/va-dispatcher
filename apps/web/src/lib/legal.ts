@@ -96,7 +96,9 @@ function validatePublicUrl(value: string, key: string): void {
 }
 
 function validateEmail(value: string, key: string): void {
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+  // Same check as /^[^\s@]+@[^\s@]+\.[^\s@]+$/ without the backtracking.
+  const domain = value.slice(value.indexOf("@") + 1);
+  if (!/^[^\s@]+@[^\s@]+$/.test(value) || !domain.slice(1, -1).includes(".")) {
     throw new Error(`${key} must be a valid email address.`);
   }
 }

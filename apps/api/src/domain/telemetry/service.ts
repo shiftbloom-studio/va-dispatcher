@@ -331,7 +331,7 @@ function flightVersionConflict(flight: Flight): AppError {
 async function authenticateDevice(
   authorization: string | undefined,
 ): Promise<{ device: SimulatorDevice }> {
-  const value = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const value = authorization?.match(/^Bearer\s+(\S.*)$/i)?.[1];
   const match = value?.match(
     /^v1\.([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/i,
   );

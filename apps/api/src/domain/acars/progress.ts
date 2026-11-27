@@ -53,11 +53,13 @@ function nearestZuluTime(value: string, reference: Date): Date | null {
     minute,
   );
   const candidates = [sameDay - 86_400_000, sameDay, sameDay + 86_400_000];
-  const nearest = candidates.reduce((best, candidate) =>
-    Math.abs(candidate - reference.getTime()) <
-    Math.abs(best - reference.getTime())
-      ? candidate
-      : best,
+  const nearest = candidates.reduce(
+    (best, candidate) =>
+      Math.abs(candidate - reference.getTime()) <
+      Math.abs(best - reference.getTime())
+        ? candidate
+        : best,
+    sameDay - 86_400_000,
   );
   return new Date(nearest);
 }

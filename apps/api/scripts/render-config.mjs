@@ -27,9 +27,16 @@ for (const file of [
 ]) {
   if (!existsSync(file)) continue;
   for (const line of readFileSync(file, "utf8").split("\n")) {
-    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (match && !(match[1] in env))
-      env[match[1]] = match[2].replace(/^["']|["']$/g, "");
+    // KEY=value with surrounding whitespace trimmed, parsed without a
+    // backtracking regex.
+    const separator = line.indexOf("=");
+    if (separator === -1) continue;
+    const key = line.slice(0, separator).trim();
+    if (!/^[A-Z0-9_]+$/.test(key) || key in env) continue;
+    env[key] = line
+      .slice(separator + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
   }
 }
 
@@ -43,9 +50,13 @@ for (const key of ["AUTH_IDENTITY_WORKER"]) {
     .join("\n");
 }
 const keys = new Set(
-  [...config.replace(/^\s*\/\/.*$/gm, "").matchAll(/<([A-Z0-9_]+)>/g)].map(
-    (m) => m[1],
-  ),
+  [
+    ...config
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("//"))
+      .join("\n")
+      .matchAll(/<([A-Z0-9_]+)>/g),
+  ].map((m) => m[1]),
 );
 // May be empty; everything else is required.
 const optional = new Set(["VSAS_AUTH_ORG_ID", "AUTH_CLIENT_ID"]);
