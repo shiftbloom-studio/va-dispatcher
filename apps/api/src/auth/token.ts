@@ -19,6 +19,8 @@ export type VerifiedIdentity = {
    * API picks the tenant per request and looks up its role here.
    */
   orgs: Record<string, string>;
+  /** The person's primary team, only when it is one of `orgs`. */
+  primaryOrg: string | null;
   email: string | null;
   emailVerified: boolean;
   name: string | null;
@@ -40,6 +42,7 @@ type AccessTokenClaims = JWTPayload & {
   azp?: unknown;
   client_id?: unknown;
   orgs?: unknown;
+  primary_org?: unknown;
   email?: unknown;
   email_verified?: unknown;
   name?: unknown;
@@ -133,9 +136,12 @@ export async function verifyAccessToken(
   if (config.AUTH_CLIENT_ID && clientId !== config.AUTH_CLIENT_ID) {
     throw new AppError("UNAUTHORIZED", "Token was issued to another client");
   }
+  const orgs = orgRoles(payload.orgs);
+  const primaryOrg = optionalString(payload.primary_org);
   return {
     userId,
-    orgs: orgRoles(payload.orgs),
+    orgs,
+    primaryOrg: primaryOrg && orgs[primaryOrg] ? primaryOrg : null,
     email: optionalString(payload.email),
     emailVerified: payload.email_verified === true,
     name: optionalString(payload.name),

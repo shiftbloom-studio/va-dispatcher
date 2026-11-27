@@ -92,8 +92,9 @@ export const requireUser = createMiddleware<{ Variables: AppVariables }>(
  * Authenticate + resolve tenant membership.
  *
  * Production: identity-provider access token with an `orgs` claim. The
- * tenant comes from the X-Tenant-Slug header, or from the only organization
- * in the token when the header is absent.
+ * tenant comes from the X-Tenant-Slug header. Without it, the token's
+ * organizations that are registered as tenants decide: the only one, else
+ * the primary team when it is one of them.
  * Dev bypass: AUTH_DEV_BYPASS=true and headers:
  *   X-Dev-User-Id, X-Dev-Org-Id, X-Dev-Role, X-Dev-Display-Name (optional)
  */
@@ -160,6 +161,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
     const tenant = await resolveTenant(
       context.req.header(TENANT_SLUG_HEADER),
       identity.orgs,
+      identity.primaryOrg,
       config.VSAS_AUTH_ORG_ID,
     );
     const authOrgId = tenant.authOrgId;
@@ -218,6 +220,7 @@ export const requireAuth = createMiddleware<{ Variables: AppVariables }>(
 async function resolveTenant(
   slugHeader: string | undefined,
   orgs: Record<string, string>,
+  primaryOrg: string | null,
   vsasOrgId: string | undefined,
 ): Promise<Tenant> {
   // The configured identity organization is the source of truth for the
@@ -248,24 +251,31 @@ async function resolveTenant(
   }
 
   const orgIds = Object.keys(orgs);
-  if (orgIds.length !== 1) {
-    throw new AppError(
-      "FORBIDDEN",
-      orgIds.length === 0
-        ? "Join a Virtual Airline first"
-        : "Select your Virtual Airline",
-    );
+  if (orgIds.length === 0) {
+    throw new AppError("FORBIDDEN", "Join a Virtual Airline first");
   }
-  const orgId = orgIds[0]!;
-  const tenant =
-    vsas?.authOrgId === orgId ? vsas : await findTenantByAuthOrgId(orgId);
-  if (!tenant) {
+  // A token can also carry teams that are not airlines here, such as a
+  // stem-wide team. Only organizations registered as tenants count.
+  const tenants: Tenant[] = [];
+  for (const orgId of orgIds) {
+    const tenant =
+      vsas?.authOrgId === orgId ? vsas : await findTenantByAuthOrgId(orgId);
+    if (tenant) tenants.push(tenant);
+  }
+  if (tenants.length === 1) return tenants[0]!;
+  if (tenants.length === 0) {
     throw new AppError(
       "FORBIDDEN",
       "This organization is not registered as a VA tenant",
     );
   }
-  return tenant;
+  const primary = tenants.find((tenant) => tenant.authOrgId === primaryOrg);
+  if (primary) return primary;
+  throw new AppError(
+    "FORBIDDEN",
+    `You belong to several Virtual Airlines. Send the ${TENANT_SLUG_HEADER} header to pick one.`,
+    { details: { tenants: tenants.map((tenant) => tenant.slug) } },
+  );
 }
 
 export function requireRole(requiredRole: MemberRole) {
