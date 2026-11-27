@@ -13,7 +13,7 @@
   "bugs": {
     "url": "https://github.com/shiftbloom-studio/va-dispatcher/issues"
   },
-  "packageManager": "pnpm@11.21.0",
+  "packageManager": "pnpm@12.23.0",
   "scripts": {
     "dev": "pnpm --parallel --filter @va-dispatch/api --filter @va-dispatch/web dev",
     "dev:api": "pnpm --filter @va-dispatch/api dev",
@@ -37,7 +37,7 @@
     "node": ">=26"
   },
   "devDependencies": {
-    "@vitest/coverage-istanbul": "5.1.1",
+    "@vitest/coverage-istanbul": "5.1.2",
     "prettier": "3.10.1",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript7": "npm:typescript@7.0.2"
