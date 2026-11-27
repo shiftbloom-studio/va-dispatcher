@@ -72,6 +72,7 @@ describe("access token verification", () => {
     ).resolves.toEqual({
       userId: "user_1",
       orgs: { org_1: "dispatcher", org_2: "owner" },
+      primaryOrg: null,
       email: "pilot@example.test",
       emailVerified: true,
       name: "Test Pilot",
@@ -95,11 +96,25 @@ describe("access token verification", () => {
     ).resolves.toMatchObject({ signIn: { method: "unknown", at: null } });
   });
 
+  it("keeps the primary team only when it is one of the organizations", async () => {
+    await expect(
+      verifyAccessToken(
+        await token({ orgs: { org_1: "member" }, primary_org: "org_1" }),
+      ),
+    ).resolves.toMatchObject({ primaryOrg: "org_1" });
+    await expect(
+      verifyAccessToken(
+        await token({ orgs: { org_1: "member" }, primary_org: "org_9" }),
+      ),
+    ).resolves.toMatchObject({ primaryOrg: null });
+  });
+
   it("accepts a token without organizations", async () => {
     await expect(verifyAccessToken(await token({ orgs: {} }))).resolves.toEqual(
       {
         userId: "user_1",
         orgs: {},
+        primaryOrg: null,
         email: null,
         emailVerified: false,
         name: null,

@@ -4228,7 +4228,7 @@ export const openApiDocument = {
         scheme: "bearer",
         bearerFormat: "JWT",
         description:
-          "stem access token (EdDSA JWT, typ at+jwt) for this API. Send X-Tenant-Slug with the Virtual Airline slug; the token's orgs claim must contain that tenant's organization. Without the header, the only organization in the token is used.",
+          "stem access token (EdDSA JWT, typ at+jwt) for this API. Send X-Tenant-Slug with the Virtual Airline slug; the token's orgs claim must contain that tenant's organization. Without the header, the token's organizations that are registered Virtual Airlines decide: the only one, else the primary team (primary_org) when it is one of them; otherwise the API answers 403 with the matching tenant slugs in details.tenants.",
       },
       devUserId: {
         type: "apiKey",

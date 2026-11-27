@@ -332,6 +332,13 @@ describe("identity organization claims", () => {
   });
 
   it("asks for a tenant when the token holds several organizations", async () => {
+    mocks.findTenantByAuthOrgId.mockImplementation(async (orgId: string) =>
+      orgId === "org_test"
+        ? { id: "tenant_test", slug: "test", authOrgId: "org_test" }
+        : orgId === "org_other"
+          ? { id: "tenant_other", slug: "other", authOrgId: "org_other" }
+          : null,
+    );
     mocks.verifyAccessToken.mockResolvedValue({
       userId: "user_multi",
       orgs: { org_test: "member", org_other: "member" },
@@ -345,6 +352,87 @@ describe("identity organization claims", () => {
     });
 
     expect(response.status).toBe(403);
+    expect(mocks.findMembership).not.toHaveBeenCalled();
+  });
+
+  it("ignores token organizations that are not tenants", async () => {
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_multi",
+      orgs: { org_stem_wide: "member", org_test: "admin" },
+      primaryOrg: "org_stem_wide",
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      tenantId: "tenant_test",
+      authOrgId: "org_test",
+    });
+  });
+
+  it("falls back to the primary team when several tenants match", async () => {
+    mocks.findTenantByAuthOrgId.mockImplementation(async (orgId: string) =>
+      orgId === "org_test"
+        ? { id: "tenant_test", slug: "test", authOrgId: "org_test" }
+        : orgId === "org_other"
+          ? { id: "tenant_other", slug: "other", authOrgId: "org_other" }
+          : null,
+    );
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_multi",
+      orgs: { org_test: "member", org_other: "dispatcher" },
+      primaryOrg: "org_other",
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      tenantId: "tenant_other",
+      role: "dispatcher",
+    });
+  });
+
+  it("asks for a tenant when several match and the primary team is none of them", async () => {
+    mocks.findTenantByAuthOrgId.mockImplementation(async (orgId: string) =>
+      orgId === "org_test"
+        ? { id: "tenant_test", slug: "test", authOrgId: "org_test" }
+        : orgId === "org_other"
+          ? { id: "tenant_other", slug: "other", authOrgId: "org_other" }
+          : null,
+    );
+    mocks.verifyAccessToken.mockResolvedValue({
+      userId: "user_multi",
+      orgs: {
+        org_test: "member",
+        org_other: "member",
+        org_stem_wide: "member",
+      },
+      primaryOrg: "org_stem_wide",
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer session-token" },
+    });
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(JSON.stringify(body)).toContain("X-Tenant-Slug");
+    expect(JSON.stringify(body)).toContain('"tenants":["test","other"]');
     expect(mocks.findMembership).not.toHaveBeenCalled();
   });
 
