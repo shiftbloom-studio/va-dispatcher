@@ -1,5 +1,7 @@
 import "server-only";
 
+import { trimTrailingSlashes } from "@/lib/auth/origin";
+
 /** OIDC settings for the identity provider (stem), read per request. */
 export type AuthConfig = {
   issuer: string;
@@ -33,7 +35,7 @@ export function authConfig(): AuthConfig {
     throw new AuthNotConfiguredError(["AUTH_SESSION_SECRET (32+ characters)"]);
   }
   return {
-    issuer: values.AUTH_ISSUER!.replace(/\/+$/, ""),
+    issuer: trimTrailingSlashes(values.AUTH_ISSUER!),
     clientId: values.AUTH_CLIENT_ID!,
     clientSecret: values.AUTH_CLIENT_SECRET!,
     resource: values.AUTH_AUDIENCE!,

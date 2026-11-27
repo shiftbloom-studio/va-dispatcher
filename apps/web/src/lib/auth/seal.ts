@@ -10,10 +10,8 @@ const keyCache = new Map<string, Promise<CryptoKey>>();
 function base64url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  // btoa emits "=" only as trailing padding, so dropping every "=" is safe.
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
 function fromBase64url(value: string): Uint8Array<ArrayBuffer> {
